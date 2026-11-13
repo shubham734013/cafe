@@ -1,0 +1,8 @@
+{
+  "name": "Seth Sawariya CafeOS",
+  "description": "Complete Cafe Experience & Hospitality Operations Hub — Customer Ordering, POS Terminal, Kitchen Display System (KOT), Order Management, and Analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
