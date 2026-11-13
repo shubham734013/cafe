@@ -1,0 +1,155 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-inverse-surface: #ebe0db;
+  --color-inverse-on-surface: #352f2c;
+  --color-on-primary: #472a00;
+  --color-on-error-container: #ffdad6;
+  --color-primary-fixed-dim: #ffb95f;
+  --color-background: #17120f;
+  --color-secondary: #ffb77d;
+  --color-surface-bright: #3e3834;
+  --color-tertiary: #51e77b;
+  --color-on-tertiary-container: #004f20;
+  --color-on-secondary-fixed: #2f1500;
+  --color-surface-container-high: #2f2925;
+  --color-error-container: #93000a;
+  --color-surface-tint: #ffb95f;
+  --color-on-surface-variant: #d8c3ad;
+  --color-secondary-fixed-dim: #ffb77d;
+  --color-surface-variant: #3a3430;
+  --color-surface-container-low: #201b17;
+  --color-on-secondary-container: #432100;
+  --color-primary: #ffc174;
+  --color-outline: #a08e7a;
+  --color-primary-fixed: #ffddb8;
+  --color-surface-container-lowest: #120d0a;
+  --color-on-primary-fixed: #2a1700;
+  --color-on-tertiary-fixed: #002109;
+  --color-on-secondary: #4d2600;
+  --color-on-primary-fixed-variant: #653e00;
+  --color-surface-dim: #17120f;
+  --color-on-tertiary-fixed-variant: #005321;
+  --color-secondary-fixed: #ffdcc3;
+  --color-on-surface: #ebe0db;
+  --color-surface: #17120f;
+  --color-on-error: #690005;
+  --color-outline-variant: #534434;
+  --color-on-primary-container: #613b00;
+  --color-secondary-container: #d97707;
+  --color-on-background: #ebe0db;
+  --color-tertiary-fixed: #6bff8f;
+  --color-tertiary-fixed-dim: #4ae176;
+  --color-surface-container-highest: #3a3430;
+  --color-on-secondary-fixed-variant: #6e3900;
+  --color-primary-container: #f59e0b;
+  --color-on-tertiary: #003915;
+  --color-error: #ffb4ab;
+  --color-surface-container: #241f1b;
+  --color-tertiary-container: #2bca62;
+  --color-inverse-primary: #855300;
+
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: "Plus Jakarta Sans", sans-serif;
+  --font-label: "Inter", sans-serif;
+}
+
+@layer base {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: #17120f;
+    color: #ebe0db;
+    font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+    overscroll-behavior: none;
+  }
+
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  user-select: none;
+}
+
+.icon-filled {
+  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+}
+
+@theme inline {
+  --font-heading: "Plus Jakarta Sans", sans-serif;
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root {
+  --background: #17120f;
+  --foreground: #ebe0db;
+  --card: #241f1b;
+  --card-foreground: #ebe0db;
+  --popover: #241f1b;
+  --popover-foreground: #ebe0db;
+  --primary: #ffc174;
+  --primary-foreground: #472a00;
+  --secondary: #ffb77d;
+  --secondary-foreground: #4d2600;
+  --muted: #201b17;
+  --muted-foreground: #d8c3ad;
+  --accent: #3a3430;
+  --accent-foreground: #ebe0db;
+  --destructive: #ffb4ab;
+  --border: rgba(83, 68, 52, 0.45);
+  --input: rgba(83, 68, 52, 0.55);
+  --ring: #ffc174;
+  --radius: 0.625rem;
+}
