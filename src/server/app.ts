@@ -117,65 +117,77 @@ export function createCafeServer(
   assertAuthSecretConfigured();
 
   const app = express();
+  const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
+  if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0) {
+    throw new Error('TRUST_PROXY_HOPS must be a non-negative integer.');
+  }
+  // Set this only to the number of trusted reverse-proxy hops in production.
+  // The rate limiter uses Express's req.ip and does not parse X-Forwarded-For itself.
+  app.set('trust proxy', trustProxyHops);
+
   const httpServer = http.createServer(app);
+  const allowedSocketOrigins = new Set<string>();
+  if (process.env.APP_PUBLIC_URL) {
+    try {
+      allowedSocketOrigins.add(new URL(process.env.APP_PUBLIC_URL).origin);
+    } catch {
+      throw new Error('APP_PUBLIC_URL must be a valid absolute URL.');
+    }
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    allowedSocketOrigins.add('http://localhost:3000');
+    allowedSocketOrigins.add('http://127.0.0.1:3000');
+    allowedSocketOrigins.add('http://localhost:5173');
+    allowedSocketOrigins.add('http://127.0.0.1:5173');
+  }
+
   const io = new SocketIOServer(httpServer, {
-    cors: { origin: true, credentials: true },
+    cors: {
+      origin: (origin, callback) => {
+        // Non-browser clients may omit Origin. Browser origins must be explicitly trusted.
+        if (!origin || allowedSocketOrigins.has(origin)) {
+          callback(null, true);
+          return;
+        }
+        callback(new Error('Socket.IO origin is not allowed.'));
+      },
+      credentials: true,
+    },
   });
 
   const STAFF_ROOM = 'outlet:seth-sawariya-main:staff';
   const PUBLIC_ROOM = 'outlet:seth-sawariya-main:public';
 
+  // A socket is assigned its access level once from a verified, signed session.
+  // Client-supplied cafeId/tableToken values are never used as authorization.
+  io.use((socket, next) => {
+    const staffSession = getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
+    socket.data.staffSession = staffSession;
+    next();
+  });
+
   io.on('connection', (socket) => {
-    const cookieHeader = socket.handshake.headers.cookie;
-    const staffSession = getStaffSessionFromCookieHeader(cookieHeader);
-    const cafeId = (socket.handshake.query.cafeId as string) || 'seth-sawariya-main';
-    const tableToken = socket.handshake.query.tableToken as string;
-
-    const CAFE_ROOM = `cafe:${cafeId}`;
-    const CAFE_STAFF_ROOM = `cafe:${cafeId}:staff`;
-    const CAFE_KITCHEN_ROOM = `cafe:${cafeId}:kitchen`;
-
-    void socket.join(CAFE_ROOM);
-
+    const staffSession = socket.data.staffSession as ReturnType<typeof getStaffSessionFromCookieHeader>;
     if (staffSession) {
       void socket.join(STAFF_ROOM);
-      void socket.join(CAFE_STAFF_ROOM);
-      if (['kitchen', 'barista', 'owner', 'manager'].includes(staffSession.role)) {
-        void socket.join(CAFE_KITCHEN_ROOM);
-      }
     } else {
       void socket.join(PUBLIC_ROOM);
-      if (tableToken) {
-        void socket.join(`table:${tableToken}`);
-      }
     }
-
-    // Reject unverified arbitrary room joins from clients
-    socket.on('outlet:join', (data?: { tableToken?: string }) => {
-      const currentStaff = getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
-      if (currentStaff) {
-        void socket.join(STAFF_ROOM);
-        void socket.join(CAFE_STAFF_ROOM);
-      } else {
-        void socket.join(PUBLIC_ROOM);
-        if (data?.tableToken) {
-          void socket.join(`table:${data.tableToken}`);
-        }
-      }
-    });
   });
 
   const emitSync = (event: string, payload?: unknown) => {
     const data = payload ?? { ts: Date.now() };
+
+    // Operational payloads (orders, customers, inventory, staff, payments) are staff-only.
     io.to(STAFF_ROOM).emit(event, data);
     io.to(STAFF_ROOM).emit('cafe:sync', { event, ts: Date.now() });
+
+    // Customers receive only an invalidation signal and must fetch data through
+    // the existing customer-scoped HTTP endpoints.
     io.to(PUBLIC_ROOM).emit('cafe:sync', { event, ts: Date.now() });
 
-    // Multi-screen live updates for all connected devices
-    io.emit(event, data);
     if (event === 'order:created') {
       io.to(STAFF_ROOM).emit('order:new', data);
-      io.emit('order:new', data);
     }
   };
 
@@ -416,25 +428,38 @@ export function createCafeServer(
       }
 
       try {
-        const paymentStatus = p?.data?.payment?.payment_status?.toUpperCase();
-        if (p?.type === 'PAYMENT_SUCCESS_WEBHOOK' || paymentStatus === 'SUCCESS') {
-          const utr = p?.data?.payment?.bank_reference;
-          store.attachGatewayPayment(orderId, orderId, 'paid', utr);
-          await store.flushToPersistence();
-          const updated = store.getOrder(orderId);
-          if (updated) {
-            emitSync('order:updated', { order: updated });
-          }
-        } else {
-          const gatewayOrder = await upiGateway.getOrder(orderId);
-          if (gatewayOrder) {
-            await syncGatewayOrder(orderId, gatewayOrder);
-            await store.flushToPersistence();
-          }
+        // Treat the signed webhook as a notification, not as the financial source
+        // of truth. Re-fetch the order from Cashfree and verify its reference,
+        // amount, currency (INR is enforced by our checkout request), and status.
+        const gatewayOrder = await upiGateway.getOrder(orderId);
+        if (!gatewayOrder) {
+          res.status(503).json({ error: 'Cashfree order could not be verified; retry webhook.' });
+          return;
         }
+
+        const updated = await syncGatewayOrder(orderId, gatewayOrder);
+        if (!updated) {
+          res.status(503).json({ error: 'CafeOS order could not be synchronized; retry webhook.' });
+          return;
+        }
+        if (
+          (p?.type === 'PAYMENT_SUCCESS_WEBHOOK' ||
+            p?.data?.payment?.payment_status?.toUpperCase() === 'SUCCESS') &&
+          updated.paymentStatus !== 'paid'
+        ) {
+          res.status(503).json({ error: 'Cashfree has not confirmed successful settlement; retry webhook.' });
+          return;
+        }
+
+        await store.flushToPersistence();
+        emitSync('order:updated', { order: updated });
         res.status(200).json({ received: true });
-      } catch {
-        res.status(503).json({ error: 'Could not sync order.' });
+      } catch (error) {
+        console.error(
+          '[CafeOS] Could not verify Cashfree webhook against gateway order:',
+          error instanceof Error ? error.message : 'Gateway verification failed'
+        );
+        res.status(503).json({ error: 'Could not verify the payment; retry webhook.' });
       }
     }
   );
@@ -785,7 +810,7 @@ export function createCafeServer(
     }
   );
 
-  app.post('/api/orders', tableOrderLimiter, (req, res, next) => {
+  app.post('/api/orders', tableOrderLimiter, async (req, res, next) => {
     try {
       const input = parseBody(createOrderSchema, req.body);
       const staffSession = getStaffSession(req);
@@ -808,6 +833,13 @@ export function createCafeServer(
         res.status(403).json({ error: 'This idempotency key belongs to another customer order' });
         return;
       }
+
+      // Do not acknowledge a newly-created order until the persistence layer confirms
+      // the snapshot write. Replays remain safe through the order idempotency key.
+      if (!result.duplicate) {
+        await store.flushToPersistence();
+      }
+
       if (!staffSession) {
         issueOrUpdateCustomerSessionCookie(req, res, result.order.id, customerId);
       }
