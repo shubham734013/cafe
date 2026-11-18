@@ -1143,3 +1143,52 @@ export const CUSTOMER_REVIEWS: CustomerReview[] = [
     likesCount: 12,
   },
 ];
+
+export const INITIAL_RECIPES: Record<string, Array<{ ingredientId: string; amount: number }>> = {
+  cappuccino: [
+    { ingredientId: 'ing-beans', amount: 0.02 },
+    { ingredientId: 'ing-milk', amount: 0.2 },
+  ],
+  'protein-shake': [{ ingredientId: 'ing-milk', amount: 0.25 }],
+  'veg-sandwich': [{ ingredientId: 'ing-bread', amount: 2 }],
+  'paneer-wrap': [{ ingredientId: 'ing-paneer', amount: 0.1 }],
+  'cold-coffee': [
+    { ingredientId: 'ing-beans', amount: 0.02 },
+    { ingredientId: 'ing-milk', amount: 0.2 },
+  ],
+  'test-chai-1': [{ ingredientId: 'ing-milk', amount: 0.1 }],
+  'espresso-single': [{ ingredientId: 'ing-beans', amount: 0.018 }],
+  'espresso-double': [{ ingredientId: 'ing-beans', amount: 0.036 }],
+  'flat-white': [
+    { ingredientId: 'ing-beans', amount: 0.02 },
+    { ingredientId: 'ing-milk', amount: 0.18 },
+  ],
+  'iced-latte': [
+    { ingredientId: 'ing-beans', amount: 0.02 },
+    { ingredientId: 'ing-milk', amount: 0.22 },
+  ],
+  'margherita-pizza': [
+    { ingredientId: 'ing-paneer', amount: 0.1 },
+    { ingredientId: 'ing-bread', amount: 1 },
+  ],
+  'classic-cheeseburger': [
+    { ingredientId: 'ing-bread', amount: 2 },
+    { ingredientId: 'ing-paneer', amount: 0.05 },
+  ],
+  'creamy-alfredo-pasta': [
+    { ingredientId: 'ing-milk', amount: 0.15 },
+    { ingredientId: 'ing-paneer', amount: 0.05 },
+  ],
+  'mediterranean-salad': [{ ingredientId: 'ing-paneer', amount: 0.05 }],
+  'citrus-sunrise-drink': [{ ingredientId: 'ing-syrup', amount: 0.03 }],
+  'berry-cheesecake': [
+    { ingredientId: 'ing-milk', amount: 0.15 },
+    { ingredientId: 'ing-syrup', amount: 0.02 },
+  ],
+  'french-fries': [{ ingredientId: 'ing-fries', amount: 0.2 }],
+  mocha: [
+    { ingredientId: 'ing-beans', amount: 0.02 },
+    { ingredientId: 'ing-milk', amount: 0.2 },
+    { ingredientId: 'ing-syrup', amount: 0.02 },
+  ],
+};

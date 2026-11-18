@@ -6,8 +6,35 @@ interface RateLimitOptions {
   keyPrefix: string;
 }
 
+/**
+ * Extracts client IP securely without allowing spoofed X-Forwarded-For headers
+ * from untrusted upstream connections.
+ */
+export function getTrustedClientIp(req: Request): string {
+  // If Express trust proxy is enabled, req.ip resolves via configured trusted proxies
+  if (req.ip && req.ip !== '::1' && req.ip !== '127.0.0.1') {
+    return req.ip;
+  }
+
+  // If behind a trusted reverse proxy (explicitly configured via TRUSTED_PROXY)
+  const isTrustedProxy = Boolean(process.env.TRUST_PROXY || process.env.TRUSTED_PROXY);
+  if (isTrustedProxy) {
+    const xff = req.headers['x-forwarded-for'];
+    if (typeof xff === 'string' && xff.trim()) {
+      const parts = xff.split(',').map((p) => p.trim()).filter(Boolean);
+      // Last entry added by immediate trusted proxy or right-to-left evaluation
+      if (parts.length > 0) {
+        return parts[0];
+      }
+    }
+  }
+
+  return req.ip || req.socket.remoteAddress || '127.0.0.1';
+}
+
 export function createRateLimiter(options: RateLimitOptions) {
   const hits = new Map<string, number[]>();
+  const MAX_TRACKED_KEYS = 10_000;
 
   const sweepInterval = setInterval(() => {
     const cutoff = Date.now() - options.windowMs;
@@ -23,15 +50,17 @@ export function createRateLimiter(options: RateLimitOptions) {
   sweepInterval.unref();
 
   return (req: Request, res: Response, next: NextFunction): void => {
-    const ip =
-      (typeof req.headers['x-forwarded-for'] === 'string'
-        ? req.headers['x-forwarded-for'].split(',')[0]?.trim()
-        : undefined) ||
-      req.ip ||
-      'unknown';
-    const key = `${options.keyPrefix}:${ip}`;
+    const clientIp = getTrustedClientIp(req);
+    const key = `${options.keyPrefix}:${clientIp}`;
     const now = Date.now();
     const cutoff = now - options.windowMs;
+
+    // Guard against memory exhaustion from random IP spoofing
+    if (hits.size >= MAX_TRACKED_KEYS && !hits.has(key)) {
+      // Evict oldest keys
+      const keys = Array.from(hits.keys()).slice(0, 500);
+      for (const k of keys) hits.delete(k);
+    }
 
     const existing = (hits.get(key) ?? []).filter((t) => t > cutoff);
     if (existing.length >= options.maxRequests) {

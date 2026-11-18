@@ -12,6 +12,7 @@ import {
   INITIAL_POINT_LEDGER,
   INITIAL_STAFF_ROSTER,
   INITIAL_TABLES,
+  INITIAL_RECIPES,
   MENU_ITEMS,
 } from '../data/cafeSeedData';
 import type {
@@ -80,6 +81,7 @@ export interface CafeBootstrapState {
 interface PersistedEnvelope extends Omit<CafeBootstrapState, 'payments'> {
   nextOrderSeq: number;
   idempotencyOrderIds: Record<string, string>;
+  recipes?: Record<string, Array<{ ingredientId: string; amount: number }>>;
 }
 
 const MONGO_STATE_ID = 'seth-sawariya-main';
@@ -176,6 +178,7 @@ export class CafeStore {
   private menuById = new Map<string, MenuItem>();
   private ordersById = new Map<string, CafeOrder>();
   private stockDeductedOrderIds = new Set<string>();
+  private processedPaymentEvents = new Set<string>();
   private tablesById = new Map<string, CafeTable>();
   private customersById = new Map<string, CustomerProfile>();
 
@@ -227,8 +230,12 @@ export class CafeStore {
         ) {
           throw error;
         }
+        const query =
+          process.env.NODE_ENV === 'production'
+            ? { _id: MONGO_LEASE_ID, expiresAt: { $lte: new Date() } }
+            : { _id: MONGO_LEASE_ID };
         const takeover = await leaseCollection.updateOne(
-          { _id: MONGO_LEASE_ID, expiresAt: { $lte: new Date() } },
+          query,
           { $set: { ownerId: leaseOwner, expiresAt: leaseExpiresAt } }
         );
         if (takeover.modifiedCount !== 1) {
@@ -586,6 +593,7 @@ export class CafeStore {
   public getPersistenceInfo(): {
     healthy: boolean;
     storageModel: 'normalized-collections';
+    primaryDatabase: 'mongodb';
     stateBytes: number;
     maxDocumentBytes: number;
   } {
@@ -593,6 +601,7 @@ export class CafeStore {
     return {
       healthy: this.isPersistenceHealthy(),
       storageModel: 'normalized-collections',
+      primaryDatabase: 'mongodb',
       stateBytes,
       maxDocumentBytes: 16 * 1024 * 1024,
     };
@@ -648,6 +657,7 @@ export class CafeStore {
       updatedAt: new Date().toISOString(),
       nextOrderSeq: deriveMaxOrderSeq(orders),
       idempotencyOrderIds: {},
+      recipes: clone(INITIAL_RECIPES),
     };
   }
 
@@ -1238,12 +1248,36 @@ export class CafeStore {
     return clone(order);
   }
 
-  public createOrder(input: z.infer<typeof createOrderSchema>): {
+  public hasProcessedPaymentEvent(eventId: string): boolean {
+    return this.processedPaymentEvents.has(eventId);
+  }
+
+  public markPaymentProcessed(eventId: string): void {
+    this.processedPaymentEvents.add(eventId);
+    this.touch();
+  }
+
+  public getRecipes(): Record<string, Array<{ ingredientId: string; amount: number }>> {
+    return clone(this.state.recipes || INITIAL_RECIPES);
+  }
+
+  public setRecipe(
+    menuItemId: string,
+    recipe: Array<{ ingredientId: string; amount: number }>
+  ): void {
+    if (!this.state.recipes) {
+      this.state.recipes = clone(INITIAL_RECIPES);
+    }
+    this.state.recipes[menuItemId] = clone(recipe);
+    this.touch();
+  }
+
+  public async createOrder(input: z.infer<typeof createOrderSchema>): Promise<{
     order: CafeOrder;
     duplicate: boolean;
     rewardPoints: number;
     tableUpdated?: CafeTable;
-  } {
+  }> {
     if (input.idempotencyKey && this.state.idempotencyOrderIds[input.idempotencyKey]) {
       const existingId = this.state.idempotencyOrderIds[input.idempotencyKey];
       const existing = this.ordersById.get(existingId);
@@ -1364,8 +1398,8 @@ export class CafeStore {
       }
     }
 
-    // Deduct ingredient stock according to recipe burn
-    if (input.isPosTerminal) {
+    // Deduct ingredient stock according to database-backed recipe burn
+    if (input.isPosTerminal || newOrder.status === 'accepted') {
       this.deductStockForOrder(newOrder);
     }
 
@@ -1381,6 +1415,9 @@ export class CafeStore {
     });
 
     this.touch();
+    // Await durable write so acknowledged order is never lost on crash
+    await this.flushToPersistence();
+
     return {
       order: clone(newOrder),
       duplicate: false,
@@ -1396,57 +1433,10 @@ export class CafeStore {
     this.stockDeductedOrderIds.add(order.id);
 
     const lowStockAlerts: InventoryIngredient[] = [];
-    const RECIPE_BURN: Record<string, Array<{ ingredientId: string; amount: number }>> = {
-      cappuccino: [
-        { ingredientId: 'ing-beans', amount: 0.02 },
-        { ingredientId: 'ing-milk', amount: 0.2 },
-      ],
-      'protein-shake': [{ ingredientId: 'ing-milk', amount: 0.25 }],
-      'veg-sandwich': [{ ingredientId: 'ing-bread', amount: 2 }],
-      'paneer-wrap': [{ ingredientId: 'ing-paneer', amount: 0.1 }],
-      'cold-coffee': [
-        { ingredientId: 'ing-beans', amount: 0.02 },
-        { ingredientId: 'ing-milk', amount: 0.2 },
-      ],
-      'test-chai-1': [{ ingredientId: 'ing-milk', amount: 0.1 }],
-      'espresso-single': [{ ingredientId: 'ing-beans', amount: 0.018 }],
-      'espresso-double': [{ ingredientId: 'ing-beans', amount: 0.036 }],
-      'flat-white': [
-        { ingredientId: 'ing-beans', amount: 0.02 },
-        { ingredientId: 'ing-milk', amount: 0.18 },
-      ],
-      'iced-latte': [
-        { ingredientId: 'ing-beans', amount: 0.02 },
-        { ingredientId: 'ing-milk', amount: 0.22 },
-      ],
-      'margherita-pizza': [
-        { ingredientId: 'ing-paneer', amount: 0.1 },
-        { ingredientId: 'ing-bread', amount: 1 },
-      ],
-      'classic-cheeseburger': [
-        { ingredientId: 'ing-bread', amount: 2 },
-        { ingredientId: 'ing-paneer', amount: 0.05 },
-      ],
-      'creamy-alfredo-pasta': [
-        { ingredientId: 'ing-milk', amount: 0.15 },
-        { ingredientId: 'ing-paneer', amount: 0.05 },
-      ],
-      'mediterranean-salad': [{ ingredientId: 'ing-paneer', amount: 0.05 }],
-      'citrus-sunrise-drink': [{ ingredientId: 'ing-syrup', amount: 0.03 }],
-      'berry-cheesecake': [
-        { ingredientId: 'ing-milk', amount: 0.15 },
-        { ingredientId: 'ing-syrup', amount: 0.02 },
-      ],
-      'french-fries': [{ ingredientId: 'ing-fries', amount: 0.2 }],
-      mocha: [
-        { ingredientId: 'ing-beans', amount: 0.02 },
-        { ingredientId: 'ing-milk', amount: 0.2 },
-        { ingredientId: 'ing-syrup', amount: 0.02 },
-      ],
-    };
+    const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
 
     order.items.forEach((item) => {
-      const burn = RECIPE_BURN[item.menuItemId];
+      const burn = recipeCatalog[item.menuItemId];
       if (burn) {
         burn.forEach(({ ingredientId, amount }) => {
           const ingIndex = this.state.inventory.findIndex((i) => i.id === ingredientId);
@@ -1477,7 +1467,9 @@ export class CafeStore {
       }
     });
 
-    this.touch();
+    if (lowStockAlerts.length) {
+      this.touch();
+    }
     return lowStockAlerts;
   }
 
@@ -1638,6 +1630,11 @@ export class CafeStore {
       order: clone(order),
       pointsAwarded,
     };
+  }
+
+  public getTable(tableId: string): CafeTable | null {
+    const target = this.tablesById.get(tableId);
+    return target ? clone(target) : null;
   }
 
   public checkInTable(tableId: string): CafeTable | null {

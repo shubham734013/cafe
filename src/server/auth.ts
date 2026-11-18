@@ -81,13 +81,21 @@ const ROLE_CONFIGS: Array<{ role: StaffRole; staffName: string; pin: string }> =
   },
 ];
 
+function getRoleSalt(role: StaffRole): string {
+  return crypto
+    .createHmac('sha256', getAuthSecret())
+    .update(`cafeos-staff-role-salt-v2:${role}`)
+    .digest('hex');
+}
+
 const STORED_ROLE_HASHES = ROLE_CONFIGS.map((cfg) => ({
   role: cfg.role,
   staffName: cfg.staffName,
-  hash: crypto.scryptSync(cfg.pin, PIN_SALT, 32),
+  hash: crypto.scryptSync(cfg.pin, getRoleSalt(cfg.role), 32),
 }));
 
 export interface StaffSessionPayload {
+  staffId?: string;
   role: StaffRole;
   staffName: string;
   issuedAt: number;
@@ -102,13 +110,16 @@ export interface CustomerSessionPayload {
 }
 
 export function authenticateStaffPin(
-  pin: string
-): { role: StaffRole; staffName: string } | null {
-  const candidate = crypto.scryptSync(pin, PIN_SALT, 32);
-  let matched: { role: StaffRole; staffName: string } | null = null;
-  for (const entry of STORED_ROLE_HASHES) {
-    if (crypto.timingSafeEqual(candidate, entry.hash)) {
-      matched = { role: entry.role, staffName: entry.staffName };
+  pin: string,
+  staffId?: string
+): { role: StaffRole; staffName: string; staffId?: string } | null {
+  let matched: { role: StaffRole; staffName: string; staffId?: string } | null = null;
+  for (const entry of ROLE_CONFIGS) {
+    const salt = getRoleSalt(entry.role);
+    const candidate = crypto.scryptSync(pin, salt, 32);
+    const targetHash = crypto.scryptSync(entry.pin, salt, 32);
+    if (crypto.timingSafeEqual(candidate, targetHash)) {
+      matched = { role: entry.role, staffName: entry.staffName, staffId };
     }
   }
   return matched;
@@ -208,6 +219,13 @@ export function getStaffSessionFromCookieHeader(
 
 export function getCustomerSession(req: Request): CustomerSessionPayload | null {
   const cookies = parseCookies(req.headers.cookie);
+  return verifyCustomerSessionToken(cookies[CUSTOMER_SESSION_COOKIE]);
+}
+
+export function getCustomerSessionFromCookieHeader(
+  cookieHeader: string | undefined
+): CustomerSessionPayload | null {
+  const cookies = parseCookies(cookieHeader);
   return verifyCustomerSessionToken(cookies[CUSTOMER_SESSION_COOKIE]);
 }
 

@@ -30,6 +30,7 @@ import {
   canCustomerAccessOrder,
   clearStaffSessionCookie,
   getCustomerSession,
+  getCustomerSessionFromCookieHeader,
   getStaffSession,
   getStaffSessionFromCookieHeader,
   hasStaffRole,
@@ -38,7 +39,7 @@ import {
 } from './auth';
 import { createRateLimiter, createTableRateLimiter } from './rateLimit';
 import { InvalidDomainTransitionError } from '../state/cafeStateMachines';
-import type { ScreenId, StaffRole } from '../types/cafe';
+import type { CafeOrder, ScreenId, StaffRole } from '../types/cafe';
 import { cafeOpenApiSpec } from './openapi';
 import { CafeStore } from './store';
 import {
@@ -118,65 +119,135 @@ export function createCafeServer(
 
   const app = express();
   const httpServer = http.createServer(app);
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
+    : [
+        'http://localhost:3000',
+        'http://localhost:3002',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:3002',
+        'http://localhost:5173',
+      ];
+
   const io = new SocketIOServer(httpServer, {
-    cors: { origin: true, credentials: true },
+    cors: {
+      origin: (requestOrigin, callback) => {
+        if (!requestOrigin) return callback(null, true);
+        if (
+          process.env.NODE_ENV !== 'production' ||
+          allowedOrigins.includes(requestOrigin) ||
+          /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(requestOrigin)
+        ) {
+          return callback(null, requestOrigin);
+        }
+        return callback(new Error(`CORS origin not allowed: ${requestOrigin}`), false);
+      },
+      credentials: true,
+    },
   });
 
-  const STAFF_ROOM = 'outlet:seth-sawariya-main:staff';
-  const PUBLIC_ROOM = 'outlet:seth-sawariya-main:public';
+  const cafeId = 'seth-sawariya-main';
+  const STAFF_ROOM = `outlet:${cafeId}:staff`;
+  const KITCHEN_ROOM = `outlet:${cafeId}:kitchen`;
+  const PUBLIC_ROOM = `outlet:${cafeId}:public`;
+
+  io.use((socket, next) => {
+    const cookieHeader = socket.handshake.headers.cookie;
+    (socket.data as any).staffSession = getStaffSessionFromCookieHeader(cookieHeader);
+    (socket.data as any).customerSession = getCustomerSessionFromCookieHeader(cookieHeader);
+    next();
+  });
 
   io.on('connection', (socket) => {
-    const cookieHeader = socket.handshake.headers.cookie;
-    const staffSession = getStaffSessionFromCookieHeader(cookieHeader);
-    const cafeId = (socket.handshake.query.cafeId as string) || 'seth-sawariya-main';
+    const staffSession = (socket.data as any).staffSession;
+    const customerSession = (socket.data as any).customerSession;
     const tableToken = socket.handshake.query.tableToken as string;
-
-    const CAFE_ROOM = `cafe:${cafeId}`;
-    const CAFE_STAFF_ROOM = `cafe:${cafeId}:staff`;
-    const CAFE_KITCHEN_ROOM = `cafe:${cafeId}:kitchen`;
-
-    void socket.join(CAFE_ROOM);
 
     if (staffSession) {
       void socket.join(STAFF_ROOM);
-      void socket.join(CAFE_STAFF_ROOM);
       if (['kitchen', 'barista', 'owner', 'manager'].includes(staffSession.role)) {
-        void socket.join(CAFE_KITCHEN_ROOM);
+        void socket.join(KITCHEN_ROOM);
       }
     } else {
       void socket.join(PUBLIC_ROOM);
-      if (tableToken) {
-        void socket.join(`table:${tableToken}`);
+      if (customerSession?.orderIds?.length) {
+        for (const oid of customerSession.orderIds) {
+          void socket.join(`order:${oid}`);
+        }
+      }
+      if (tableToken && typeof tableToken === 'string') {
+        const table = store.getTable(tableToken.trim().toUpperCase());
+        if (table) {
+          void socket.join(`table:${table.id}`);
+        }
       }
     }
 
-    // Reject unverified arbitrary room joins from clients
-    socket.on('outlet:join', (data?: { tableToken?: string }) => {
-      const currentStaff = getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
+    // Explicit authenticated room subscriptions only
+    socket.on('outlet:join', (data?: { tableToken?: string; orderId?: string }) => {
+      const currentStaff = (socket.data as any).staffSession || getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
+      const currentCust = (socket.data as any).customerSession || getCustomerSessionFromCookieHeader(socket.handshake.headers.cookie);
+
       if (currentStaff) {
         void socket.join(STAFF_ROOM);
-        void socket.join(CAFE_STAFF_ROOM);
+        if (['kitchen', 'barista', 'owner', 'manager'].includes(currentStaff.role)) {
+          void socket.join(KITCHEN_ROOM);
+        }
       } else {
         void socket.join(PUBLIC_ROOM);
         if (data?.tableToken) {
-          void socket.join(`table:${data.tableToken}`);
+          const table = store.getTable(data.tableToken.trim().toUpperCase());
+          if (table) void socket.join(`table:${table.id}`);
         }
+        if (data?.orderId && currentCust?.orderIds?.includes(data.orderId)) {
+          void socket.join(`order:${data.orderId}`);
+        }
+      }
+    });
+
+    socket.on('order:subscribe', (data?: { orderId?: string }) => {
+      if (!data?.orderId) return;
+      const currentStaff = (socket.data as any).staffSession || getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
+      const currentCust = (socket.data as any).customerSession || getCustomerSessionFromCookieHeader(socket.handshake.headers.cookie);
+      if (currentStaff || currentCust?.orderIds?.includes(data.orderId)) {
+        void socket.join(`order:${data.orderId}`);
       }
     });
   });
 
   const emitSync = (event: string, payload?: unknown) => {
-    const data = payload ?? { ts: Date.now() };
+    const data = (payload ?? { ts: Date.now() }) as Record<string, any>;
+    const order = data?.order as CafeOrder | undefined;
+    const orderId = order?.id || (typeof data?.orderId === 'string' ? data.orderId : undefined);
+    const tableNumber = order?.tableNumber || (typeof data?.tableNumber === 'string' ? data.tableNumber : undefined);
+
+    // 1. Staff room receives all operational events
     io.to(STAFF_ROOM).emit(event, data);
     io.to(STAFF_ROOM).emit('cafe:sync', { event, ts: Date.now() });
-    io.to(PUBLIC_ROOM).emit('cafe:sync', { event, ts: Date.now() });
 
-    // Multi-screen live updates for all connected devices
-    io.emit(event, data);
-    if (event === 'order:created') {
-      io.to(STAFF_ROOM).emit('order:new', data);
-      io.emit('order:new', data);
+    // 2. Kitchen room receives cooking tickets and stock/ingredient events
+    if (
+      event.startsWith('order:') ||
+      event.startsWith('inventory:') ||
+      event.startsWith('stock:')
+    ) {
+      io.to(KITCHEN_ROOM).emit(event, data);
     }
+
+    // 3. Isolated Customer delivery: only emit order events to the specific authorized order room
+    if (orderId) {
+      io.to(`order:${orderId}`).emit(event, data);
+      io.to(`order:${orderId}`).emit('order:updated', data);
+    }
+    if (tableNumber) {
+      io.to(`table:${tableNumber}`).emit(event, data);
+    }
+
+    // 4. Non-sensitive catalog/sync notifications to public room
+    if (event === 'menu:item-availability' || event === 'cafe:sync') {
+      io.to(PUBLIC_ROOM).emit(event, { ts: Date.now() });
+    }
+    // NEVER broadcast private customer order events globally via io.emit()!
   };
 
   const checkStaffRoles = (req: Request, allowedRoles: readonly StaffRole[]): AuthCheckResult => {
@@ -403,21 +474,65 @@ export function createCafeServer(
       }
 
       const p = payload as {
+        event_time?: string;
         type?: string;
         data?: {
-          order?: { order_id?: string };
-          payment?: { payment_status?: string; bank_reference?: string };
+          order?: {
+            order_id?: string;
+            order_amount?: number;
+            order_currency?: string;
+          };
+          payment?: {
+            cf_payment_id?: string | number;
+            payment_status?: string;
+            payment_amount?: number;
+            payment_currency?: string;
+            bank_reference?: string;
+          };
         };
       };
       const orderId = p?.data?.order?.order_id;
-      if (!orderId || !store.getOrder(orderId)) {
+      const existingOrder = orderId ? store.getOrder(orderId) : null;
+      if (!orderId || !existingOrder) {
         res.status(404).json({ error: 'CafeOS order not found.' });
+        return;
+      }
+
+      // 1. Payment Event Idempotency & Deduplication
+      const paymentIdentifier = String(
+        p?.data?.payment?.cf_payment_id || p?.data?.payment?.bank_reference || `${orderId}:${p?.type}`
+      );
+      if (store.hasProcessedPaymentEvent(paymentIdentifier)) {
+        res.status(200).json({ received: true, duplicate: true });
+        return;
+      }
+
+      // 2. Validate Payment Amount against order total
+      const reportedAmount = Number(
+        p?.data?.payment?.payment_amount ?? p?.data?.order?.order_amount ?? 0
+      );
+      if (reportedAmount > 0 && Math.abs(reportedAmount - existingOrder.total) > 0.01) {
+        res.status(400).json({
+          error: `Payment amount (${reportedAmount}) does not match order total (${existingOrder.total}).`,
+        });
+        return;
+      }
+
+      // 3. Validate Payment Currency
+      const reportedCurrency = (
+        p?.data?.payment?.payment_currency ?? p?.data?.order?.order_currency ?? 'INR'
+      ).toUpperCase();
+      if (reportedCurrency !== 'INR') {
+        res.status(400).json({
+          error: `Payment currency (${reportedCurrency}) is not valid for this outlet.`,
+        });
         return;
       }
 
       try {
         const paymentStatus = p?.data?.payment?.payment_status?.toUpperCase();
         if (p?.type === 'PAYMENT_SUCCESS_WEBHOOK' || paymentStatus === 'SUCCESS') {
+          store.markPaymentProcessed(paymentIdentifier);
           const utr = p?.data?.payment?.bank_reference;
           store.attachGatewayPayment(orderId, orderId, 'paid', utr);
           await store.flushToPersistence();
@@ -685,6 +800,7 @@ export function createCafeServer(
     res.status(persistence.healthy ? 200 : 503).json({
       ok: persistence.healthy,
       service: 'seth-sawariya-cafeos',
+      primaryDatabase: 'mongodb',
       socketioClients: io.engine.clientsCount,
       updatedAt: store.getBootstrap().updatedAt,
       persistence,
@@ -785,7 +901,7 @@ export function createCafeServer(
     }
   );
 
-  app.post('/api/orders', tableOrderLimiter, (req, res, next) => {
+  app.post('/api/orders', tableOrderLimiter, async (req, res, next) => {
     try {
       const input = parseBody(createOrderSchema, req.body);
       const staffSession = getStaffSession(req);
@@ -803,7 +919,7 @@ export function createCafeServer(
         ? input.customerId
         : customerSession?.customerId || `guest_${crypto.randomUUID()}`;
       const orderInput = staffSession ? input : { ...input, customerId };
-      const result = store.createOrder(orderInput);
+      const result = await store.createOrder(orderInput);
       if (!staffSession && result.duplicate && result.order.customerId !== customerId) {
         res.status(403).json({ error: 'This idempotency key belongs to another customer order' });
         return;

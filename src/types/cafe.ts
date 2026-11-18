@@ -78,6 +78,11 @@ export type CustomerSegment = 'all' | 'vip' | 'loyal' | 'regular' | 'new' | 'ris
 export type CampaignFilter = 'all' | 'active' | 'scheduled' | 'paused' | 'expired';
 export type StaffShiftFilter = 'all' | 'active' | 'morning' | 'fullday';
 
+export interface RecipeBurnItem {
+  ingredientId: string;
+  amount: number;
+}
+
 export interface MenuItem {
   id: string;
   name: string;
@@ -93,6 +98,7 @@ export interface MenuItem {
   imageUrl: string;
   unitsSold: number;
   reviewsCount?: number;
+  recipe?: RecipeBurnItem[];
 }
 
 export interface CartItem {

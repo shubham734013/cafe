@@ -3,6 +3,7 @@ import path from 'node:path';
 import express from 'express';
 import { createCafeServer } from './src/server/app';
 import { CafeStore } from './src/server/store';
+import { checkPostgresHealth, closeDbPool } from './src/server/db';
 
 const PORT = Number(process.env.PORT || 3000);
 const isProduction = process.env.NODE_ENV === 'production';
@@ -13,10 +14,26 @@ async function startServer() {
   let closeSocketServer: (() => Promise<void>) | undefined;
 
   try {
+    // 1. Primary Operational Database: MongoDB
+    // MongoDB via CafeStore is the authoritative source of truth for orders, inventory, and transactions.
     await store.connectMongo(
       process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017',
       process.env.MONGODB_DB_NAME || 'cafeos'
     );
+    console.log('[CafeOS] Primary Database: MongoDB connected (authoritative for orders, inventory, and state).');
+
+    // 2. Check Optional Analytical Database (PostgreSQL)
+    const pgHealth = await checkPostgresHealth();
+    if (pgHealth.configured) {
+      if (pgHealth.connected) {
+        console.log('[CafeOS] Analytical Database: PostgreSQL connected for reporting & archival.');
+      } else {
+        console.warn(`[CafeOS] Analytical Database: PostgreSQL configured but unreachable (${pgHealth.error}). Primary operations unaffected.`);
+      }
+    } else {
+      console.log('[CafeOS] Analytical Database: PostgreSQL not configured. MongoDB serving as all-in-one store of record.');
+    }
+
     const server = createCafeServer(store);
     const { app, httpServer } = server;
     closeSocketServer = () => server.io.close();
@@ -38,7 +55,7 @@ async function startServer() {
     }
 
     const shutdown = async (signal: string) => {
-      console.log(`[CafeOS] Received ${signal}, closing the server and flushing MongoDB state...`);
+      console.log(`[CafeOS] Received ${signal}, closing the server and flushing database state...`);
       if (closeViteServer) {
         try {
           await closeViteServer();
@@ -60,6 +77,11 @@ async function startServer() {
       } catch (error) {
         console.error('[CafeOS] Failed to flush MongoDB state during shutdown:', error);
         process.exitCode = 1;
+      }
+      try {
+        await closeDbPool();
+      } catch (error) {
+        console.error('[CafeOS] Failed to close PostgreSQL pool:', error);
       }
     };
 
@@ -84,6 +106,11 @@ async function startServer() {
       await store.closeMongo();
     } catch (closeError) {
       console.error('[CafeOS] Failed to close MongoDB after startup error:', closeError);
+    }
+    try {
+      await closeDbPool();
+    } catch {
+      // ignore
     }
     throw error;
   }
