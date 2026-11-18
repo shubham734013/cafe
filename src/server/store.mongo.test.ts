@@ -140,3 +140,48 @@ test('inventory deduction rejects insufficient stock without partially mutating 
   const after = store.getBootstrap().inventory.find((item) => item.id === ingredient.id)?.quantity;
   assert.equal(after, before);
 });
+
+
+test('order creation and acceptance fail atomically when recipe stock is insufficient', async () => {
+  const store = new CafeStore(null);
+  const menuItem = store.getBootstrap().menuItems.find((item) => item.id === 'cold-coffee');
+  const ingredient = store.getBootstrap().inventory[0];
+  assert.ok(menuItem);
+  assert.ok(ingredient);
+
+  const initialOrderCount = store.getOrders().length;
+  store.setRecipe(menuItem.id, [
+    { ingredientId: ingredient.id, amount: ingredient.quantity + 1 },
+  ]);
+
+  await assert.rejects(
+    store.createOrder({
+      outletId: 'seth-sawariya-main',
+      serviceMode: 'takeaway',
+      items: [{ menuItemId: menuItem.id, name: menuItem.name, price: menuItem.price, quantity: 1, station: menuItem.station }],
+      couponCode: '',
+      cookingNote: '',
+      isPosTerminal: true,
+      paymentMode: 'cash',
+    }),
+    /Insufficient stock/
+  );
+  assert.equal(store.getOrders().length, initialOrderCount);
+
+  store.setRecipe(menuItem.id, [{ ingredientId: ingredient.id, amount: 0.01 }]);
+  const placed = await store.createOrder({
+    outletId: 'seth-sawariya-main',
+    serviceMode: 'takeaway',
+    items: [{ menuItemId: menuItem.id, name: menuItem.name, price: menuItem.price, quantity: 1, station: menuItem.station }],
+    couponCode: '',
+    cookingNote: '',
+    isPosTerminal: false,
+    paymentMode: 'upi',
+  });
+  store.setRecipe(menuItem.id, [
+    { ingredientId: ingredient.id, amount: store.getBootstrap().inventory.find((item) => item.id === ingredient.id)!.quantity + 1 },
+  ]);
+
+  assert.throws(() => store.updateOrderStatus(placed.order.id, 'accepted'), /Insufficient stock/);
+  assert.equal(store.getOrder(placed.order.id)?.status, 'placed');
+});
