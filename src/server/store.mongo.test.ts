@@ -109,3 +109,19 @@ test('local snapshots preserve recipes and payment/inventory idempotency markers
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+
+test('inventory deduction rejects insufficient stock without partially mutating inventory', () => {
+  const store = new CafeStore(null);
+  const order = store.getOrders()[0];
+  const ingredient = store.getBootstrap().inventory[0];
+  assert.ok(order);
+  assert.ok(ingredient);
+
+  const before = store.getBootstrap().inventory.find((item) => item.id === ingredient.id)?.quantity;
+  store.setRecipe(order.items[0]!.menuItemId, [{ ingredientId: ingredient.id, amount: ingredient.quantity + 1 }]);
+
+  assert.throws(() => store.deductStockForOrder(order), /Insufficient stock/);
+  const after = store.getBootstrap().inventory.find((item) => item.id === ingredient.id)?.quantity;
+  assert.equal(after, before);
+});
