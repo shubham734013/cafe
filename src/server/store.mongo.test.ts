@@ -1,4 +1,7 @@
 import test from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { MongoClient } from 'mongodb';
@@ -80,3 +83,29 @@ test(
     }
   }
 );
+
+
+test('local snapshots preserve recipes and payment/inventory idempotency markers across restart', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cafeos-store-'));
+  const persistPath = path.join(directory, 'cafe-state.json');
+  try {
+    const firstStore = new CafeStore(persistPath);
+    const order = firstStore.getOrders()[0];
+    const ingredient = firstStore.getBootstrap().inventory[0];
+    assert.ok(order);
+    assert.ok(ingredient);
+
+    const recipe = [{ ingredientId: ingredient.id, amount: 0.01 }];
+    firstStore.setRecipe(order.items[0]!.menuItemId, recipe);
+    firstStore.markPaymentProcessed('cashfree-payment-test-1');
+    firstStore.deductStockForOrder(order);
+    firstStore.flushToDiskSync();
+
+    const reopenedStore = new CafeStore(persistPath);
+    assert.deepEqual(reopenedStore.getRecipes()[order.items[0]!.menuItemId], recipe);
+    assert.equal(reopenedStore.hasProcessedPaymentEvent('cashfree-payment-test-1'), true);
+    assert.deepEqual(reopenedStore.deductStockForOrder(order), []);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
