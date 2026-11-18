@@ -1,4 +1,7 @@
 import test from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { MongoClient } from 'mongodb';
@@ -38,6 +41,15 @@ test(
 
       const initialOrders = firstStore.getOrders();
       assert.ok(initialOrders.length > 0);
+      const persistenceTestOrder = initialOrders[0]!;
+      const persistenceTestIngredient = firstStore.getBootstrap().inventory[0]!;
+      const persistenceTestRecipe = [
+        { ingredientId: persistenceTestIngredient.id, amount: 0.01 },
+      ];
+      firstStore.setRecipe(persistenceTestOrder.items[0]!.menuItemId, persistenceTestRecipe);
+      firstStore.markPaymentProcessed('cashfree-mongo-restart-test');
+      firstStore.deductStockForOrder(persistenceTestOrder);
+
       const initialUpdatedAt = firstStore.getBootstrap().updatedAt;
       firstStore.resetSettings();
       await firstStore.flushToPersistence();
@@ -68,6 +80,12 @@ test(
       firstConnected = false;
       await secondStore.connectMongo(mongoUri!, databaseName);
       assert.deepEqual(secondStore.getOrders(), initialOrders);
+      assert.deepEqual(
+        secondStore.getRecipes()[persistenceTestOrder.items[0]!.menuItemId],
+        persistenceTestRecipe
+      );
+      assert.equal(secondStore.hasProcessedPaymentEvent('cashfree-mongo-restart-test'), true);
+      assert.deepEqual(secondStore.deductStockForOrder(persistenceTestOrder), []);
       assert.ok(secondStore.isPersistenceHealthy());
     } finally {
       if (firstConnected) await firstStore.closeMongo();
@@ -80,3 +98,90 @@ test(
     }
   }
 );
+
+
+test('local snapshots preserve recipes and payment/inventory idempotency markers across restart', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cafeos-store-'));
+  const persistPath = path.join(directory, 'cafe-state.json');
+  try {
+    const firstStore = new CafeStore(persistPath);
+    const order = firstStore.getOrders()[0];
+    const ingredient = firstStore.getBootstrap().inventory[0];
+    assert.ok(order);
+    assert.ok(ingredient);
+
+    const recipe = [{ ingredientId: ingredient.id, amount: 0.01 }];
+    firstStore.setRecipe(order.items[0]!.menuItemId, recipe);
+    firstStore.markPaymentProcessed('cashfree-payment-test-1');
+    firstStore.deductStockForOrder(order);
+    firstStore.flushToDiskSync();
+
+    const reopenedStore = new CafeStore(persistPath);
+    assert.deepEqual(reopenedStore.getRecipes()[order.items[0]!.menuItemId], recipe);
+    assert.equal(reopenedStore.hasProcessedPaymentEvent('cashfree-payment-test-1'), true);
+    assert.deepEqual(reopenedStore.deductStockForOrder(order), []);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
+test('inventory deduction rejects insufficient stock without partially mutating inventory', () => {
+  const store = new CafeStore(null);
+  const order = store.getOrders()[0];
+  const ingredient = store.getBootstrap().inventory[0];
+  assert.ok(order);
+  assert.ok(ingredient);
+
+  const before = store.getBootstrap().inventory.find((item) => item.id === ingredient.id)?.quantity;
+  store.setRecipe(order.items[0]!.menuItemId, [{ ingredientId: ingredient.id, amount: ingredient.quantity + 1 }]);
+
+  assert.throws(() => store.deductStockForOrder(order), /Insufficient stock/);
+  const after = store.getBootstrap().inventory.find((item) => item.id === ingredient.id)?.quantity;
+  assert.equal(after, before);
+});
+
+
+test('order creation and acceptance fail atomically when recipe stock is insufficient', async () => {
+  const store = new CafeStore(null);
+  const menuItem = store.getBootstrap().menuItems.find((item) => item.id === 'cold-coffee');
+  const ingredient = store.getBootstrap().inventory[0];
+  assert.ok(menuItem);
+  assert.ok(ingredient);
+
+  const initialOrderCount = store.getOrders().length;
+  store.setRecipe(menuItem.id, [
+    { ingredientId: ingredient.id, amount: ingredient.quantity + 1 },
+  ]);
+
+  await assert.rejects(
+    store.createOrder({
+      outletId: 'seth-sawariya-main',
+      serviceMode: 'takeaway',
+      items: [{ menuItemId: menuItem.id, name: menuItem.name, price: menuItem.price, quantity: 1, note: '', imageUrl: menuItem.imageUrl, station: menuItem.station }],
+      couponCode: '',
+      cookingNote: '',
+      isPosTerminal: true,
+      paymentMode: 'cash',
+    }),
+    /Insufficient stock/
+  );
+  assert.equal(store.getOrders().length, initialOrderCount);
+
+  store.setRecipe(menuItem.id, [{ ingredientId: ingredient.id, amount: 0.01 }]);
+  const placed = await store.createOrder({
+    outletId: 'seth-sawariya-main',
+    serviceMode: 'takeaway',
+    items: [{ menuItemId: menuItem.id, name: menuItem.name, price: menuItem.price, quantity: 1, station: menuItem.station }],
+    couponCode: '',
+    cookingNote: '',
+    isPosTerminal: false,
+    paymentMode: 'upi',
+  });
+  store.setRecipe(menuItem.id, [
+    { ingredientId: ingredient.id, amount: store.getBootstrap().inventory.find((item) => item.id === ingredient.id)!.quantity + 1 },
+  ]);
+
+  assert.throws(() => store.updateOrderStatus(placed.order.id, 'accepted'), /Insufficient stock/);
+  assert.equal(store.getOrder(placed.order.id)?.status, 'placed');
+});

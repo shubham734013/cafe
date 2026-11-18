@@ -118,16 +118,24 @@ export function createCafeServer(
   assertAuthSecretConfigured();
 
   const app = express();
+  const trustProxyHopsRaw = process.env.TRUST_PROXY_HOPS?.trim() ?? '0';
+  const trustProxyHops = Number(trustProxyHopsRaw);
+  if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0 || trustProxyHops > 10) {
+    throw new Error('TRUST_PROXY_HOPS must be an integer between 0 and 10.');
+  }
+  app.set('trust proxy', trustProxyHops);
   const httpServer = http.createServer(app);
   const allowedOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
-    : [
-        'http://localhost:3000',
-        'http://localhost:3002',
-        'http://127.0.0.1:3000',
-        'http://127.0.0.1:3002',
-        'http://localhost:5173',
-      ];
+    ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
+    : process.env.NODE_ENV === 'production'
+      ? []
+      : [
+          'http://localhost:3000',
+          'http://localhost:3002',
+          'http://127.0.0.1:3000',
+          'http://127.0.0.1:3002',
+          'http://localhost:5173',
+        ];
 
   const io = new SocketIOServer(httpServer, {
     cors: {
@@ -135,8 +143,7 @@ export function createCafeServer(
         if (!requestOrigin) return callback(null, true);
         if (
           process.env.NODE_ENV !== 'production' ||
-          allowedOrigins.includes(requestOrigin) ||
-          /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(requestOrigin)
+          allowedOrigins.includes(requestOrigin)
         ) {
           return callback(null, requestOrigin);
         }
@@ -161,7 +168,6 @@ export function createCafeServer(
   io.on('connection', (socket) => {
     const staffSession = (socket.data as any).staffSession;
     const customerSession = (socket.data as any).customerSession;
-    const tableToken = socket.handshake.query.tableToken as string;
 
     if (staffSession) {
       void socket.join(STAFF_ROOM);
@@ -175,16 +181,12 @@ export function createCafeServer(
           void socket.join(`order:${oid}`);
         }
       }
-      if (tableToken && typeof tableToken === 'string') {
-        const table = store.getTable(tableToken.trim().toUpperCase());
-        if (table) {
-          void socket.join(`table:${table.id}`);
-        }
-      }
+      // Table room membership is not authorized by a guessable table ID.
+      // Customer order updates are delivered through signed customer sessions.
     }
 
     // Explicit authenticated room subscriptions only
-    socket.on('outlet:join', (data?: { tableToken?: string; orderId?: string }) => {
+    socket.on('outlet:join', (data?: { orderId?: string }) => {
       const currentStaff = (socket.data as any).staffSession || getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
       const currentCust = (socket.data as any).customerSession || getCustomerSessionFromCookieHeader(socket.handshake.headers.cookie);
 
@@ -195,10 +197,6 @@ export function createCafeServer(
         }
       } else {
         void socket.join(PUBLIC_ROOM);
-        if (data?.tableToken) {
-          const table = store.getTable(data.tableToken.trim().toUpperCase());
-          if (table) void socket.join(`table:${table.id}`);
-        }
         if (data?.orderId && currentCust?.orderIds?.includes(data.orderId)) {
           void socket.join(`order:${data.orderId}`);
         }
@@ -207,9 +205,8 @@ export function createCafeServer(
 
     socket.on('order:subscribe', (data?: { orderId?: string }) => {
       if (!data?.orderId) return;
-      const currentStaff = (socket.data as any).staffSession || getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
       const currentCust = (socket.data as any).customerSession || getCustomerSessionFromCookieHeader(socket.handshake.headers.cookie);
-      if (currentStaff || currentCust?.orderIds?.includes(data.orderId)) {
+      if (currentCust?.orderIds?.includes(data.orderId)) {
         void socket.join(`order:${data.orderId}`);
       }
     });
@@ -221,29 +218,24 @@ export function createCafeServer(
     const orderId = order?.id || (typeof data?.orderId === 'string' ? data.orderId : undefined);
     const tableNumber = order?.tableNumber || (typeof data?.tableNumber === 'string' ? data.tableNumber : undefined);
 
-    // 1. Staff room receives all operational events
-    io.to(STAFF_ROOM).emit(event, data);
-    io.to(STAFF_ROOM).emit('cafe:sync', { event, ts: Date.now() });
+    // Staff and kitchen clients receive invalidation signals only. They re-fetch
+    // role-scoped data over authenticated HTTP instead of receiving broad payloads.
+    const syncNotice = { event, ts: Date.now() };
+    io.to(STAFF_ROOM).emit('cafe:sync', syncNotice);
+    io.to(KITCHEN_ROOM).emit('cafe:sync', syncNotice);
 
-    // 2. Kitchen room receives cooking tickets and stock/ingredient events
-    if (
-      event.startsWith('order:') ||
-      event.startsWith('inventory:') ||
-      event.startsWith('stock:')
-    ) {
-      io.to(KITCHEN_ROOM).emit(event, data);
-    }
-
-    // 3. Isolated Customer delivery: only emit order events to the specific authorized order room
+    // Customer order payloads are restricted to the order's signed customer session room.
     if (orderId) {
       io.to(`order:${orderId}`).emit(event, data);
       io.to(`order:${orderId}`).emit('order:updated', data);
     }
+
+    // Table rooms receive only generic invalidation signals, never order/customer data.
     if (tableNumber) {
-      io.to(`table:${tableNumber}`).emit(event, data);
+      io.to(`table:${tableNumber}`).emit('cafe:sync', syncNotice);
     }
 
-    // 4. Non-sensitive catalog/sync notifications to public room
+    // Non-sensitive catalog/sync notifications to public room
     if (event === 'menu:item-availability' || event === 'cafe:sync') {
       io.to(PUBLIC_ROOM).emit(event, { ts: Date.now() });
     }
@@ -498,55 +490,96 @@ export function createCafeServer(
         return;
       }
 
-      // 1. Payment Event Idempotency & Deduplication
-      const paymentIdentifier = String(
-        p?.data?.payment?.cf_payment_id || p?.data?.payment?.bank_reference || `${orderId}:${p?.type}`
-      );
+      const payment = p?.data?.payment;
+      const order = p?.data?.order;
+      const paymentIdentifier =
+        payment?.cf_payment_id === undefined || payment?.cf_payment_id === null
+          ? ''
+          : String(payment.cf_payment_id).trim();
+      if (!paymentIdentifier) {
+        res.status(400).json({ error: 'Cashfree payment ID is required.' });
+        return;
+      }
       if (store.hasProcessedPaymentEvent(paymentIdentifier)) {
         res.status(200).json({ received: true, duplicate: true });
         return;
       }
 
-      // 2. Validate Payment Amount against order total
-      const reportedAmount = Number(
-        p?.data?.payment?.payment_amount ?? p?.data?.order?.order_amount ?? 0
-      );
-      if (reportedAmount > 0 && Math.abs(reportedAmount - existingOrder.total) > 0.01) {
-        res.status(400).json({
-          error: `Payment amount (${reportedAmount}) does not match order total (${existingOrder.total}).`,
-        });
+      // Only the documented success event with an explicit successful payment can settle an order.
+      if (p?.type !== 'PAYMENT_SUCCESS_WEBHOOK' || payment?.payment_status?.toUpperCase() !== 'SUCCESS') {
+        res.status(200).json({ received: true, ignored: true });
         return;
       }
 
-      // 3. Validate Payment Currency
-      const reportedCurrency = (
-        p?.data?.payment?.payment_currency ?? p?.data?.order?.order_currency ?? 'INR'
-      ).toUpperCase();
-      if (reportedCurrency !== 'INR') {
-        res.status(400).json({
-          error: `Payment currency (${reportedCurrency}) is not valid for this outlet.`,
-        });
+      const paymentAmount = Number(payment.payment_amount);
+      const orderAmount = Number(order?.order_amount);
+      if (
+        !Number.isFinite(paymentAmount) ||
+        !Number.isFinite(orderAmount) ||
+        paymentAmount <= 0 ||
+        orderAmount <= 0 ||
+        Math.abs(paymentAmount - existingOrder.total) > 0.01 ||
+        Math.abs(orderAmount - existingOrder.total) > 0.01
+      ) {
+        res.status(400).json({ error: 'Cashfree payment amount is missing or does not match the CafeOS order.' });
+        return;
+      }
+
+      const paymentCurrency = payment.payment_currency?.toUpperCase();
+      const orderCurrency = order?.order_currency?.toUpperCase();
+      if (paymentCurrency !== 'INR' || orderCurrency !== 'INR') {
+        res.status(400).json({ error: 'Cashfree payment and order currency must both be INR.' });
+        return;
+      }
+
+      if (!store.isPersistenceHealthy()) {
+        res.status(503).json({ error: 'CafeOS persistence is unavailable; retry the webhook.' });
         return;
       }
 
       try {
-        const paymentStatus = p?.data?.payment?.payment_status?.toUpperCase();
-        if (p?.type === 'PAYMENT_SUCCESS_WEBHOOK' || paymentStatus === 'SUCCESS') {
-          store.markPaymentProcessed(paymentIdentifier);
-          const utr = p?.data?.payment?.bank_reference;
-          store.attachGatewayPayment(orderId, orderId, 'paid', utr);
-          await store.flushToPersistence();
-          const updated = store.getOrder(orderId);
-          if (updated) {
-            emitSync('order:updated', { order: updated });
-          }
-        } else {
-          const gatewayOrder = await upiGateway.getOrder(orderId);
-          if (gatewayOrder) {
-            await syncGatewayOrder(orderId, gatewayOrder);
-            await store.flushToPersistence();
-          }
+        // Verify the exact payment ID against Cashfree, not merely the parent order status.
+        const verifiedPayment = await upiGateway.getPaymentDetails(orderId, paymentIdentifier);
+        if (
+          !verifiedPayment ||
+          verifiedPayment.paymentId !== paymentIdentifier ||
+          verifiedPayment.status !== 'SUCCESS' ||
+          verifiedPayment.currency !== 'INR' ||
+          Math.abs(verifiedPayment.amount - existingOrder.total) > 0.01
+        ) {
+          res.status(409).json({ error: 'Cashfree could not confirm this exact payment ID, amount and currency.' });
+          return;
         }
+
+        // Also verify the parent order reference and amount with Cashfree.
+        const gatewayOrder = await upiGateway.getOrder(orderId);
+        if (
+          !gatewayOrder ||
+          gatewayOrder.status !== 'paid' ||
+          gatewayOrder.clientOrderId !== orderId ||
+          gatewayOrder.amountPaise !== Math.round(existingOrder.total * 100)
+        ) {
+          res.status(409).json({ error: 'Cashfree has not confirmed a matching successful payment.' });
+          return;
+        }
+
+        const updated = await syncGatewayOrder(orderId, gatewayOrder);
+        if (!updated || updated.paymentStatus !== 'paid') {
+          res.status(409).json({ error: 'Cashfree payment could not be reconciled with the CafeOS order.' });
+          return;
+        }
+        await store.flushToPersistence();
+
+        // Persist the deduplication marker only after the paid order is durable.
+        store.markPaymentProcessed(paymentIdentifier);
+        try {
+          await store.flushToPersistence();
+        } catch (error) {
+          store.unmarkPaymentProcessed(paymentIdentifier);
+          throw error;
+        }
+
+        emitSync('order:updated', { order: store.getOrder(orderId) });
         res.status(200).json({ received: true });
       } catch {
         res.status(503).json({ error: 'Could not sync order.' });

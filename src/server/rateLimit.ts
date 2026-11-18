@@ -16,18 +16,7 @@ export function getTrustedClientIp(req: Request): string {
     return req.ip;
   }
 
-  // If behind a trusted reverse proxy (explicitly configured via TRUSTED_PROXY)
-  const isTrustedProxy = Boolean(process.env.TRUST_PROXY || process.env.TRUSTED_PROXY);
-  if (isTrustedProxy) {
-    const xff = req.headers['x-forwarded-for'];
-    if (typeof xff === 'string' && xff.trim()) {
-      const parts = xff.split(',').map((p) => p.trim()).filter(Boolean);
-      // Last entry added by immediate trusted proxy or right-to-left evaluation
-      if (parts.length > 0) {
-        return parts[0];
-      }
-    }
-  }
+  // Forwarded headers are trusted only when Express trust proxy is explicitly configured.
 
   return req.ip || req.socket.remoteAddress || '127.0.0.1';
 }

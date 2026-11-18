@@ -22,6 +22,14 @@ interface MockCashfreeOrder {
   utr?: string;
 }
 
+export interface CashfreePaymentDetails {
+  paymentId: string;
+  status: string;
+  amount: number;
+  currency: string;
+  bankReference?: string;
+}
+
 export class CashfreeGateway implements UpiGatewayClient {
   private readonly appId: string;
   private readonly secretKey: string;
@@ -204,6 +212,49 @@ export class CashfreeGateway implements UpiGatewayClient {
       if (error instanceof UpiGatewayRequestError && error.statusCode === 404) {
         return null;
       }
+      throw error;
+    }
+  }
+
+  public async getPaymentDetails(
+    clientOrderId: string,
+    paymentId: string
+  ): Promise<CashfreePaymentDetails | null> {
+    if (!clientOrderId.trim() || !paymentId.trim()) return null;
+
+    if (this.isMock()) {
+      const mock = this.mockOrders.get(clientOrderId);
+      if (!mock || mock.status !== 'PAID') return null;
+      return {
+        paymentId,
+        status: 'SUCCESS',
+        amount: mock.amount,
+        currency: 'INR',
+        ...(mock.utr ? { bankReference: mock.utr } : {}),
+      };
+    }
+
+    try {
+      const response = await this.request(
+        `/orders/${encodeURIComponent(clientOrderId)}/payments/${encodeURIComponent(paymentId)}`,
+        { method: 'GET' }
+      );
+      if (typeof response !== 'object' || response === null) return null;
+      const data = response as Record<string, unknown>;
+      const amount = Number(data.payment_amount);
+      const resolvedPaymentId = String(data.cf_payment_id ?? '');
+      const status = String(data.payment_status ?? '').toUpperCase();
+      const currency = String(data.payment_currency ?? '').toUpperCase();
+      if (!Number.isFinite(amount) || !resolvedPaymentId || !status || !currency) return null;
+      return {
+        paymentId: resolvedPaymentId,
+        status,
+        amount,
+        currency,
+        ...(data.bank_reference ? { bankReference: String(data.bank_reference) } : {}),
+      };
+    } catch (error) {
+      if (error instanceof UpiGatewayRequestError && error.statusCode === 404) return null;
       throw error;
     }
   }

@@ -8,7 +8,58 @@ import { checkPostgresHealth, closeDbPool } from './src/server/db';
 const PORT = Number(process.env.PORT || 3000);
 const isProduction = process.env.NODE_ENV === 'production';
 
+function assertProductionEnvironment(): void {
+  if (!isProduction) return;
+
+  const required = [
+    'MONGODB_URI',
+    'CORS_ORIGIN',
+    'CASHFREE_APP_ID',
+    'CASHFREE_SECRET_KEY',
+    'CASHFREE_WEBHOOK_SECRET',
+    'CAFE_AUTH_SECRET',
+    'CAFE_OWNER_PIN',
+    'CAFE_MANAGER_PIN',
+    'CAFE_CASHIER_PIN',
+    'CAFE_BARISTA_PIN',
+    'CAFE_SERVER_PIN',
+  ];
+  const missing = required.filter((name) => !process.env[name]?.trim());
+  if (missing.length) {
+    throw new Error(`Missing required production environment variables: ${missing.join(', ')}.`);
+  }
+
+  if (process.env.CASHFREE_ENVIRONMENT !== 'PRODUCTION') {
+    throw new Error('CASHFREE_ENVIRONMENT must be PRODUCTION for a production deployment.');
+  }
+  if (/^(CF_SANDBOX|dev_)|TEST_APP/i.test(process.env.CASHFREE_APP_ID!)) {
+    throw new Error('Sandbox or mock Cashfree credentials cannot be used in production.');
+  }
+  if (process.env.CASHFREE_WEBHOOK_SECRET === process.env.CASHFREE_SECRET_KEY) {
+    throw new Error('Use a dedicated CASHFREE_WEBHOOK_SECRET, separate from the API secret key.');
+  }
+  const mongoUri = process.env.MONGODB_URI!;
+  if (/localhost|127\.0\.0\.1/i.test(mongoUri)) {
+    throw new Error('MONGODB_URI must point to a production MongoDB deployment, not localhost.');
+  }
+  if (!mongoUri.startsWith('mongodb+srv://') && !/[?&](tls|ssl)=true(?:&|$)/i.test(mongoUri)) {
+    throw new Error('Production MONGODB_URI must use TLS (mongodb+srv:// or tls=true).');
+  }
+
+  const origins = process.env.CORS_ORIGIN!.split(',').map((origin) => origin.trim()).filter(Boolean);
+  if (!origins.length || origins.some((origin) => {
+    try {
+      return new URL(origin).protocol !== 'https:';
+    } catch {
+      return true;
+    }
+  })) {
+    throw new Error('CORS_ORIGIN must contain one or more valid HTTPS origins in production.');
+  }
+}
+
 async function startServer() {
+  assertProductionEnvironment();
   const store = new CafeStore();
   let closeViteServer: (() => Promise<void>) | undefined;
   let closeSocketServer: (() => Promise<void>) | undefined;
@@ -17,7 +68,7 @@ async function startServer() {
     // 1. Primary Operational Database: MongoDB
     // MongoDB via CafeStore is the authoritative source of truth for orders, inventory, and transactions.
     await store.connectMongo(
-      process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017',
+      process.env.MONGODB_URI!,
       process.env.MONGODB_DB_NAME || 'cafeos'
     );
     console.log('[CafeOS] Primary Database: MongoDB connected (authoritative for orders, inventory, and state).');

@@ -82,6 +82,8 @@ interface PersistedEnvelope extends Omit<CafeBootstrapState, 'payments'> {
   nextOrderSeq: number;
   idempotencyOrderIds: Record<string, string>;
   recipes?: Record<string, Array<{ ingredientId: string; amount: number }>>;
+  processedPaymentEventIds?: string[];
+  stockDeductedOrderIds?: string[];
 }
 
 const MONGO_STATE_ID = 'seth-sawariya-main';
@@ -442,6 +444,9 @@ export class CafeStore {
             rewardPoints: snapshot.rewardPoints,
             updatedAt: snapshot.updatedAt,
             nextOrderSeq: snapshot.nextOrderSeq,
+            recipes: snapshot.recipes ?? INITIAL_RECIPES,
+            processedPaymentEventIds: snapshot.processedPaymentEventIds ?? [],
+            stockDeductedOrderIds: snapshot.stockDeductedOrderIds ?? [],
           },
         },
       ],
@@ -486,12 +491,18 @@ export class CafeStore {
       rewardPoints: number;
       updatedAt: string;
       nextOrderSeq: number;
+      recipes?: Record<string, Array<{ ingredientId: string; amount: number }>>;
+      processedPaymentEventIds?: string[];
+      stockDeductedOrderIds?: string[];
     }>(11);
     const settings = await readSingleton<CafeSettings>(10);
 
     const idempotencyEntries = await readRecords<{ key: string; orderId: string }>(9);
     return {
       ...state,
+      recipes: state.recipes ?? clone(INITIAL_RECIPES),
+      processedPaymentEventIds: state.processedPaymentEventIds ?? [],
+      stockDeductedOrderIds: state.stockDeductedOrderIds ?? [],
       cafeSettings: settings,
       orders: await readRecords<CafeOrder>(0),
       tables: await readRecords<CafeTable>(1),
@@ -658,10 +669,14 @@ export class CafeStore {
       nextOrderSeq: deriveMaxOrderSeq(orders),
       idempotencyOrderIds: {},
       recipes: clone(INITIAL_RECIPES),
+      processedPaymentEventIds: [],
+      stockDeductedOrderIds: [],
     };
   }
 
   private rebuildIndexes(): void {
+    this.processedPaymentEvents = new Set(this.state.processedPaymentEventIds ?? []);
+    this.stockDeductedOrderIds = new Set(this.state.stockDeductedOrderIds ?? []);
     this.menuById.clear();
     for (const item of this.state.menuItems) {
       this.menuById.set(item.id, item);
@@ -726,6 +741,9 @@ export class CafeStore {
       menuItems: base.menuItems,
       activityLog: Array.isArray(parsed.activityLog) ? parsed.activityLog : base.activityLog,
       idempotencyOrderIds: parsed.idempotencyOrderIds ?? {},
+      recipes: parsed.recipes ?? clone(INITIAL_RECIPES),
+      processedPaymentEventIds: parsed.processedPaymentEventIds ?? [],
+      stockDeductedOrderIds: parsed.stockDeductedOrderIds ?? [],
       nextOrderSeq:
         typeof parsed.nextOrderSeq === 'number'
           ? Math.max(parsed.nextOrderSeq, deriveMaxOrderSeq(orders))
@@ -1253,7 +1271,15 @@ export class CafeStore {
   }
 
   public markPaymentProcessed(eventId: string): void {
+    if (this.processedPaymentEvents.has(eventId)) return;
     this.processedPaymentEvents.add(eventId);
+    this.state.processedPaymentEventIds = [...(this.state.processedPaymentEventIds ?? []), eventId];
+    this.touch();
+  }
+
+  public unmarkPaymentProcessed(eventId: string): void {
+    this.processedPaymentEvents.delete(eventId);
+    this.state.processedPaymentEventIds = (this.state.processedPaymentEventIds ?? []).filter((id) => id !== eventId);
     this.touch();
   }
 
@@ -1342,8 +1368,7 @@ export class CafeStore {
       });
     }
 
-    this.state.nextOrderSeq += 1;
-    const nextNum = this.state.nextOrderSeq;
+    const nextNum = this.state.nextOrderSeq + 1;
     const paymentMode = input.paymentMode || (input.isPosTerminal ? 'cash' : 'upi');
     const isPayOnCounter = paymentMode === 'cash';
 
@@ -1373,6 +1398,11 @@ export class CafeStore {
       serverName: 'Neha V.',
       cookingNote: input.cookingNote || undefined,
     };
+
+    if (input.isPosTerminal || newOrder.status === 'accepted') {
+      this.assertStockAvailableForOrder(newOrder);
+    }
+    this.state.nextOrderSeq = nextNum;
 
     this.state.orders = [newOrder, ...this.state.orders];
     this.ordersById.set(newOrder.id, newOrder);
@@ -1426,14 +1456,47 @@ export class CafeStore {
     };
   }
 
+  private assertStockAvailableForOrder(order: CafeOrder): void {
+    const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
+    const requiredByIngredient = new Map<string, number>();
+    for (const item of order.items) {
+      for (const recipeLine of recipeCatalog[item.menuItemId] ?? []) {
+        requiredByIngredient.set(
+          recipeLine.ingredientId,
+          (requiredByIngredient.get(recipeLine.ingredientId) ?? 0) + recipeLine.amount * item.quantity
+        );
+      }
+    }
+
+    for (const [ingredientId, required] of requiredByIngredient) {
+      const ingredient = this.state.inventory.find((item) => item.id === ingredientId);
+      if (!ingredient || ingredient.quantity + Number.EPSILON < required) {
+        throw new InvalidDomainTransitionError({
+          domain: 'checkout',
+          fromState: ingredient ? 'insufficient_stock' : 'missing_ingredient',
+          toState: 'deducted',
+          action: 'deduct_stock',
+          message: ingredient
+            ? `Insufficient stock for ${ingredient.name}; required ${required} ${ingredient.unit}, available ${ingredient.quantity}.`
+            : `Recipe references missing inventory ingredient ${ingredientId}.`,
+          httpStatus: 409,
+        });
+      }
+    }
+  }
+
   public deductStockForOrder(order: CafeOrder): InventoryIngredient[] {
     if (this.stockDeductedOrderIds.has(order.id)) {
       return [];
     }
+
+    this.assertStockAvailableForOrder(order);
+    const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
+
     this.stockDeductedOrderIds.add(order.id);
+    this.state.stockDeductedOrderIds = [...(this.state.stockDeductedOrderIds ?? []), order.id];
 
     const lowStockAlerts: InventoryIngredient[] = [];
-    const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
 
     order.items.forEach((item) => {
       const burn = recipeCatalog[item.menuItemId];
@@ -1442,7 +1505,7 @@ export class CafeStore {
           const ingIndex = this.state.inventory.findIndex((i) => i.id === ingredientId);
           if (ingIndex !== -1) {
             const ing = this.state.inventory[ingIndex];
-            const newQty = Math.max(0, Math.round((ing.quantity - amount * item.quantity) * 100) / 100);
+            const newQty = Math.round((ing.quantity - amount * item.quantity) * 100) / 100;
             const status = newQty < ing.minThreshold ? 'Critical' : 'Good';
             this.state.inventory[ingIndex] = {
               ...ing,
@@ -1481,6 +1544,14 @@ export class CafeStore {
   ): { order: CafeOrder; lowStockAlerts: InventoryIngredient[] } | null {
     const target = this.ordersById.get(orderId);
     if (!target) return null;
+
+    // Validate stock before mutating the order lifecycle state.
+    if (
+      (newStatus === 'accepted' || newStatus === 'preparing') &&
+      !this.stockDeductedOrderIds.has(orderId)
+    ) {
+      this.assertStockAvailableForOrder(target);
+    }
 
     target.status = newStatus;
     let lowStockAlerts: InventoryIngredient[] = [];
