@@ -167,7 +167,6 @@ export function createCafeServer(
   io.on('connection', (socket) => {
     const staffSession = (socket.data as any).staffSession;
     const customerSession = (socket.data as any).customerSession;
-    const tableToken = socket.handshake.query.tableToken as string;
 
     if (staffSession) {
       void socket.join(STAFF_ROOM);
@@ -181,16 +180,12 @@ export function createCafeServer(
           void socket.join(`order:${oid}`);
         }
       }
-      if (tableToken && typeof tableToken === 'string') {
-        const table = store.getTable(tableToken.trim().toUpperCase());
-        if (table) {
-          void socket.join(`table:${table.id}`);
-        }
-      }
+      // Table room membership is not authorized by a guessable table ID.
+      // Customer order updates are delivered through signed customer sessions.
     }
 
     // Explicit authenticated room subscriptions only
-    socket.on('outlet:join', (data?: { tableToken?: string; orderId?: string }) => {
+    socket.on('outlet:join', (data?: { orderId?: string }) => {
       const currentStaff = (socket.data as any).staffSession || getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
       const currentCust = (socket.data as any).customerSession || getCustomerSessionFromCookieHeader(socket.handshake.headers.cookie);
 
@@ -201,10 +196,6 @@ export function createCafeServer(
         }
       } else {
         void socket.join(PUBLIC_ROOM);
-        if (data?.tableToken) {
-          const table = store.getTable(data.tableToken.trim().toUpperCase());
-          if (table) void socket.join(`table:${table.id}`);
-        }
         if (data?.orderId && currentCust?.orderIds?.includes(data.orderId)) {
           void socket.join(`order:${data.orderId}`);
         }
@@ -213,9 +204,8 @@ export function createCafeServer(
 
     socket.on('order:subscribe', (data?: { orderId?: string }) => {
       if (!data?.orderId) return;
-      const currentStaff = (socket.data as any).staffSession || getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
       const currentCust = (socket.data as any).customerSession || getCustomerSessionFromCookieHeader(socket.handshake.headers.cookie);
-      if (currentStaff || currentCust?.orderIds?.includes(data.orderId)) {
+      if (currentCust?.orderIds?.includes(data.orderId)) {
         void socket.join(`order:${data.orderId}`);
       }
     });
@@ -227,29 +217,24 @@ export function createCafeServer(
     const orderId = order?.id || (typeof data?.orderId === 'string' ? data.orderId : undefined);
     const tableNumber = order?.tableNumber || (typeof data?.tableNumber === 'string' ? data.tableNumber : undefined);
 
-    // 1. Staff room receives all operational events
-    io.to(STAFF_ROOM).emit(event, data);
-    io.to(STAFF_ROOM).emit('cafe:sync', { event, ts: Date.now() });
+    // Staff and kitchen clients receive invalidation signals only. They re-fetch
+    // role-scoped data over authenticated HTTP instead of receiving broad payloads.
+    const syncNotice = { event, ts: Date.now() };
+    io.to(STAFF_ROOM).emit('cafe:sync', syncNotice);
+    io.to(KITCHEN_ROOM).emit('cafe:sync', syncNotice);
 
-    // 2. Kitchen room receives cooking tickets and stock/ingredient events
-    if (
-      event.startsWith('order:') ||
-      event.startsWith('inventory:') ||
-      event.startsWith('stock:')
-    ) {
-      io.to(KITCHEN_ROOM).emit(event, data);
-    }
-
-    // 3. Isolated Customer delivery: only emit order events to the specific authorized order room
+    // Customer order payloads are restricted to the order's signed customer session room.
     if (orderId) {
       io.to(`order:${orderId}`).emit(event, data);
       io.to(`order:${orderId}`).emit('order:updated', data);
     }
+
+    // Table rooms receive only generic invalidation signals, never order/customer data.
     if (tableNumber) {
-      io.to(`table:${tableNumber}`).emit(event, data);
+      io.to(`table:${tableNumber}`).emit('cafe:sync', syncNotice);
     }
 
-    // 4. Non-sensitive catalog/sync notifications to public room
+    // Non-sensitive catalog/sync notifications to public room
     if (event === 'menu:item-availability' || event === 'cafe:sync') {
       io.to(PUBLIC_ROOM).emit(event, { ts: Date.now() });
     }
