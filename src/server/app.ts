@@ -352,10 +352,10 @@ export function createCafeServer(
 
   const getGatewayClientOrderId = (
     order: NonNullable<ReturnType<CafeStore['getOrder']>>
-  ) =>
-    upiGateway instanceof CashfreeGateway
-      ? order.id
-      : order.gatewayClientOrderId ?? order.id;
+  ) => order.gatewayClientOrderId ?? order.id;
+
+  const getCafeOrderByGatewayReference = (reference: string) =>
+    store.getOrderByGatewayClientOrderId(reference) ?? store.getOrder(reference);
 
   const assertGatewayOrderMatchesCafeOrder = (
     gatewayOrder: UpiGatewayOrder,
@@ -366,7 +366,7 @@ export function createCafeServer(
       gatewayOrder.amountPaise !== Math.round(order.total * 100)
     ) {
       throw new UpiGatewayRequestError(
-        'The UPI gateway order does not match the CafeOS order amount or reference.'
+        'The payment gateway order does not match the CafeOS order amount or reference.'
       );
     }
   };
@@ -505,7 +505,7 @@ export function createCafeServer(
         };
       };
       const orderId = p?.data?.order?.order_id;
-      const existingOrder = orderId ? store.getOrder(orderId) : null;
+      const existingOrder = orderId ? getCafeOrderByGatewayReference(orderId) : null;
       if (!orderId || !existingOrder) {
         res.status(404).json({ error: 'CafeOS order not found.' });
         return;
@@ -547,16 +547,23 @@ export function createCafeServer(
         if (p?.type === 'PAYMENT_SUCCESS_WEBHOOK' || paymentStatus === 'SUCCESS') {
           store.markPaymentProcessed(paymentIdentifier);
           const utr = p?.data?.payment?.bank_reference;
-          store.attachGatewayPayment(orderId, orderId, 'paid', utr);
+          store.attachGatewayPayment(
+            existingOrder.id,
+            existingOrder.gatewayOrderId ?? orderId,
+            'paid',
+            utr
+          );
           await store.flushToPersistence();
-          const updated = store.getOrder(orderId);
+          const updated = store.getOrder(existingOrder.id);
           if (updated) {
             emitSync('order:updated', { order: updated });
           }
         } else {
-          const gatewayOrder = await upiGateway.getOrder(orderId);
+          const gatewayOrder = await upiGateway.getOrder(
+            getGatewayClientOrderId(existingOrder)
+          );
           if (gatewayOrder) {
-            await syncGatewayOrder(orderId, gatewayOrder);
+            await syncGatewayOrder(existingOrder.id, gatewayOrder);
             await store.flushToPersistence();
           }
         }
@@ -569,10 +576,10 @@ export function createCafeServer(
 
   // Cashfree Official Checkout Page (Invokes Cashfree JS SDK v3)
   app.get('/api/orders/:id/cashfree-checkout', (req, res) => {
-    const orderId = String(req.params.id);
+    const gatewayReference = String(req.params.id);
     const session = String(req.query.session || '');
     const mode = String(req.query.mode || (process.env.CASHFREE_ENVIRONMENT === 'PRODUCTION' ? 'production' : 'sandbox'));
-    const order = store.getOrder(orderId);
+    const order = getCafeOrderByGatewayReference(gatewayReference);
     if (!order) {
       res.status(404).send('Order not found');
       return;
@@ -657,29 +664,29 @@ export function createCafeServer(
 
   // Cashfree Return URL
   app.get('/api/orders/:id/cashfree-return', async (req, res) => {
-    const orderId = String(req.params.id);
-    const order = store.getOrder(orderId);
+    const gatewayReference = String(req.params.id);
+    const order = getCafeOrderByGatewayReference(gatewayReference);
     if (!order) {
       res.redirect('/tracking');
       return;
     }
     try {
-      const gatewayOrder = await upiGateway.getOrder(orderId);
+      const gatewayOrder = await upiGateway.getOrder(getGatewayClientOrderId(order));
       if (gatewayOrder) {
-        await syncGatewayOrder(orderId, gatewayOrder);
+        await syncGatewayOrder(order.id, gatewayOrder);
         await store.flushToPersistence();
       }
     } catch {
       // Continue to tracking
     }
-    res.redirect(`/tracking?orderId=${encodeURIComponent(orderId)}`);
+    res.redirect(`/tracking?orderId=${encodeURIComponent(order.id)}`);
   });
 
   // Cashfree Mock Checkout (for local development & instant testing)
   app.get('/api/cashfree-mock/checkout', (req, res) => {
-    const orderId = String(req.query.orderId || '');
+    const gatewayReference = String(req.query.orderId || '');
     const session = String(req.query.session || '');
-    const order = store.getOrder(orderId);
+    const order = getCafeOrderByGatewayReference(gatewayReference);
     if (!order) {
       res.status(404).send('Order not found');
       return;
@@ -720,7 +727,7 @@ export function createCafeServer(
 
       <div class="space-y-3">
         <form method="POST" action="/api/cashfree-mock/pay">
-          <input type="hidden" name="orderId" value="${order.id}">
+          <input type="hidden" name="orderId" value="${gatewayReference}">
           <input type="hidden" name="session" value="${session}">
           <button type="submit" class="w-full py-3.5 px-4 bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-semibold rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer">
             <span>Pay ₹${order.total.toFixed(2)} via UPI (Simulate Bank Success)</span>
@@ -737,16 +744,17 @@ export function createCafeServer(
   });
 
   app.post('/api/cashfree-mock/pay', express.urlencoded({ extended: true }), async (req, res) => {
-    const orderId = String(req.body.orderId || '');
-    if (upiGateway instanceof CashfreeGateway) {
-      upiGateway.simulateMockPayment(orderId, 'CF' + Date.now());
-      const gatewayOrder = await upiGateway.getOrder(orderId);
+    const gatewayReference = String(req.body.orderId || '');
+    const order = getCafeOrderByGatewayReference(gatewayReference);
+    if (upiGateway instanceof CashfreeGateway && order) {
+      upiGateway.simulateMockPayment(gatewayReference, 'CF' + Date.now());
+      const gatewayOrder = await upiGateway.getOrder(gatewayReference);
       if (gatewayOrder) {
-        await syncGatewayOrder(orderId, gatewayOrder);
+        await syncGatewayOrder(order.id, gatewayOrder);
         await store.flushToPersistence();
       }
     }
-    res.redirect(`/api/orders/${encodeURIComponent(orderId)}/cashfree-return`);
+    res.redirect(`/api/orders/${encodeURIComponent(gatewayReference)}/cashfree-return`);
   });
 
   app.use((_req, res, next) => {
@@ -996,19 +1004,17 @@ export function createCafeServer(
       }
 
       const isLegacyGatewayOrder =
-        !(upiGateway instanceof CashfreeGateway) &&
         order.paymentProvider === 'upi-gateway' &&
         Boolean(order.gatewayOrderId) &&
         !order.gatewayClientOrderId;
-      const clientOrderId =
-        upiGateway instanceof CashfreeGateway || isLegacyGatewayOrder
-          ? order.id
-          : store.getOrCreateGatewayClientOrderId(order.id);
+      const clientOrderId = isLegacyGatewayOrder
+        ? order.id
+        : store.getOrCreateGatewayClientOrderId(order.id);
       if (!clientOrderId) {
         res.status(404).json({ error: 'Order not found' });
         return;
       }
-      if (!(upiGateway instanceof CashfreeGateway) && !isLegacyGatewayOrder) {
+      if (!isLegacyGatewayOrder) {
         await store.flushToPersistence();
       }
 

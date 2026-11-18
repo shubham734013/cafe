@@ -115,13 +115,18 @@ export class CashfreeGateway implements UpiGatewayClient {
 
     const publicUrl = process.env.APP_PUBLIC_URL?.trim();
     const isHttps = publicUrl?.startsWith('https://');
+    const customerId = `cafe_${crypto
+      .createHash('sha256')
+      .update(input.clientOrderId)
+      .digest('hex')
+      .slice(0, 32)}`;
 
     const payload: Record<string, unknown> = {
       order_id: input.clientOrderId,
       order_amount: parseFloat(amount),
       order_currency: 'INR',
       customer_details: {
-        customer_id: `cust_${input.clientOrderId.toLowerCase().replace(/[^a-z0-9_-]/g, '')}`,
+        customer_id: customerId,
         customer_phone: input.customerPhone || '9999999999',
         customer_name: input.customerName || 'Cafe Customer',
       },

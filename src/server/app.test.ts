@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCafeServer } from './app';
+import { CashfreeGateway } from './cashfreeGateway';
 import { CafeStore } from './store';
 import { buildTableQrUrl } from '../shared/upi';
 import type { UpiGatewayClient, UpiGatewayOrder } from './upiGateway';
@@ -355,6 +356,127 @@ test('UPI gateway checkout is idempotent and only authenticated gateway status s
     body,
   });
   assert.equal(staleWebhook.status, 401);
+});
+
+test('Cashfree checkout uses persistent unique references and resolves them back to CafeOS orders', async (t) => {
+  const gateway = new CashfreeGateway({
+    appId: 'CF_SANDBOX_TEST',
+    secretKey: 'test-secret',
+    environment: 'SANDBOX',
+    webhookSecret: 'test-webhook-secret',
+  });
+  const { baseUrl, store, close } = await startTestServer(gateway);
+  t.after(close);
+
+  const createOrderResponse = await fetch(`${baseUrl}/api/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      serviceMode: 'takeaway',
+      items: [
+        {
+          menuItemId: 'cold-coffee',
+          name: 'Cold Coffee',
+          price: 129,
+          quantity: 1,
+          station: 'Barista',
+        },
+      ],
+      idempotencyKey: 'cashfree-reference-order',
+    }),
+  });
+  assert.equal(createOrderResponse.status, 201);
+  const customerCookie = getCookieHeader(createOrderResponse);
+  const { order } = (await createOrderResponse.json()) as {
+    order: { id: string; total: number };
+  };
+
+  await gateway.createOrder({
+    clientOrderId: order.id,
+    amountPaise: Math.round(order.total * 100) + 100,
+    note: `stale ${order.id}`,
+  });
+
+  const startResponse = await fetch(`${baseUrl}/api/orders/${order.id}/payment-session`, {
+    method: 'POST',
+    headers: { Cookie: customerCookie },
+  });
+  assert.equal(startResponse.status, 200);
+  const checkout = (await startResponse.json()) as {
+    checkoutUrl: string;
+    paymentId: string;
+    paymentStatus: string;
+  };
+  const gatewayReference = store.getOrder(order.id)?.gatewayClientOrderId;
+  assert.ok(gatewayReference);
+  assert.notEqual(gatewayReference, order.id);
+  assert.ok(gatewayReference.length <= 45);
+  assert.equal(checkout.paymentStatus, 'pending');
+  assert.ok(checkout.paymentId);
+
+  const checkoutUrl = new URL(checkout.checkoutUrl);
+  const hostedCheckoutResponse = await fetch(
+    `${baseUrl}${checkoutUrl.pathname}${checkoutUrl.search}`
+  );
+  assert.equal(hostedCheckoutResponse.status, 200);
+  const hostedCheckoutHtml = await hostedCheckoutResponse.text();
+  assert.ok(hostedCheckoutHtml.includes(order.id));
+  assert.ok(hostedCheckoutHtml.includes(`name="orderId" value="${gatewayReference}"`));
+
+  const mockPaymentResponse = await fetch(`${baseUrl}/api/cashfree-mock/pay`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ orderId: gatewayReference, session: 'test-session' }),
+    redirect: 'manual',
+  });
+  assert.equal(mockPaymentResponse.status, 302);
+  const returnLocation = mockPaymentResponse.headers.get('location');
+  assert.equal(
+    returnLocation,
+    `/api/orders/${encodeURIComponent(gatewayReference)}/cashfree-return`
+  );
+
+  const returnResponse = await fetch(`${baseUrl}${returnLocation}`, { redirect: 'manual' });
+  assert.equal(returnResponse.status, 302);
+  assert.equal(
+    returnResponse.headers.get('location'),
+    `/tracking?orderId=${encodeURIComponent(order.id)}`
+  );
+  assert.equal(store.getOrder(order.id)?.paymentStatus, 'paid');
+
+  const webhookTimestamp = String(Math.floor(Date.now() / 1000));
+  const webhookBody = JSON.stringify({
+    type: 'PAYMENT_SUCCESS_WEBHOOK',
+    data: {
+      order: {
+        order_id: gatewayReference,
+        order_amount: order.total,
+        order_currency: 'INR',
+      },
+      payment: {
+        cf_payment_id: 'cashfree-payment-1',
+        payment_status: 'SUCCESS',
+        payment_amount: order.total,
+        payment_currency: 'INR',
+        bank_reference: '123456789012',
+      },
+    },
+  });
+  const webhookSignature = crypto
+    .createHmac('sha256', 'test-webhook-secret')
+    .update(webhookTimestamp + webhookBody)
+    .digest('base64');
+  const webhookResponse = await fetch(`${baseUrl}/api/webhooks/cashfree`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-webhook-signature': webhookSignature,
+      'x-webhook-timestamp': webhookTimestamp,
+    },
+    body: webhookBody,
+  });
+  assert.equal(webhookResponse.status, 200);
+  assert.equal(store.getOrder(order.id)?.paymentStatus, 'paid');
 });
 
 test('staff authentication and role-restricted routes still work', async (t) => {
