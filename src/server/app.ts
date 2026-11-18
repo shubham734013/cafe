@@ -498,55 +498,83 @@ export function createCafeServer(
         return;
       }
 
-      // 1. Payment Event Idempotency & Deduplication
-      const paymentIdentifier = String(
-        p?.data?.payment?.cf_payment_id || p?.data?.payment?.bank_reference || `${orderId}:${p?.type}`
-      );
+      const payment = p?.data?.payment;
+      const order = p?.data?.order;
+      const paymentIdentifier =
+        payment?.cf_payment_id === undefined || payment?.cf_payment_id === null
+          ? ''
+          : String(payment.cf_payment_id).trim();
+      if (!paymentIdentifier) {
+        res.status(400).json({ error: 'Cashfree payment ID is required.' });
+        return;
+      }
       if (store.hasProcessedPaymentEvent(paymentIdentifier)) {
         res.status(200).json({ received: true, duplicate: true });
         return;
       }
 
-      // 2. Validate Payment Amount against order total
-      const reportedAmount = Number(
-        p?.data?.payment?.payment_amount ?? p?.data?.order?.order_amount ?? 0
-      );
-      if (reportedAmount > 0 && Math.abs(reportedAmount - existingOrder.total) > 0.01) {
-        res.status(400).json({
-          error: `Payment amount (${reportedAmount}) does not match order total (${existingOrder.total}).`,
-        });
+      // Only the documented success event with an explicit successful payment can settle an order.
+      if (p?.type !== 'PAYMENT_SUCCESS_WEBHOOK' || payment?.payment_status?.toUpperCase() !== 'SUCCESS') {
+        res.status(200).json({ received: true, ignored: true });
         return;
       }
 
-      // 3. Validate Payment Currency
-      const reportedCurrency = (
-        p?.data?.payment?.payment_currency ?? p?.data?.order?.order_currency ?? 'INR'
-      ).toUpperCase();
-      if (reportedCurrency !== 'INR') {
-        res.status(400).json({
-          error: `Payment currency (${reportedCurrency}) is not valid for this outlet.`,
-        });
+      const paymentAmount = Number(payment.payment_amount);
+      const orderAmount = Number(order?.order_amount);
+      if (
+        !Number.isFinite(paymentAmount) ||
+        !Number.isFinite(orderAmount) ||
+        paymentAmount <= 0 ||
+        orderAmount <= 0 ||
+        Math.abs(paymentAmount - existingOrder.total) > 0.01 ||
+        Math.abs(orderAmount - existingOrder.total) > 0.01
+      ) {
+        res.status(400).json({ error: 'Cashfree payment amount is missing or does not match the CafeOS order.' });
+        return;
+      }
+
+      const paymentCurrency = payment.payment_currency?.toUpperCase();
+      const orderCurrency = order?.order_currency?.toUpperCase();
+      if (paymentCurrency !== 'INR' || orderCurrency !== 'INR') {
+        res.status(400).json({ error: 'Cashfree payment and order currency must both be INR.' });
+        return;
+      }
+
+      if (!store.isPersistenceHealthy()) {
+        res.status(503).json({ error: 'CafeOS persistence is unavailable; retry the webhook.' });
         return;
       }
 
       try {
-        const paymentStatus = p?.data?.payment?.payment_status?.toUpperCase();
-        if (p?.type === 'PAYMENT_SUCCESS_WEBHOOK' || paymentStatus === 'SUCCESS') {
-          store.markPaymentProcessed(paymentIdentifier);
-          const utr = p?.data?.payment?.bank_reference;
-          store.attachGatewayPayment(orderId, orderId, 'paid', utr);
-          await store.flushToPersistence();
-          const updated = store.getOrder(orderId);
-          if (updated) {
-            emitSync('order:updated', { order: updated });
-          }
-        } else {
-          const gatewayOrder = await upiGateway.getOrder(orderId);
-          if (gatewayOrder) {
-            await syncGatewayOrder(orderId, gatewayOrder);
-            await store.flushToPersistence();
-          }
+        // Never trust a signed webhook alone for settlement. Confirm the order directly with Cashfree.
+        const gatewayOrder = await upiGateway.getOrder(orderId);
+        if (
+          !gatewayOrder ||
+          gatewayOrder.status !== 'paid' ||
+          gatewayOrder.clientOrderId !== orderId ||
+          gatewayOrder.amountPaise !== Math.round(existingOrder.total * 100)
+        ) {
+          res.status(409).json({ error: 'Cashfree has not confirmed a matching successful payment.' });
+          return;
         }
+
+        const updated = await syncGatewayOrder(orderId, gatewayOrder);
+        if (!updated || updated.paymentStatus !== 'paid') {
+          res.status(409).json({ error: 'Cashfree payment could not be reconciled with the CafeOS order.' });
+          return;
+        }
+        await store.flushToPersistence();
+
+        // Persist the deduplication marker only after the paid order is durable.
+        store.markPaymentProcessed(paymentIdentifier);
+        try {
+          await store.flushToPersistence();
+        } catch (error) {
+          store.unmarkPaymentProcessed(paymentIdentifier);
+          throw error;
+        }
+
+        emitSync('order:updated', { order: store.getOrder(orderId) });
         res.status(200).json({ received: true });
       } catch {
         res.status(503).json({ error: 'Could not sync order.' });
