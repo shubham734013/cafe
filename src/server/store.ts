@@ -1368,8 +1368,7 @@ export class CafeStore {
       });
     }
 
-    this.state.nextOrderSeq += 1;
-    const nextNum = this.state.nextOrderSeq;
+    const nextNum = this.state.nextOrderSeq + 1;
     const paymentMode = input.paymentMode || (input.isPosTerminal ? 'cash' : 'upi');
     const isPayOnCounter = paymentMode === 'cash';
 
@@ -1399,6 +1398,11 @@ export class CafeStore {
       serverName: 'Neha V.',
       cookingNote: input.cookingNote || undefined,
     };
+
+    if (input.isPosTerminal || newOrder.status === 'accepted') {
+      this.assertStockAvailableForOrder(newOrder);
+    }
+    this.state.nextOrderSeq = nextNum;
 
     this.state.orders = [newOrder, ...this.state.orders];
     this.ordersById.set(newOrder.id, newOrder);
@@ -1452,21 +1456,17 @@ export class CafeStore {
     };
   }
 
-  public deductStockForOrder(order: CafeOrder): InventoryIngredient[] {
-    if (this.stockDeductedOrderIds.has(order.id)) {
-      return [];
-    }
-
+  private assertStockAvailableForOrder(order: CafeOrder): void {
     const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
     const requiredByIngredient = new Map<string, number>();
-    order.items.forEach((item) => {
+    for (const item of order.items) {
       for (const recipeLine of recipeCatalog[item.menuItemId] ?? []) {
         requiredByIngredient.set(
           recipeLine.ingredientId,
           (requiredByIngredient.get(recipeLine.ingredientId) ?? 0) + recipeLine.amount * item.quantity
         );
       }
-    });
+    }
 
     for (const [ingredientId, required] of requiredByIngredient) {
       const ingredient = this.state.inventory.find((item) => item.id === ingredientId);
@@ -1483,6 +1483,15 @@ export class CafeStore {
         });
       }
     }
+  }
+
+  public deductStockForOrder(order: CafeOrder): InventoryIngredient[] {
+    if (this.stockDeductedOrderIds.has(order.id)) {
+      return [];
+    }
+
+    this.assertStockAvailableForOrder(order);
+    const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
 
     this.stockDeductedOrderIds.add(order.id);
     this.state.stockDeductedOrderIds = [...(this.state.stockDeductedOrderIds ?? []), order.id];
@@ -1535,6 +1544,14 @@ export class CafeStore {
   ): { order: CafeOrder; lowStockAlerts: InventoryIngredient[] } | null {
     const target = this.ordersById.get(orderId);
     if (!target) return null;
+
+    // Validate stock before mutating the order lifecycle state.
+    if (
+      (newStatus === 'accepted' || newStatus === 'preparing') &&
+      !this.stockDeductedOrderIds.has(orderId)
+    ) {
+      this.assertStockAvailableForOrder(target);
+    }
 
     target.status = newStatus;
     let lowStockAlerts: InventoryIngredient[] = [];
