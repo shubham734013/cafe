@@ -117,6 +117,14 @@ export function createCafeServer(
   assertAuthSecretConfigured();
 
   const app = express();
+  const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
+  if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0) {
+    throw new Error('TRUST_PROXY_HOPS must be a non-negative integer.');
+  }
+  // Set this only to the number of trusted reverse-proxy hops in production.
+  // The rate limiter uses Express's req.ip and does not parse X-Forwarded-For itself.
+  app.set('trust proxy', trustProxyHops);
+
   const httpServer = http.createServer(app);
   const allowedSocketOrigins = new Set<string>();
   if (process.env.APP_PUBLIC_URL) {
