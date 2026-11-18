@@ -420,25 +420,38 @@ export function createCafeServer(
       }
 
       try {
-        const paymentStatus = p?.data?.payment?.payment_status?.toUpperCase();
-        if (p?.type === 'PAYMENT_SUCCESS_WEBHOOK' || paymentStatus === 'SUCCESS') {
-          const utr = p?.data?.payment?.bank_reference;
-          store.attachGatewayPayment(orderId, orderId, 'paid', utr);
-          await store.flushToPersistence();
-          const updated = store.getOrder(orderId);
-          if (updated) {
-            emitSync('order:updated', { order: updated });
-          }
-        } else {
-          const gatewayOrder = await upiGateway.getOrder(orderId);
-          if (gatewayOrder) {
-            await syncGatewayOrder(orderId, gatewayOrder);
-            await store.flushToPersistence();
-          }
+        // Treat the signed webhook as a notification, not as the financial source
+        // of truth. Re-fetch the order from Cashfree and verify its reference,
+        // amount, currency (INR is enforced by our checkout request), and status.
+        const gatewayOrder = await upiGateway.getOrder(orderId);
+        if (!gatewayOrder) {
+          res.status(503).json({ error: 'Cashfree order could not be verified; retry webhook.' });
+          return;
         }
+
+        const updated = await syncGatewayOrder(orderId, gatewayOrder);
+        if (!updated) {
+          res.status(503).json({ error: 'CafeOS order could not be synchronized; retry webhook.' });
+          return;
+        }
+        if (
+          (p?.type === 'PAYMENT_SUCCESS_WEBHOOK' ||
+            p?.data?.payment?.payment_status?.toUpperCase() === 'SUCCESS') &&
+          updated.paymentStatus !== 'paid'
+        ) {
+          res.status(503).json({ error: 'Cashfree has not confirmed successful settlement; retry webhook.' });
+          return;
+        }
+
+        await store.flushToPersistence();
+        emitSync('order:updated', { order: updated });
         res.status(200).json({ received: true });
-      } catch {
-        res.status(503).json({ error: 'Could not sync order.' });
+      } catch (error) {
+        console.error(
+          '[CafeOS] Could not verify Cashfree webhook against gateway order:',
+          error instanceof Error ? error.message : 'Gateway verification failed'
+        );
+        res.status(503).json({ error: 'Could not verify the payment; retry webhook.' });
       }
     }
   );
@@ -789,7 +802,7 @@ export function createCafeServer(
     }
   );
 
-  app.post('/api/orders', tableOrderLimiter, (req, res, next) => {
+  app.post('/api/orders', tableOrderLimiter, async (req, res, next) => {
     try {
       const input = parseBody(createOrderSchema, req.body);
       const staffSession = getStaffSession(req);
@@ -812,6 +825,13 @@ export function createCafeServer(
         res.status(403).json({ error: 'This idempotency key belongs to another customer order' });
         return;
       }
+
+      // Do not acknowledge a newly-created order until the persistence layer confirms
+      // the snapshot write. Replays remain safe through the order idempotency key.
+      if (!result.duplicate) {
+        await store.flushToPersistence();
+      }
+
       if (!staffSession) {
         issueOrUpdateCustomerSessionCookie(req, res, result.order.id, customerId);
       }
