@@ -538,7 +538,20 @@ export function createCafeServer(
       }
 
       try {
-        // Never trust a signed webhook alone for settlement. Confirm the order directly with Cashfree.
+        // Verify the exact payment ID against Cashfree, not merely the parent order status.
+        const verifiedPayment = await upiGateway.getPaymentDetails(orderId, paymentIdentifier);
+        if (
+          !verifiedPayment ||
+          verifiedPayment.paymentId !== paymentIdentifier ||
+          verifiedPayment.status !== 'SUCCESS' ||
+          verifiedPayment.currency !== 'INR' ||
+          Math.abs(verifiedPayment.amount - existingOrder.total) > 0.01
+        ) {
+          res.status(409).json({ error: 'Cashfree could not confirm this exact payment ID, amount and currency.' });
+          return;
+        }
+
+        // Also verify the parent order reference and amount with Cashfree.
         const gatewayOrder = await upiGateway.getOrder(orderId);
         if (
           !gatewayOrder ||
