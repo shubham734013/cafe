@@ -1364,10 +1364,9 @@ export class CafeStore {
       }
     }
 
-    // Deduct ingredient stock according to recipe burn
-    if (input.isPosTerminal) {
-      this.deductStockForOrder(newOrder);
-    }
+    // Deduct ingredient stock for every accepted order channel (QR and POS).
+    // The order ID guard makes repeated deductions for the same order a no-op.
+    this.deductStockForOrder(newOrder);
 
     this.recordActivity({
       type: 'order_created',
