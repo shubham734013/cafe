@@ -158,7 +158,7 @@ test('order creation and acceptance fail atomically when recipe stock is insuffi
     store.createOrder({
       outletId: 'seth-sawariya-main',
       serviceMode: 'takeaway',
-      items: [{ menuItemId: menuItem.id, name: menuItem.name, price: menuItem.price, quantity: 1, station: menuItem.station }],
+      items: [{ menuItemId: menuItem.id, name: menuItem.name, price: menuItem.price, quantity: 1, note: '', imageUrl: menuItem.imageUrl, station: menuItem.station }],
       couponCode: '',
       cookingNote: '',
       isPosTerminal: true,
