@@ -1456,11 +1456,38 @@ export class CafeStore {
     if (this.stockDeductedOrderIds.has(order.id)) {
       return [];
     }
+
+    const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
+    const requiredByIngredient = new Map<string, number>();
+    order.items.forEach((item) => {
+      for (const recipeLine of recipeCatalog[item.menuItemId] ?? []) {
+        requiredByIngredient.set(
+          recipeLine.ingredientId,
+          (requiredByIngredient.get(recipeLine.ingredientId) ?? 0) + recipeLine.amount * item.quantity
+        );
+      }
+    });
+
+    for (const [ingredientId, required] of requiredByIngredient) {
+      const ingredient = this.state.inventory.find((item) => item.id === ingredientId);
+      if (!ingredient || ingredient.quantity + Number.EPSILON < required) {
+        throw new InvalidDomainTransitionError({
+          domain: 'checkout',
+          fromState: ingredient ? 'insufficient_stock' : 'missing_ingredient',
+          toState: 'deducted',
+          action: 'deduct_stock',
+          message: ingredient
+            ? `Insufficient stock for ${ingredient.name}; required ${required} ${ingredient.unit}, available ${ingredient.quantity}.`
+            : `Recipe references missing inventory ingredient ${ingredientId}.`,
+          httpStatus: 409,
+        });
+      }
+    }
+
     this.stockDeductedOrderIds.add(order.id);
     this.state.stockDeductedOrderIds = [...(this.state.stockDeductedOrderIds ?? []), order.id];
 
     const lowStockAlerts: InventoryIngredient[] = [];
-    const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
 
     order.items.forEach((item) => {
       const burn = recipeCatalog[item.menuItemId];
@@ -1469,7 +1496,7 @@ export class CafeStore {
           const ingIndex = this.state.inventory.findIndex((i) => i.id === ingredientId);
           if (ingIndex !== -1) {
             const ing = this.state.inventory[ingIndex];
-            const newQty = Math.max(0, Math.round((ing.quantity - amount * item.quantity) * 100) / 100);
+            const newQty = Math.round((ing.quantity - amount * item.quantity) * 100) / 100;
             const status = newQty < ing.minThreshold ? 'Critical' : 'Good';
             this.state.inventory[ingIndex] = {
               ...ing,
