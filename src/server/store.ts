@@ -82,6 +82,8 @@ interface PersistedEnvelope extends Omit<CafeBootstrapState, 'payments'> {
   nextOrderSeq: number;
   idempotencyOrderIds: Record<string, string>;
   recipes?: Record<string, Array<{ ingredientId: string; amount: number }>>;
+  processedPaymentEventIds?: string[];
+  stockDeductedOrderIds?: string[];
 }
 
 const MONGO_STATE_ID = 'seth-sawariya-main';
@@ -442,6 +444,9 @@ export class CafeStore {
             rewardPoints: snapshot.rewardPoints,
             updatedAt: snapshot.updatedAt,
             nextOrderSeq: snapshot.nextOrderSeq,
+            recipes: snapshot.recipes ?? INITIAL_RECIPES,
+            processedPaymentEventIds: snapshot.processedPaymentEventIds ?? [],
+            stockDeductedOrderIds: snapshot.stockDeductedOrderIds ?? [],
           },
         },
       ],
@@ -486,12 +491,18 @@ export class CafeStore {
       rewardPoints: number;
       updatedAt: string;
       nextOrderSeq: number;
+      recipes?: Record<string, Array<{ ingredientId: string; amount: number }>>;
+      processedPaymentEventIds?: string[];
+      stockDeductedOrderIds?: string[];
     }>(11);
     const settings = await readSingleton<CafeSettings>(10);
 
     const idempotencyEntries = await readRecords<{ key: string; orderId: string }>(9);
     return {
       ...state,
+      recipes: state.recipes ?? clone(INITIAL_RECIPES),
+      processedPaymentEventIds: state.processedPaymentEventIds ?? [],
+      stockDeductedOrderIds: state.stockDeductedOrderIds ?? [],
       cafeSettings: settings,
       orders: await readRecords<CafeOrder>(0),
       tables: await readRecords<CafeTable>(1),
@@ -658,10 +669,14 @@ export class CafeStore {
       nextOrderSeq: deriveMaxOrderSeq(orders),
       idempotencyOrderIds: {},
       recipes: clone(INITIAL_RECIPES),
+      processedPaymentEventIds: [],
+      stockDeductedOrderIds: [],
     };
   }
 
   private rebuildIndexes(): void {
+    this.processedPaymentEvents = new Set(this.state.processedPaymentEventIds ?? []);
+    this.stockDeductedOrderIds = new Set(this.state.stockDeductedOrderIds ?? []);
     this.menuById.clear();
     for (const item of this.state.menuItems) {
       this.menuById.set(item.id, item);
@@ -726,6 +741,9 @@ export class CafeStore {
       menuItems: base.menuItems,
       activityLog: Array.isArray(parsed.activityLog) ? parsed.activityLog : base.activityLog,
       idempotencyOrderIds: parsed.idempotencyOrderIds ?? {},
+      recipes: parsed.recipes ?? clone(INITIAL_RECIPES),
+      processedPaymentEventIds: parsed.processedPaymentEventIds ?? [],
+      stockDeductedOrderIds: parsed.stockDeductedOrderIds ?? [],
       nextOrderSeq:
         typeof parsed.nextOrderSeq === 'number'
           ? Math.max(parsed.nextOrderSeq, deriveMaxOrderSeq(orders))
@@ -1253,7 +1271,15 @@ export class CafeStore {
   }
 
   public markPaymentProcessed(eventId: string): void {
+    if (this.processedPaymentEvents.has(eventId)) return;
     this.processedPaymentEvents.add(eventId);
+    this.state.processedPaymentEventIds = [...(this.state.processedPaymentEventIds ?? []), eventId];
+    this.touch();
+  }
+
+  public unmarkPaymentProcessed(eventId: string): void {
+    this.processedPaymentEvents.delete(eventId);
+    this.state.processedPaymentEventIds = (this.state.processedPaymentEventIds ?? []).filter((id) => id !== eventId);
     this.touch();
   }
 
@@ -1431,6 +1457,7 @@ export class CafeStore {
       return [];
     }
     this.stockDeductedOrderIds.add(order.id);
+    this.state.stockDeductedOrderIds = [...(this.state.stockDeductedOrderIds ?? []), order.id];
 
     const lowStockAlerts: InventoryIngredient[] = [];
     const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
