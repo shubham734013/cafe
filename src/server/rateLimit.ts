@@ -23,12 +23,9 @@ export function createRateLimiter(options: RateLimitOptions) {
   sweepInterval.unref();
 
   return (req: Request, res: Response, next: NextFunction): void => {
-    const ip =
-      (typeof req.headers['x-forwarded-for'] === 'string'
-        ? req.headers['x-forwarded-for'].split(',')[0]?.trim()
-        : undefined) ||
-      req.ip ||
-      'unknown';
+    // Express derives req.ip from the socket peer unless trust proxy is explicitly
+    // configured. Never trust a client-supplied X-Forwarded-For value directly.
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const key = `${options.keyPrefix}:${ip}`;
     const now = Date.now();
     const cutoff = now - options.windowMs;
