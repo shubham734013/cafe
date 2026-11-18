@@ -35,7 +35,7 @@ function assertProductionEnvironment(): void {
   if (process.env.CASHFREE_WEBHOOK_SECRET === process.env.CASHFREE_SECRET_KEY) {
     throw new Error('Use a dedicated CASHFREE_WEBHOOK_SECRET, separate from the API secret key.');
   }
-  if (/localhost|127\\.0\\.0\\.1/i.test(process.env.MONGODB_URI!)) {
+  if (/localhost|127\.0\.0\.1/i.test(process.env.MONGODB_URI!)) {
     throw new Error('MONGODB_URI must point to a production MongoDB deployment, not localhost.');
   }
 
