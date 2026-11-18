@@ -126,14 +126,16 @@ export function createCafeServer(
   app.set('trust proxy', trustProxyHops);
   const httpServer = http.createServer(app);
   const allowedOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
-    : [
-        'http://localhost:3000',
-        'http://localhost:3002',
-        'http://127.0.0.1:3000',
-        'http://127.0.0.1:3002',
-        'http://localhost:5173',
-      ];
+    ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
+    : process.env.NODE_ENV === 'production'
+      ? []
+      : [
+          'http://localhost:3000',
+          'http://localhost:3002',
+          'http://127.0.0.1:3000',
+          'http://127.0.0.1:3002',
+          'http://localhost:5173',
+        ];
 
   const io = new SocketIOServer(httpServer, {
     cors: {
@@ -141,8 +143,7 @@ export function createCafeServer(
         if (!requestOrigin) return callback(null, true);
         if (
           process.env.NODE_ENV !== 'production' ||
-          allowedOrigins.includes(requestOrigin) ||
-          /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(requestOrigin)
+          allowedOrigins.includes(requestOrigin)
         ) {
           return callback(null, requestOrigin);
         }
