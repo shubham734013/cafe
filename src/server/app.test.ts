@@ -135,9 +135,13 @@ test('health and public bootstrap remain available and retired YouPI routes stay
   assert.equal(missingOrderResponse.status, 404);
 });
 
-test('order creation enforces catalog prices, idempotency, and customer scoping', async (t) => {
-  const { baseUrl, close } = await startTestServer();
+test('order creation enforces catalog prices, idempotency, customer scoping, and QR stock deduction', async (t) => {
+  const { baseUrl, store, close } = await startTestServer();
   t.after(close);
+
+  const inventoryBefore = store.getInventory();
+  const milkBefore = inventoryBefore.find((item) => item.id === 'ing-milk')?.quantity;
+  const beansBefore = inventoryBefore.find((item) => item.id === 'ing-beans')?.quantity;
 
   const payload = {
     serviceMode: 'takeaway',
@@ -176,6 +180,17 @@ test('order creation enforces catalog prices, idempotency, and customer scoping'
   assert.match(created.order.customerId, /^guest_/);
   assert.equal('paymentProvider' in created.order, false);
 
+  // QR/customer orders must consume the same recipe stock as POS orders.
+  const inventoryAfterCreate = store.getInventory();
+  assert.equal(
+    inventoryAfterCreate.find((item) => item.id === 'ing-milk')?.quantity,
+    Math.round(((milkBefore ?? 0) - 0.4) * 100) / 100
+  );
+  assert.equal(
+    inventoryAfterCreate.find((item) => item.id === 'ing-beans')?.quantity,
+    Math.round(((beansBefore ?? 0) - 0.04) * 100) / 100
+  );
+
   const duplicateResponse = await fetch(`${baseUrl}/api/orders`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
@@ -188,6 +203,8 @@ test('order creation enforces catalog prices, idempotency, and customer scoping'
   };
   assert.equal(duplicate.duplicate, true);
   assert.equal(duplicate.order.id, created.order.id);
+  // Replaying the idempotent request must not burn ingredients a second time.
+  assert.deepEqual(store.getInventory(), inventoryAfterCreate);
 
   const customerBootstrapResponse = await fetch(`${baseUrl}/api/bootstrap`, {
     headers: { Cookie: customerCookie },
