@@ -118,6 +118,12 @@ export function createCafeServer(
   assertAuthSecretConfigured();
 
   const app = express();
+  const trustProxyHopsRaw = process.env.TRUST_PROXY_HOPS?.trim() ?? '0';
+  const trustProxyHops = Number(trustProxyHopsRaw);
+  if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0 || trustProxyHops > 10) {
+    throw new Error('TRUST_PROXY_HOPS must be an integer between 0 and 10.');
+  }
+  app.set('trust proxy', trustProxyHops);
   const httpServer = http.createServer(app);
   const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
