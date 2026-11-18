@@ -32,11 +32,18 @@ function assertProductionEnvironment(): void {
   if (process.env.CASHFREE_ENVIRONMENT !== 'PRODUCTION') {
     throw new Error('CASHFREE_ENVIRONMENT must be PRODUCTION for a production deployment.');
   }
+  if (/^(CF_SANDBOX|dev_)|TEST_APP/i.test(process.env.CASHFREE_APP_ID!)) {
+    throw new Error('Sandbox or mock Cashfree credentials cannot be used in production.');
+  }
   if (process.env.CASHFREE_WEBHOOK_SECRET === process.env.CASHFREE_SECRET_KEY) {
     throw new Error('Use a dedicated CASHFREE_WEBHOOK_SECRET, separate from the API secret key.');
   }
-  if (/localhost|127\.0\.0\.1/i.test(process.env.MONGODB_URI!)) {
+  const mongoUri = process.env.MONGODB_URI!;
+  if (/localhost|127\.0\.0\.1/i.test(mongoUri)) {
     throw new Error('MONGODB_URI must point to a production MongoDB deployment, not localhost.');
+  }
+  if (!mongoUri.startsWith('mongodb+srv://') && !/[?&](tls|ssl)=true(?:&|$)/i.test(mongoUri)) {
+    throw new Error('Production MONGODB_URI must use TLS (mongodb+srv:// or tls=true).');
   }
 
   const origins = process.env.CORS_ORIGIN!.split(',').map((origin) => origin.trim()).filter(Boolean);
