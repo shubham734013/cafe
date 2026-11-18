@@ -350,12 +350,19 @@ export function createCafeServer(
     }
   };
 
+  const getGatewayClientOrderId = (
+    order: NonNullable<ReturnType<CafeStore['getOrder']>>
+  ) =>
+    upiGateway instanceof CashfreeGateway
+      ? order.id
+      : order.gatewayClientOrderId ?? order.id;
+
   const assertGatewayOrderMatchesCafeOrder = (
     gatewayOrder: UpiGatewayOrder,
     order: NonNullable<ReturnType<CafeStore['getOrder']>>
   ) => {
     if (
-      gatewayOrder.clientOrderId !== order.id ||
+      gatewayOrder.clientOrderId !== getGatewayClientOrderId(order) ||
       gatewayOrder.amountPaise !== Math.round(order.total * 100)
     ) {
       throw new UpiGatewayRequestError(
@@ -416,8 +423,10 @@ export function createCafeServer(
         return;
       }
 
-      const orderId = payload.data.client_order_id;
-      if (!store.getOrder(orderId)) {
+      const clientOrderId = payload.data.client_order_id;
+      const order =
+        store.getOrderByGatewayClientOrderId(clientOrderId) ?? store.getOrder(clientOrderId);
+      if (!order) {
         res.status(404).json({ error: 'CafeOS order not found for this gateway event.' });
         return;
       }
@@ -427,12 +436,12 @@ export function createCafeServer(
       }
 
       try {
-        const gatewayOrder = await upiGateway.getOrder(orderId);
+        const gatewayOrder = await upiGateway.getOrder(clientOrderId);
         if (!gatewayOrder) {
           res.status(404).json({ error: 'UPI gateway order not found; retry the webhook.' });
           return;
         }
-        const updated = await syncGatewayOrder(orderId, gatewayOrder);
+        const updated = await syncGatewayOrder(order.id, gatewayOrder);
         if (!updated) {
           res.status(404).json({ error: 'CafeOS order no longer exists.' });
           return;
@@ -986,11 +995,28 @@ export function createCafeServer(
         return;
       }
 
-      let gatewayOrder = await upiGateway.getOrder(order.id);
+      const isLegacyGatewayOrder =
+        !(upiGateway instanceof CashfreeGateway) &&
+        order.paymentProvider === 'upi-gateway' &&
+        Boolean(order.gatewayOrderId) &&
+        !order.gatewayClientOrderId;
+      const clientOrderId =
+        upiGateway instanceof CashfreeGateway || isLegacyGatewayOrder
+          ? order.id
+          : store.getOrCreateGatewayClientOrderId(order.id);
+      if (!clientOrderId) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+      if (!(upiGateway instanceof CashfreeGateway) && !isLegacyGatewayOrder) {
+        await store.flushToPersistence();
+      }
+
+      let gatewayOrder = await upiGateway.getOrder(clientOrderId);
       if (!gatewayOrder) {
         try {
           gatewayOrder = await upiGateway.createOrder({
-            clientOrderId: order.id,
+            clientOrderId,
             amountPaise,
             note: `CafeOS ${order.id}`,
           });
@@ -998,7 +1024,7 @@ export function createCafeServer(
           if (!(error instanceof UpiGatewayRequestError) || error.statusCode !== 422) {
             throw error;
           }
-          gatewayOrder = await upiGateway.getOrder(order.id);
+          gatewayOrder = await upiGateway.getOrder(clientOrderId);
           if (!gatewayOrder) throw error;
         }
       }
@@ -1051,7 +1077,7 @@ export function createCafeServer(
         return;
       }
 
-      const gatewayOrder = await upiGateway.getOrder(order.id);
+      const gatewayOrder = await upiGateway.getOrder(getGatewayClientOrderId(order));
       if (!gatewayOrder) {
         res.status(502).json({ error: 'The UPI gateway no longer has this payment order.' });
         return;

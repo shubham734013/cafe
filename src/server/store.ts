@@ -179,6 +179,7 @@ export class CafeStore {
   // O(1) secondary lookup indexes
   private menuById = new Map<string, MenuItem>();
   private ordersById = new Map<string, CafeOrder>();
+  private ordersByGatewayClientOrderId = new Map<string, CafeOrder>();
   private stockDeductedOrderIds = new Set<string>();
   private processedPaymentEvents = new Set<string>();
   private tablesById = new Map<string, CafeTable>();
@@ -232,12 +233,8 @@ export class CafeStore {
         ) {
           throw error;
         }
-        const query =
-          process.env.NODE_ENV === 'production'
-            ? { _id: MONGO_LEASE_ID, expiresAt: { $lte: new Date() } }
-            : { _id: MONGO_LEASE_ID };
         const takeover = await leaseCollection.updateOne(
-          query,
+          { _id: MONGO_LEASE_ID, expiresAt: { $lte: new Date() } },
           { $set: { ownerId: leaseOwner, expiresAt: leaseExpiresAt } }
         );
         if (takeover.modifiedCount !== 1) {
@@ -344,6 +341,8 @@ export class CafeStore {
     const client = this.mongoClient;
     try {
       await this.flushToPersistence();
+    } catch (flushErr) {
+      console.warn('[CafeStore] Could not flush to persistence during shutdown:', flushErr instanceof Error ? flushErr.message : flushErr);
     } finally {
       if (this.pendingWriteTimer) {
         clearTimeout(this.pendingWriteTimer);
@@ -559,14 +558,32 @@ export class CafeStore {
         { $set: { expiresAt: new Date(Date.now() + MONGO_LEASE_DURATION_MS) } }
       );
       if (result.matchedCount !== 1) {
+        const reacquire = await this.mongoLeaseCollection.updateOne(
+          {
+            _id: MONGO_LEASE_ID,
+            expiresAt: { $lte: new Date() },
+          },
+          {
+            $set: {
+              ownerId: this.mongoLeaseOwner,
+              expiresAt: new Date(Date.now() + MONGO_LEASE_DURATION_MS),
+            },
+          }
+        );
+        if (reacquire.modifiedCount === 1) {
+          this.persistenceHealthy = true;
+          return;
+        }
         this.persistenceHealthy = false;
         console.error('[CafeStore] MongoDB writer lease was lost; API writes are disabled.');
         return;
       }
       this.persistenceHealthy = true;
     } catch (error) {
-      this.persistenceHealthy = false;
-      console.error('[CafeStore] Could not renew MongoDB writer lease:', error);
+      console.warn(
+        '[CafeStore] Transient issue renewing MongoDB writer lease (will retry):',
+        error instanceof Error ? error.message : error
+      );
     }
   }
 
@@ -672,8 +689,12 @@ export class CafeStore {
     }
 
     this.ordersById.clear();
+    this.ordersByGatewayClientOrderId.clear();
     for (const order of this.state.orders) {
       this.ordersById.set(order.id, order);
+      if (order.gatewayClientOrderId) {
+        this.ordersByGatewayClientOrderId.set(order.gatewayClientOrderId, order);
+      }
     }
 
     this.stockDeductedOrderIds = new Set(this.state.stockDeductedOrderIds || []);
@@ -1128,6 +1149,23 @@ export class CafeStore {
   public getOrder(orderId: string): CafeOrder | null {
     const order = this.ordersById.get(orderId);
     return order ? clone(order) : null;
+  }
+
+  public getOrderByGatewayClientOrderId(clientOrderId: string): CafeOrder | null {
+    const order = this.ordersByGatewayClientOrderId.get(clientOrderId);
+    return order ? clone(order) : null;
+  }
+
+  public getOrCreateGatewayClientOrderId(orderId: string): string | null {
+    const order = this.ordersById.get(orderId);
+    if (!order) return null;
+    if (order.gatewayClientOrderId) return order.gatewayClientOrderId;
+
+    const clientOrderId = `CAFEOS-${crypto.randomUUID()}`;
+    order.gatewayClientOrderId = clientOrderId;
+    this.ordersByGatewayClientOrderId.set(clientOrderId, order);
+    this.touch();
+    return clientOrderId;
   }
 
   public attachGatewayPayment(

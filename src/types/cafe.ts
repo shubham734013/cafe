@@ -139,6 +139,7 @@ export interface CafeOrder {
   paymentStatus?: 'unpaid' | 'pending' | 'observed' | 'paid' | 'manual_review' | 'failed' | 'expired' | 'cancelled' | 'refunded';
   paymentProvider?: 'upi-gateway';
   gatewayOrderId?: string;
+  gatewayClientOrderId?: string;
   customerId?: string;
   paymentRef?: string;
   paymentChannelLabel?: string;

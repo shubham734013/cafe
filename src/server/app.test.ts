@@ -42,6 +42,10 @@ class TestUpiGateway implements UpiGatewayClient {
     return order ? { ...order } : null;
   }
 
+  public seedOrder(order: UpiGatewayOrder): void {
+    this.orders.set(order.clientOrderId, order);
+  }
+
   public markPaid(clientOrderId: string): void {
     const order = this.orders.get(clientOrderId);
     assert.ok(order);
@@ -82,6 +86,23 @@ async function loginWithPin(baseUrl: string, pin: string): Promise<string> {
   assert.equal(response.status, 200);
   return getCookieHeader(response);
 }
+
+test('UPI gateway client order references persist and resolve to the CafeOS order', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'cafe-gateway-reference-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const snapshotPath = join(directory, 'state.json');
+  const store = new CafeStore(snapshotPath);
+  const order = store.getOrders()[0];
+  assert.ok(order);
+
+  const clientOrderId = store.getOrCreateGatewayClientOrderId(order.id);
+  assert.ok(clientOrderId);
+  await store.flushToPersistence();
+
+  const restoredStore = new CafeStore(snapshotPath);
+  assert.equal(restoredStore.getOrCreateGatewayClientOrderId(order.id), clientOrderId);
+  assert.equal(restoredStore.getOrderByGatewayClientOrderId(clientOrderId)?.id, order.id);
+});
 
 test('health and public bootstrap remain available and retired YouPI routes stay removed', async (t) => {
   const { baseUrl, close } = await startTestServer();
@@ -227,6 +248,13 @@ test('UPI gateway checkout is idempotent and only authenticated gateway status s
   const { order } = (await createOrderResponse.json()) as {
     order: { id: string; total: number };
   };
+  gateway.seedOrder({
+    orderId: 'GW-LEGACY',
+    clientOrderId: order.id,
+    amountPaise: Math.round(order.total * 100) + 100,
+    status: 'pending',
+    paymentUrl: 'https://gateway.test/pay/GW-LEGACY',
+  });
 
   const startResponse = await fetch(`${baseUrl}/api/orders/${order.id}/payment-session`, {
     method: 'POST',
@@ -241,6 +269,9 @@ test('UPI gateway checkout is idempotent and only authenticated gateway status s
   assert.equal(checkout.checkoutUrl, 'https://gateway.test/pay/GW1');
   assert.equal(checkout.paymentId, 'GW1');
   assert.equal(checkout.paymentStatus, 'pending');
+  const gatewayClientOrderId = store.getOrder(order.id)?.gatewayClientOrderId;
+  assert.ok(gatewayClientOrderId);
+  assert.notEqual(gatewayClientOrderId, order.id);
   assert.equal(store.getOrder(order.id)?.paymentStatus, 'pending');
 
   const reopened = await fetch(`${baseUrl}/api/orders/${order.id}/payment-session`, {
@@ -279,7 +310,7 @@ test('UPI gateway checkout is idempotent and only authenticated gateway status s
   assert.equal(forbidden.status, 403);
   assert.ok(otherCookie);
 
-  gateway.markPaid(order.id);
+  gateway.markPaid(gatewayClientOrderId);
   const paymentStatusResponse = await fetch(
     `${baseUrl}/api/orders/${order.id}/payment-status`,
     { headers: { Cookie: customerCookie } }
@@ -294,7 +325,7 @@ test('UPI gateway checkout is idempotent and only authenticated gateway status s
     event: 'order.paid',
     data: {
       order_id: 'GW1',
-      client_order_id: order.id,
+      client_order_id: gatewayClientOrderId,
       amount: order.total.toFixed(2),
       currency: 'INR',
       status: 'paid',
