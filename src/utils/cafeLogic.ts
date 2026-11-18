@@ -303,6 +303,16 @@ export function formatINR(amount: number): string {
   return `₹${amount.toLocaleString('en-IN')}`;
 }
 
+function sanitizeCsvCell(val: string): string {
+  const trimmed = val.trim();
+  const needsFormulaEscape = /^[=+\-@\t\r]/.test(trimmed);
+  const safe = needsFormulaEscape ? `'${trimmed}` : trimmed;
+  if (needsFormulaEscape || safe.includes(',') || safe.includes('"') || safe.includes('\n')) {
+    return `"${safe.replace(/"/g, '""')}"`;
+  }
+  return safe;
+}
+
 export function formatOrderCsv(orders: CafeOrder[]): string {
   const header = ['Order ID', 'KOT', 'Mode', 'Table/Partner', 'Items', 'Status', 'Total (INR)', 'Time'];
   const rows = orders.map((order) => {
@@ -312,14 +322,14 @@ export function formatOrderCsv(orders: CafeOrder[]): string {
         : order.deliveryPartner || 'Takeaway';
     const itemsSummary = order.items.map((i) => `${i.quantity}x ${i.name}`).join('; ');
     return [
-      order.id,
-      order.kotNumber,
-      order.serviceMode,
-      location,
-      `"${itemsSummary.replace(/"/g, '""')}"`,
-      order.status,
+      sanitizeCsvCell(order.id),
+      sanitizeCsvCell(order.kotNumber),
+      sanitizeCsvCell(order.serviceMode),
+      sanitizeCsvCell(location),
+      sanitizeCsvCell(itemsSummary),
+      sanitizeCsvCell(order.status),
       String(order.total),
-      order.createdAtLabel,
+      sanitizeCsvCell(order.createdAtLabel),
     ].join(',');
   });
   return [header.join(','), ...rows].join('\n');

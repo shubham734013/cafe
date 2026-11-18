@@ -5,7 +5,7 @@ import { createCafeServer } from './app';
 import { CafeStore } from './store';
 
 async function startServer() {
-  const store = new CafeStore();
+  const store = new CafeStore(null);
   const { app, httpServer } = createCafeServer(store);
 
   await new Promise<void>((resolve) => httpServer.listen(0, resolve));

@@ -40,7 +40,7 @@ function getInitialFromUrl(): {
   trackedOrderId: string;
 } {
   if (typeof window === 'undefined') {
-    return { screen: 'splash', mode: 'customer', table: 'T3', trackedOrderId: 'SSCB421' };
+    return { screen: 'splash', mode: 'customer', table: 'T3', trackedOrderId: '' };
   }
   const params = new URLSearchParams(window.location.search);
   const rawTable = params.get('table')?.trim().toUpperCase() || '';
@@ -50,9 +50,33 @@ function getInitialFromUrl(): {
   try {
     storedOrder = window.localStorage.getItem('cafeos_tracked_order')?.trim() || '';
   } catch {}
-  const trackedOrderId = orderFromUrl || storedOrder || 'SSCB421';
+  const trackedOrderId = orderFromUrl || storedOrder || '';
   const route = resolveCafeRoute(window.location.pathname, window.location.search);
   return { ...route, table, trackedOrderId };
+}
+
+function getInitialCustomerCart(): CartItem[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem('cafeos_customer_cart');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+function persistCustomerCart(cart: CartItem[]) {
+  if (typeof window !== 'undefined') {
+    try {
+      if (cart.length === 0) {
+        window.localStorage.removeItem('cafeos_customer_cart');
+      } else {
+        window.localStorage.setItem('cafeos_customer_cart', JSON.stringify(cart));
+      }
+    } catch {}
+  }
 }
 
 function buildInitialPosCart(): CartItem[] {
@@ -143,7 +167,7 @@ export const useCafeStore = create<CafeClientState>((set) => ({
   serviceMode: 'dine-in',
   selectedTable: initialUrl.table,
   menuCategory: 'Beverages',
-  customerCart: [],
+  customerCart: getInitialCustomerCart(),
   posCart: buildInitialPosCart(),
   couponCode: 'CAFE50',
   cookingNote: '',
@@ -175,14 +199,27 @@ export const useCafeStore = create<CafeClientState>((set) => ({
   setMenuCategory: (menuCategory) => set({ menuCategory }),
 
   addCustomerItem: (item, quantity = 1) =>
-    set((state) => ({ customerCart: upsertItem(state.customerCart, item, quantity) })),
+    set((state) => {
+      const nextCart = upsertItem(state.customerCart, item, quantity);
+      persistCustomerCart(nextCart);
+      return { customerCart: nextCart };
+    }),
   updateCustomerQty: (menuItemId, delta) =>
-    set((state) => ({ customerCart: adjustQty(state.customerCart, menuItemId, delta) })),
+    set((state) => {
+      const nextCart = adjustQty(state.customerCart, menuItemId, delta);
+      persistCustomerCart(nextCart);
+      return { customerCart: nextCart };
+    }),
   removeCustomerItem: (menuItemId) =>
-    set((state) => ({
-      customerCart: state.customerCart.filter((c) => c.menuItemId !== menuItemId),
-    })),
-  clearCustomerCart: () => set({ customerCart: [] }),
+    set((state) => {
+      const nextCart = state.customerCart.filter((c) => c.menuItemId !== menuItemId);
+      persistCustomerCart(nextCart);
+      return { customerCart: nextCart };
+    }),
+  clearCustomerCart: () => {
+    persistCustomerCart([]);
+    set({ customerCart: [] });
+  },
 
   addPosItem: (item) => set((state) => ({ posCart: upsertItem(state.posCart, item) })),
   updatePosQty: (menuItemId, delta) =>

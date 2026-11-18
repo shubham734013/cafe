@@ -36,43 +36,36 @@ const CATEGORY_ITEMS: Array<{
   id: MenuCategory;
   name: string;
   image: string;
-  countLabel: string;
 }> = [
   {
     id: 'Pizza',
     name: 'Pizza',
     image: CAFE_ASSETS.pizzaMargherita,
-    countLabel: '36 Items',
   },
   {
     id: 'Burger',
     name: 'Burger',
     image: CAFE_ASSETS.burgerClassic,
-    countLabel: '24 Items',
   },
   {
     id: 'Pasta',
     name: 'Pasta',
     image: CAFE_ASSETS.pastaAlfredo,
-    countLabel: '18 Items',
   },
   {
     id: 'Salad',
     name: 'Salad',
     image: CAFE_ASSETS.saladGarden,
-    countLabel: '16 Items',
   },
   {
     id: 'Drink',
     name: 'Drink',
     image: CAFE_ASSETS.drinkCitrus,
-    countLabel: '20 Items',
   },
   {
     id: 'Dessert',
     name: 'Dessert',
     image: CAFE_ASSETS.dessertCheesecake,
-    countLabel: '14 Items',
   },
 ];
 
@@ -105,6 +98,16 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
   const [bookingPhone, setBookingPhone] = useState('');
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingSubmitting, setBookingSubmitting] = useState(false);
+
+  const getCategoryCount = (catId: MenuCategory): number => {
+    if (catId === 'Drink') {
+      return menuItems.filter((m) => m.category === 'Drink' || m.category === 'Beverages').length;
+    }
+    if (catId === 'Dessert') {
+      return menuItems.filter((m) => m.category === 'Dessert' || m.category === 'Desserts').length;
+    }
+    return menuItems.filter((m) => m.category === catId).length;
+  };
 
   // Keyboard shortcut listener for modals
   useEffect(() => {
@@ -364,6 +367,9 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                   }`}
                 >
                   {cat.name}
+                </span>
+                <span className="text-[9px] text-on-surface-variant font-medium">
+                  {getCategoryCount(cat.id)} items
                 </span>
               </button>
             );

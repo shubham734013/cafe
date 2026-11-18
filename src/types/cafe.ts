@@ -106,6 +106,7 @@ export interface CartItem {
   name: string;
   price: number;
   quantity: number;
+  size?: 'Small' | 'Medium' | 'Large';
   note: string;
   imageUrl: string;
   station: MenuItem['station'];
@@ -143,6 +144,8 @@ export interface CafeOrder {
   paymentChannelLabel?: string;
   cardDetails?: CardPaymentMetadata;
   loyaltyPointsAwarded?: number;
+  pointsDiscount?: number;
+  pointsRedeemed?: number;
   status: OrderStatus;
   createdAtLabel: string;
   elapsedMinutes: number;

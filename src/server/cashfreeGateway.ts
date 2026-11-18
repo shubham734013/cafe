@@ -22,6 +22,14 @@ interface MockCashfreeOrder {
   utr?: string;
 }
 
+function getLocalMockBaseUrl(): string {
+  if (process.env.APP_PUBLIC_URL?.trim()) {
+    return process.env.APP_PUBLIC_URL.trim().replace(/\/+$/, '');
+  }
+  const port = process.env.PORT || '3000';
+  return `http://localhost:${port}`;
+}
+
 export class CashfreeGateway implements UpiGatewayClient {
   private readonly appId: string;
   private readonly secretKey: string;
@@ -101,7 +109,7 @@ export class CashfreeGateway implements UpiGatewayClient {
         clientOrderId: input.clientOrderId,
         amountPaise: input.amountPaise,
         status: 'pending',
-        paymentUrl: `http://localhost:3002/api/cashfree-mock/checkout?orderId=${encodeURIComponent(input.clientOrderId)}&session=${paymentSessionId}`,
+        paymentUrl: `${getLocalMockBaseUrl()}/api/cashfree-mock/checkout?orderId=${encodeURIComponent(input.clientOrderId)}&session=${paymentSessionId}`,
       };
     }
 
@@ -159,7 +167,7 @@ export class CashfreeGateway implements UpiGatewayClient {
         clientOrderId,
         amountPaise: Math.round(mock.amount * 100),
         status: mock.status === 'PAID' ? 'paid' : 'pending',
-        paymentUrl: `http://localhost:3002/api/cashfree-mock/checkout?orderId=${encodeURIComponent(clientOrderId)}&session=${mock.paymentSessionId}`,
+        paymentUrl: `${getLocalMockBaseUrl()}/api/cashfree-mock/checkout?orderId=${encodeURIComponent(clientOrderId)}&session=${mock.paymentSessionId}`,
         ...(mock.utr ? { utr: mock.utr } : {}),
       };
     }

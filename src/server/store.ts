@@ -82,6 +82,8 @@ interface PersistedEnvelope extends Omit<CafeBootstrapState, 'payments'> {
   nextOrderSeq: number;
   idempotencyOrderIds: Record<string, string>;
   recipes?: Record<string, Array<{ ingredientId: string; amount: number }>>;
+  stockDeductedOrderIds?: string[];
+  processedPaymentEvents?: string[];
 }
 
 const MONGO_STATE_ID = 'seth-sawariya-main';
@@ -658,6 +660,8 @@ export class CafeStore {
       nextOrderSeq: deriveMaxOrderSeq(orders),
       idempotencyOrderIds: {},
       recipes: clone(INITIAL_RECIPES),
+      stockDeductedOrderIds: [],
+      processedPaymentEvents: [],
     };
   }
 
@@ -671,6 +675,9 @@ export class CafeStore {
     for (const order of this.state.orders) {
       this.ordersById.set(order.id, order);
     }
+
+    this.stockDeductedOrderIds = new Set(this.state.stockDeductedOrderIds || []);
+    this.processedPaymentEvents = new Set(this.state.processedPaymentEvents || []);
 
     this.tablesById.clear();
     for (const table of this.state.tables) {
@@ -1233,6 +1240,47 @@ export class CafeStore {
     });
     order.refundedBy = staffName || 'Manager';
 
+    // Restock inventory burned for this order if it was deducted
+    if (this.stockDeductedOrderIds.has(order.id)) {
+      this.stockDeductedOrderIds.delete(order.id);
+      this.state.stockDeductedOrderIds = Array.from(this.stockDeductedOrderIds);
+      const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
+      order.items.forEach((item) => {
+        const burn = recipeCatalog[item.menuItemId];
+        if (burn) {
+          burn.forEach(({ ingredientId, amount }) => {
+            const ingIndex = this.state.inventory.findIndex((i) => i.id === ingredientId);
+            if (ingIndex !== -1) {
+              const ing = this.state.inventory[ingIndex];
+              const newQty = Math.round((ing.quantity + amount * item.quantity) * 100) / 100;
+              const status = newQty < ing.minThreshold ? 'Critical' : 'Good';
+              this.state.inventory[ingIndex] = {
+                ...ing,
+                quantity: newQty,
+                status,
+                fillPct: Math.min(100, Math.round((newQty / ing.maxCapacity) * 100)),
+              };
+            }
+          });
+        }
+      });
+    }
+
+    // Free table if this order was the active order
+    if (order.serviceMode === 'dine-in' && order.tableNumber) {
+      const table = this.tablesById.get(order.tableNumber);
+      if (table && table.activeOrderId === order.id) {
+        const updatedTable: CafeTable = {
+          ...table,
+          status: 'available',
+          activeOrderId: undefined,
+          elapsedLabel: '0m',
+        };
+        this.tablesById.set(updatedTable.id, updatedTable);
+        this.state.tables = this.state.tables.map((t) => (t.id === updatedTable.id ? updatedTable : t));
+      }
+    }
+
     this.recordActivity({
       type: 'order_refunded',
       title: `Order #${order.id} Refunded`,
@@ -1254,6 +1302,7 @@ export class CafeStore {
 
   public markPaymentProcessed(eventId: string): void {
     this.processedPaymentEvents.add(eventId);
+    this.state.processedPaymentEvents = Array.from(this.processedPaymentEvents).slice(-1000);
     this.touch();
   }
 
@@ -1290,7 +1339,7 @@ export class CafeStore {
       }
     }
 
-    // Enforce server-authoritative catalog pricing, station, name & image
+    // Enforce server-authoritative catalog pricing, station, name & image, with size multiplier
     const canonicalItems = input.items.map((item) => {
       const catalogItem = this.menuById.get(item.menuItemId);
       if (!catalogItem) {
@@ -1313,22 +1362,52 @@ export class CafeStore {
           httpStatus: 400,
         });
       }
+      const sizeMultiplier = item.size === 'Small' ? 0.85 : item.size === 'Large' ? 1.25 : 1.0;
+      const effectivePrice = Math.round(catalogItem.price * sizeMultiplier);
       return {
         ...item,
         name: catalogItem.name,
-        price: catalogItem.price,
+        price: effectivePrice,
+        size: item.size || 'Medium',
         station: catalogItem.station,
         imageUrl: catalogItem.imageUrl,
         checked: false,
       };
     });
 
+    // Verify sufficient recipe ingredients in inventory before creating order
+    const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
+    const requiredByIngredient: Record<string, number> = {};
+    for (const item of canonicalItems) {
+      const burn = recipeCatalog[item.menuItemId];
+      if (burn) {
+        for (const { ingredientId, amount } of burn) {
+          requiredByIngredient[ingredientId] =
+            (requiredByIngredient[ingredientId] || 0) + amount * item.quantity;
+        }
+      }
+    }
+    for (const [ingredientId, requiredQty] of Object.entries(requiredByIngredient)) {
+      const ing = this.state.inventory.find((i) => i.id === ingredientId);
+      if (ing && ing.quantity < requiredQty) {
+        throw new InvalidDomainTransitionError({
+          domain: 'order_status',
+          fromState: 'cart',
+          toState: 'placed',
+          action: 'create_order',
+          message: `Insufficient inventory for ingredient "${ing.name}" to prepare this order.`,
+          httpStatus: 400,
+        });
+      }
+    }
+
     const totals = calculateCartTotals(
       canonicalItems,
       input.couponCode ?? '',
       input.serviceMode,
       Boolean(input.isPosTerminal),
-      this.state.campaigns
+      this.state.campaigns,
+      input.redeemPoints || 0
     );
 
     if (input.couponCode?.trim() && totals.couponError) {
@@ -1340,6 +1419,16 @@ export class CafeStore {
         message: totals.couponError,
         httpStatus: 400,
       });
+    }
+
+    if (totals.pointsRedeemed && totals.pointsRedeemed > 0) {
+      this.state.rewardPoints = Math.max(0, (this.state.rewardPoints || 0) - totals.pointsRedeemed);
+      if (input.customerId) {
+        const cust = this.state.customers.find((c) => c.id === input.customerId);
+        if (cust && cust.loyaltyPoints !== undefined) {
+          cust.loyaltyPoints = Math.max(0, cust.loyaltyPoints - totals.pointsRedeemed);
+        }
+      }
     }
 
     this.state.nextOrderSeq += 1;
@@ -1360,6 +1449,8 @@ export class CafeStore {
       items: canonicalItems,
       subtotal: totals.subtotal,
       discount: totals.discount,
+      pointsDiscount: totals.pointsDiscount,
+      pointsRedeemed: totals.pointsRedeemed,
       tax: totals.tax,
       total: totals.total,
       paymentMode,
@@ -1378,6 +1469,12 @@ export class CafeStore {
     this.ordersById.set(newOrder.id, newOrder);
 
     if (input.idempotencyKey) {
+      const existingKeys = Object.keys(this.state.idempotencyOrderIds);
+      if (existingKeys.length >= 1000) {
+        for (let i = 0; i < 200; i++) {
+          delete this.state.idempotencyOrderIds[existingKeys[i]];
+        }
+      }
       this.state.idempotencyOrderIds[input.idempotencyKey] = newOrder.id;
     }
 
@@ -1587,43 +1684,49 @@ export class CafeStore {
   ): { order: CafeOrder; pointsAwarded: number } | null {
     const order = this.ordersById.get(orderId);
     if (!order) return null;
+
+    const alreadyReviewed = order.rating !== undefined;
     order.rating = feedback.rating;
     if (feedback.tags) order.feedbackTags = feedback.tags;
     if (feedback.comment) order.feedbackComment = feedback.comment;
 
-    const pointsAwarded = 25;
-    this.state.rewardPoints = (this.state.rewardPoints || 0) + pointsAwarded;
+    // Only award loyalty points once per order to prevent point farming
+    const pointsAwarded = alreadyReviewed ? 0 : 25;
+    if (pointsAwarded > 0) {
+      this.state.rewardPoints = (this.state.rewardPoints || 0) + pointsAwarded;
 
-    let customerName = 'Guest Customer';
-    if (feedback.customerPhone || order.customerId) {
-      const customer = this.state.customers.find(
-        (c) =>
-          (feedback.customerPhone &&
-            c.phone.replace(/\D/g, '') === feedback.customerPhone.replace(/\D/g, '')) ||
-          (order.customerId && c.id === order.customerId)
-      );
-      if (customer) {
-        customerName = customer.name;
-        customer.loyaltyPoints = (customer.loyaltyPoints || 0) + pointsAwarded;
+      let customerName = 'Guest Customer';
+      if (feedback.customerPhone || order.customerId) {
+        const customer = this.state.customers.find(
+          (c) =>
+            (feedback.customerPhone &&
+              c.phone.replace(/\D/g, '') === feedback.customerPhone.replace(/\D/g, '')) ||
+            (order.customerId && c.id === order.customerId)
+        );
+        if (customer) {
+          customerName = customer.name;
+          customer.loyaltyPoints = (customer.loyaltyPoints || 0) + pointsAwarded;
+        }
       }
+
+      const entry: PointLedgerEntry = {
+        id: `pt-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        orderId: order.id,
+        initials:
+          customerName
+            .split(' ')
+            .map((w) => w[0])
+            .join('')
+            .slice(0, 2)
+            .toUpperCase() || 'GC',
+        customerName,
+        context: `Order Feedback · ${order.kotNumber} (${feedback.rating}★)`,
+        pointsDelta: pointsAwarded,
+        note: feedback.comment ? `"${feedback.comment.slice(0, 40)}"` : 'Verified guest review submitted',
+      };
+      this.state.pointLedger.unshift(entry);
     }
 
-    const entry: PointLedgerEntry = {
-      id: `pt-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      orderId: order.id,
-      initials:
-        customerName
-          .split(' ')
-          .map((w) => w[0])
-          .join('')
-          .slice(0, 2)
-          .toUpperCase() || 'GC',
-      customerName,
-      context: `Order Feedback · ${order.kotNumber} (${feedback.rating}★)`,
-      pointsDelta: pointsAwarded,
-      note: feedback.comment ? `"${feedback.comment.slice(0, 40)}"` : 'Verified guest review submitted',
-    };
-    this.state.pointLedger.unshift(entry);
     this.touch();
 
     return {

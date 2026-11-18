@@ -248,13 +248,22 @@ export default function App() {
 
   const handleStartPayment = useCallback(
     async (orderId: string) => {
-      const checkoutWindow = window.open('about:blank', '_blank');
-      if (checkoutWindow) checkoutWindow.opener = null;
+      const isMobile =
+        typeof navigator !== 'undefined' &&
+        /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      let checkoutWindow: Window | null = null;
+      if (!isMobile) {
+        checkoutWindow = window.open('about:blank', '_blank');
+        if (checkoutWindow) checkoutWindow.opener = null;
+      }
       try {
         const result = await createPaymentSessionMutation.mutateAsync(orderId);
         if (result.checkoutUrl) {
-          if (checkoutWindow) checkoutWindow.location.assign(result.checkoutUrl);
-          else window.location.assign(result.checkoutUrl);
+          if (checkoutWindow) {
+            checkoutWindow.location.assign(result.checkoutUrl);
+          } else {
+            window.location.assign(result.checkoutUrl);
+          }
           return;
         }
         checkoutWindow?.close();

@@ -94,14 +94,18 @@ export function useCafeApi(screen: string, kitchenRoute = false) {
 
   // Refetch the active route slice so unrelated slices stay empty in its cache.
   useEffect(() => {
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const tableToken = params?.get('table') || '';
+    const orderId = params?.get('orderId') || '';
+
     const socket = io({
-      query: { outletId: 'seth-sawariya-main' },
+      query: { outletId: 'seth-sawariya-main', tableToken, orderId },
       transports: ['websocket', 'polling'],
     });
 
     const handleConnect = () => {
       setSocketConnected(true);
-      socket.emit('outlet:join', {});
+      socket.emit('outlet:join', { tableToken, orderId });
     };
     const handleDisconnect = () => setSocketConnected(false);
 
@@ -121,6 +125,7 @@ export function useCafeApi(screen: string, kitchenRoute = false) {
     socket.on('activity:updated', invalidateRouteData);
     socket.on('customer:updated', invalidateRouteData);
     socket.on('settings:updated', invalidateRouteData);
+    socket.on('menu:availability-toggled', invalidateRouteData);
     socket.on('cafe:sync', invalidateRouteData);
 
     return () => {
@@ -136,6 +141,7 @@ export function useCafeApi(screen: string, kitchenRoute = false) {
       socket.off('activity:updated', invalidateRouteData);
       socket.off('customer:updated', invalidateRouteData);
       socket.off('settings:updated', invalidateRouteData);
+      socket.off('menu:availability-toggled', invalidateRouteData);
       socket.off('cafe:sync', invalidateRouteData);
       socket.disconnect();
     };

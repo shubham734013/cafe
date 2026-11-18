@@ -244,8 +244,12 @@ export function createCafeServer(
     }
 
     // 4. Non-sensitive catalog/sync notifications to public room
-    if (event === 'menu:item-availability' || event === 'cafe:sync') {
-      io.to(PUBLIC_ROOM).emit(event, { ts: Date.now() });
+    if (
+      event === 'menu:item-availability' ||
+      event === 'menu:availability-toggled' ||
+      event === 'cafe:sync'
+    ) {
+      io.to(PUBLIC_ROOM).emit(event, data);
     }
     // NEVER broadcast private customer order events globally via io.emit()!
   };
@@ -734,6 +738,13 @@ export function createCafeServer(
       }
     }
     res.redirect(`/api/orders/${encodeURIComponent(orderId)}/cashfree-return`);
+  });
+
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
   });
 
   app.use(express.json({ limit: '1mb' }));
@@ -1236,17 +1247,31 @@ export function createCafeServer(
     }
   );
 
-  app.post('/api/orders/:id/feedback', async (req, res, next) => {
+  app.post('/api/orders/:id/feedback', customerFeedbackLimiter, async (req, res, next) => {
     try {
+      const orderId = String(req.params.id);
+      const existingOrder = store.getOrder(orderId);
+      if (!existingOrder) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+
+      const staffSession = getStaffSession(req);
+      const customerSession = getCustomerSession(req);
+      if (!staffSession && customerSession && !canCustomerAccessOrder(customerSession, orderId)) {
+        res.status(403).json({ error: 'You do not have permission to leave feedback for this order.' });
+        return;
+      }
+
       const input = parseBody(orderFeedbackSchema, req.body);
-      const result = store.recordOrderFeedback(String(req.params.id), input);
+      const result = store.recordOrderFeedback(orderId, input);
       if (!result) {
         res.status(404).json({ error: 'Order not found' });
         return;
       }
       await store.flushToPersistence();
       emitSync('order:feedback-received', {
-        orderId: String(req.params.id),
+        orderId,
         order: result.order,
         pointsAwarded: result.pointsAwarded,
       });

@@ -9,12 +9,13 @@ export const tableFloorSchema = z.enum([
 export const customerSegmentSchema = z.enum(['vip', 'loyal', 'regular', 'new', 'risk']);
 
 export const cartItemSchema = z.object({
-  menuItemId: z.string().min(1),
-  name: z.string().min(1),
+  menuItemId: z.string().min(1).max(80),
+  name: z.string().min(1).max(120),
   price: z.number().nonnegative(),
   quantity: z.number().int().positive().max(99),
-  note: z.string().default(''),
-  imageUrl: z.string().default(''),
+  size: z.enum(['Small', 'Medium', 'Large']).optional(),
+  note: z.string().trim().max(200).default(''),
+  imageUrl: z.string().trim().max(500).default(''),
   station: z.enum(['Barista', 'Grill', 'Fryer', 'Cold Bar', 'Kitchen']),
   checked: z.boolean().optional(),
 });
@@ -24,12 +25,16 @@ export const createOrderSchema = z.object({
   serviceMode: serviceModeSchema,
   tableNumber: z.string().trim().min(1).max(16).optional(),
   deliveryPartner: z.string().trim().min(1).max(60).optional(),
-  items: z.array(cartItemSchema).min(1, 'Order must contain at least one item'),
+  items: z
+    .array(cartItemSchema)
+    .min(1, 'Order must contain at least one item')
+    .max(50, 'Cannot exceed 50 items per order'),
   couponCode: z.string().trim().max(32).optional().default(''),
   cookingNote: z.string().trim().max(240).optional().default(''),
   isPosTerminal: z.boolean().optional().default(false),
   paymentMode: z.enum(['upi', 'cash', 'card']).optional().default('upi'),
   customerId: z.string().trim().max(64).optional(),
+  redeemPoints: z.coerce.number().int().nonnegative().max(10000).optional(),
   idempotencyKey: z.string().trim().max(120).optional(),
 });
 
@@ -56,6 +61,7 @@ export const addTableSchema = z.object({
     .trim()
     .min(1, 'Table code is required')
     .max(10, 'Max 10 characters')
+    .regex(/^[A-Za-z0-9_-]+$/, 'Table code must be alphanumeric')
     .transform((v) => v.toUpperCase()),
   seats: z.coerce
     .number()
@@ -165,7 +171,7 @@ export const staffPinLoginSchema = z.object({
 
 export const orderFeedbackSchema = z.object({
   rating: z.number().int().min(1).max(5),
-  tags: z.array(z.string().trim().max(40)).optional().default([]),
+  tags: z.array(z.string().trim().max(40)).max(10).optional().default([]),
   comment: z.string().trim().max(500).optional().default(''),
   customerPhone: z.string().trim().max(20).optional(),
 });
