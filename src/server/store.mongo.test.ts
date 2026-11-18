@@ -41,6 +41,15 @@ test(
 
       const initialOrders = firstStore.getOrders();
       assert.ok(initialOrders.length > 0);
+      const persistenceTestOrder = initialOrders[0]!;
+      const persistenceTestIngredient = firstStore.getBootstrap().inventory[0]!;
+      const persistenceTestRecipe = [
+        { ingredientId: persistenceTestIngredient.id, amount: 0.01 },
+      ];
+      firstStore.setRecipe(persistenceTestOrder.items[0]!.menuItemId, persistenceTestRecipe);
+      firstStore.markPaymentProcessed('cashfree-mongo-restart-test');
+      firstStore.deductStockForOrder(persistenceTestOrder);
+
       const initialUpdatedAt = firstStore.getBootstrap().updatedAt;
       firstStore.resetSettings();
       await firstStore.flushToPersistence();
@@ -71,6 +80,12 @@ test(
       firstConnected = false;
       await secondStore.connectMongo(mongoUri!, databaseName);
       assert.deepEqual(secondStore.getOrders(), initialOrders);
+      assert.deepEqual(
+        secondStore.getRecipes()[persistenceTestOrder.items[0]!.menuItemId],
+        persistenceTestRecipe
+      );
+      assert.equal(secondStore.hasProcessedPaymentEvent('cashfree-mongo-restart-test'), true);
+      assert.deepEqual(secondStore.deductStockForOrder(persistenceTestOrder), []);
       assert.ok(secondStore.isPersistenceHealthy());
     } finally {
       if (firstConnected) await firstStore.closeMongo();
