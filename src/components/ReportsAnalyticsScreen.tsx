@@ -16,7 +16,6 @@ import {
   MENU_ITEMS,
   STAFF_PERFORMANCE_ROWS,
 } from '../data/cafeSeedData';
-import type { YoupiPaymentRecord } from '../payments/types';
 import {
   CafeOrder,
   DailyOrderVolumePoint,
@@ -32,7 +31,6 @@ import { CafeImage } from './CafeImage';
 
 interface ReportsAnalyticsScreenProps {
   orders: CafeOrder[];
-  payments?: YoupiPaymentRecord[];
   onExportCsv: () => void;
   onExportExcel?: () => void;
   onDownloadReportPdf?: (args: {
@@ -80,7 +78,6 @@ const OrderVolumeTooltip: React.FC<OrderVolumeTooltipProps> = ({ active, payload
 
 export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
   orders,
-  payments = [],
   onExportCsv,
   onExportExcel,
   onDownloadReportPdf,
@@ -111,26 +108,10 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
   const inspected = selectedDay || { day: peakBar.day, amount: peakBar.amount };
 
   const {
-    upiLive,
-    cashLive,
-    cardLive,
-    upiPct,
-    cashPct,
-    cardPct,
-    pendingSettlementCount,
-    youpiReconciledCount,
     channelStats,
     leadingChannelLabel,
     topMenuItem,
   } = useMemo(() => {
-    const total = Math.max(1, orders.reduce((s, o) => s + o.total, 0));
-    const upi = orders.filter((o) => o.paymentMode === 'upi').reduce((s, o) => s + o.total, 0);
-    const cash = orders.filter((o) => o.paymentMode === 'cash').reduce((s, o) => s + o.total, 0);
-    const card = orders.filter((o) => o.paymentMode === 'card').reduce((s, o) => s + o.total, 0);
-    const uPct = Math.round((upi / total) * 100);
-    const cPct = Math.round((cash / total) * 100);
-    const dPct = Math.max(0, 100 - uPct - cPct);
-
     const dineInCount = orders.filter((o) => o.serviceMode === 'dine-in').length;
     const takeawayCount = orders.filter((o) => o.serviceMode === 'takeaway').length;
     const deliveryCount = orders.filter((o) => o.serviceMode === 'delivery').length;
@@ -149,24 +130,11 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
     const bestItem = [...MENU_ITEMS].sort((a, b) => b.unitsSold - a.unitsSold)[0];
 
     return {
-      upiLive: upi,
-      cashLive: cash,
-      cardLive: card,
-      upiPct: uPct,
-      cashPct: cPct,
-      cardPct: dPct,
-      pendingSettlementCount: orders.filter(
-        (o) =>
-          o.paymentStatus === 'pending' ||
-          o.paymentStatus === 'observed' ||
-          o.paymentStatus === 'manual_review'
-      ).length,
-      youpiReconciledCount: payments.filter((p) => p.status === 'reconciled').length,
       channelStats: channels,
       leadingChannelLabel: orders.length === 0 ? 'No orders yet' : `${leader.name} Leader`,
       topMenuItem: bestItem,
     };
-  }, [orders, payments]);
+  }, [orders]);
 
   return (
     <div className="flex flex-col w-full pb-6 space-y-4">
@@ -181,7 +149,7 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
               Reports &amp; Analytics
             </h1>
             <p className="text-xs text-on-surface-variant mt-0.5">
-              Performance insights &amp; revenues
+              Performance insights &amp; order totals
             </p>
           </div>
         </div>
@@ -254,7 +222,7 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
         <div className="p-3.5 rounded-lg bg-surface-container-low flex flex-col justify-between shadow-sm min-w-0">
           <div className="flex items-center justify-between gap-1">
             <span className="text-[11px] text-on-surface-variant uppercase tracking-wider font-medium truncate">
-              Gross Sales
+              Order Value
             </span>
             <span className="flex items-center text-tertiary text-[11px] font-bold shrink-0">
               <span className="material-symbols-outlined text-[14px]">trending_up</span> +
@@ -459,60 +427,8 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
             </div>
           </section>
 
-          {/* Payment Split & Order Channels */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="p-4 rounded-xl bg-surface-container-low shadow-sm flex flex-col space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary-container text-[20px]">
-                    account_balance_wallet
-                  </span>
-                  <h2 className="text-base text-on-surface font-semibold">
-                    Live Payment Split &amp; Reconciliation
-                  </h2>
-                </div>
-                <span className="text-[11px] text-tertiary font-semibold">
-                  {pendingSettlementCount === 0
-                    ? '100% Settled'
-                    : `${pendingSettlementCount} Pending · ${youpiReconciledCount} UPI Reconciled`}
-                </span>
-              </div>
-              <div className="w-full h-3.5 bg-surface-container-highest rounded-full overflow-hidden flex">
-                <div className="h-full bg-primary-container" style={{ width: `${upiPct}%` }} />
-                <div className="h-full bg-tertiary-container" style={{ width: `${cashPct}%` }} />
-                <div className="h-full bg-secondary" style={{ width: `${cardPct}%` }} />
-              </div>
-              <div className="grid grid-cols-3 gap-2 pt-1">
-                <div>
-                  <span className="text-[11px] text-on-surface flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-primary-container" /> UPI &amp; Apps
-                  </span>
-                  <span className="text-sm font-bold text-on-surface block mt-0.5">{upiPct}%</span>
-                  <span className="text-[11px] text-on-surface-variant tabular-nums">
-                    {formatINR(upiLive)}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[11px] text-on-surface flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-tertiary-container" /> Cash
-                  </span>
-                  <span className="text-sm font-bold text-on-surface block mt-0.5">{cashPct}%</span>
-                  <span className="text-[11px] text-on-surface-variant tabular-nums">
-                    {formatINR(cashLive)}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[11px] text-on-surface flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-secondary" /> Card (EDC/Web)
-                  </span>
-                  <span className="text-sm font-bold text-on-surface block mt-0.5">{cardPct}%</span>
-                  <span className="text-[11px] text-on-surface-variant tabular-nums">
-                    {formatINR(cardLive)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
+          {/* Order Channels */}
+          <div className="grid grid-cols-1 gap-3">
             <div className="p-4 rounded-xl bg-surface-container shadow-sm flex flex-col justify-between space-y-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
@@ -652,7 +568,7 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
               </div>
               <p className="text-[11px] text-on-surface-variant mt-0.5">
                 {topMenuItem.unitsSold} units served ·{' '}
-                {formatINR(topMenuItem.unitsSold * topMenuItem.price)} revenue
+                {formatINR(topMenuItem.unitsSold * topMenuItem.price)} order value
               </p>
             </div>
           </div>

@@ -10,8 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { fetchCustomerPaymentsApi } from '../hooks/useCafeApi';
-import type { YoupiPaymentRecord } from '../payments/types';
 import { addCustomerSchema } from '../shared/schemas';
 import { CustomerProfile, CustomerSegment } from '../types/cafe';
 import { filterCustomers, formatINR } from '../utils/cafeLogic';
@@ -43,9 +41,6 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE);
   const [addModalOpen, setAddModalOpen] = useState(false);
-  const [historyCustomer, setHistoryCustomer] = useState<CustomerProfile | null>(null);
-  const [historyPayments, setHistoryPayments] = useState<YoupiPaymentRecord[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
 
   const segmentCounts = useMemo(() => {
     const counts = { all: customers.length, vip: 0, loyal: 0, regular: 0, new: 0, risk: 0 };
@@ -81,19 +76,6 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
       retentionPct: Math.round((returning / customers.length) * 100),
     };
   }, [customers]);
-
-  const openPaymentHistory = async (customer: CustomerProfile) => {
-    setHistoryCustomer(customer);
-    setHistoryLoading(true);
-    try {
-      const list = await fetchCustomerPaymentsApi(customer.id);
-      setHistoryPayments(list);
-    } catch {
-      setHistoryPayments([]);
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
 
   const form = useForm<AddCustomerValues>({
     resolver: zodResolver(addCustomerSchema),
@@ -169,13 +151,6 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
         enableSorting: false,
         cell: ({ row }) => (
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => void openPaymentHistory(row.original)}
-              className="px-2 py-1 rounded bg-primary/15 text-primary text-[11px] font-semibold hover:bg-primary/25 cursor-pointer"
-            >
-              Payments
-            </button>
             <button
               type="button"
               onClick={() =>
@@ -501,14 +476,6 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         type="button"
-                        aria-label={`View payment history for ${customer.name}`}
-                        onClick={() => void openPaymentHistory(customer)}
-                        className="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-primary hover:bg-surface-bright active:scale-95 transition-transform cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">receipt_long</span>
-                      </button>
-                      <button
-                        type="button"
                         aria-label={`Export DPDP PII for ${customer.name}`}
                         onClick={() =>
                           onExportCustomerPii
@@ -704,89 +671,6 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
               </button>
             </div>
           </form>
-        </DialogContent>
-      </Dialog>
-      {/* Customer YouPI-PG Payment History Dialog */}
-      <Dialog
-        open={Boolean(historyCustomer)}
-        onOpenChange={(open) => !open && setHistoryCustomer(null)}
-      >
-        <DialogContent className="bg-surface-container border border-outline-variant/30 text-on-surface sm:max-w-lg rounded-2xl p-5">
-          {historyCustomer && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="text-lg font-bold text-primary flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[20px]">receipt_long</span>
-                  <span>UPI Payment History · {historyCustomer.name}</span>
-                </DialogTitle>
-                <DialogDescription className="text-xs text-on-surface-variant">
-                  +91 {historyCustomer.phone} · YouPI-PG Transactions (INR)
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="space-y-2 max-h-72 overflow-y-auto py-1">
-                {historyLoading ? (
-                  <p className="text-xs text-on-surface-variant py-6 text-center">
-                    Loading payment history...
-                  </p>
-                ) : historyPayments.length === 0 ? (
-                  <div className="rounded-xl bg-surface-container-low p-5 text-center text-xs text-on-surface-variant">
-                    No YouPI-PG UPI sessions recorded for this patron yet.
-                  </div>
-                ) : (
-                  historyPayments.map((p) => (
-                    <div
-                      key={p.id}
-                      className="rounded-xl bg-surface-container-low p-3 flex items-center justify-between gap-3 text-xs"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-on-surface">Order #{p.orderId}</span>
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                              p.status === 'reconciled'
-                                ? 'bg-tertiary-container/20 text-tertiary'
-                                : p.status === 'observed'
-                                  ? 'bg-primary-container/25 text-primary'
-                                  : p.status === 'failed' ||
-                                      p.status === 'expired' ||
-                                      p.status === 'manual_review'
-                                    ? 'bg-error-container/20 text-error'
-                                    : 'bg-surface-container-highest text-on-surface-variant'
-                            }`}
-                          >
-                            {p.status}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-outline mt-0.5 font-mono truncate">
-                          {p.utr ? `UTR ${p.utr}` : p.gatewayStatus} · {p.settlementState}
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <span className="font-bold text-primary text-sm tabular-nums">
-                          ₹{p.amountInr}
-                        </span>
-                        <span className="block text-[10px] text-outline">
-                          {new Date(p.createdAt).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setHistoryCustomer(null)}
-                className="w-full py-2.5 rounded-xl bg-primary-container text-on-primary text-xs font-bold cursor-pointer"
-              >
-                Close History
-              </button>
-            </>
-          )}
         </DialogContent>
       </Dialog>
     </div>

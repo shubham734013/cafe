@@ -17,41 +17,20 @@ import type {
   addStaffSchema,
   addTableSchema,
   cafeSettingsSchema,
+  CustomerFeedbackInput,
   createCampaignSchema,
   createOrderSchema,
   reserveTableSchema,
+  orderFeedbackSchema,
 } from '../shared/schemas';
-import type { DailyReconciliationSummary, YoupiPaymentRecord } from '../payments/types';
-import type { UpiAppId } from '../payments/upiUri';
-import type {
-  AuthSessionState,
-  CafeOrder,
-  CafeSettings,
-  CafeTable,
-  CardNetwork,
-} from '../types/cafe';
+import type { AuthSessionState, CafeOrder, CafeTable, MenuItem } from '../types/cafe';
 
-export const BOOTSTRAP_QUERY_KEY = ['cafeos', 'bootstrap'] as const;
-export const YOUPI_CONFIG_QUERY_KEY = ['cafeos', 'youpi-config'] as const;
+export const BOOTSTRAP_QUERY_KEY = ['cafeos', 'route-data'] as const;
 export const AUTH_SESSION_QUERY_KEY = ['cafeos', 'auth-session'] as const;
-
-export interface YoupiGatewayConfigInfo {
-  configured: boolean;
-  mode: 'youpi-live' | 'youpi-sandbox-fallback';
-  gateway: 'youpi-pg';
-  currency: 'INR';
-  payeeVpa: string;
-  payeeName?: string;
-  isDemoVpa?: boolean;
-  confirmOnObserver: boolean;
-  activeWindowSeconds: number;
-  processingWindowSeconds: number;
-}
 
 const FALLBACK_BOOTSTRAP: CafeBootstrapState = {
   outletId: 'seth-sawariya-main',
   orders: [],
-  payments: [],
   tables: INITIAL_TABLES.map((t) => ({
     ...t,
     activeOrderId: undefined,
@@ -67,6 +46,7 @@ const FALLBACK_BOOTSTRAP: CafeBootstrapState = {
   cafeSettings: INITIAL_CAFE_SETTINGS,
   menuItems: MENU_ITEMS,
   rewardPoints: 0,
+  activityLog: [],
   updatedAt: new Date().toISOString(),
 };
 
@@ -82,25 +62,6 @@ async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
   return data as T;
 }
 
-export async function fetchYoupiPaymentStatusApi(
-  paymentId: string,
-  sync = true
-): Promise<YoupiPaymentRecord> {
-  const res = await apiJson<{ payment: YoupiPaymentRecord }>(
-    `/api/payments/${encodeURIComponent(paymentId)}?sync=${sync ? 'true' : 'false'}`
-  );
-  return res.payment;
-}
-
-export async function fetchCustomerPaymentsApi(
-  customerId: string
-): Promise<YoupiPaymentRecord[]> {
-  const res = await apiJson<{ payments: YoupiPaymentRecord[] }>(
-    `/api/customers/${encodeURIComponent(customerId)}/payments`
-  );
-  return res.payments;
-}
-
 export async function authenticateManagerPinApi(pin: string): Promise<AuthSessionState> {
   return apiJson<AuthSessionState>('/api/auth/pin', {
     method: 'POST',
@@ -108,21 +69,20 @@ export async function authenticateManagerPinApi(pin: string): Promise<AuthSessio
   });
 }
 
-export async function fetchDailyReconciliationApi(): Promise<DailyReconciliationSummary> {
-  return apiJson<DailyReconciliationSummary>('/api/payments/reconciliation/daily');
-}
-
-export function useCafeApi() {
+export function useCafeApi(screen: string, kitchenRoute = false) {
   const queryClient = useQueryClient();
   const [socketConnected, setSocketConnected] = useState(false);
 
   const bootstrapQuery = useQuery<CafeBootstrapState>({
-    queryKey: BOOTSTRAP_QUERY_KEY,
-    queryFn: () => apiJson<CafeBootstrapState>('/api/bootstrap'),
+    queryKey: [...BOOTSTRAP_QUERY_KEY, kitchenRoute ? 'kitchen' : 'main', screen],
+    queryFn: () =>
+      apiJson<CafeBootstrapState>(
+        `/api/bootstrap?screen=${encodeURIComponent(screen)}&scope=${kitchenRoute ? 'kitchen' : 'main'}`
+      ),
     placeholderData: FALLBACK_BOOTSTRAP,
-    staleTime: 15_000,
-    refetchOnWindowFocus: false,
-    refetchInterval: socketConnected ? false : 30_000,
+    staleTime: 2_000,
+    refetchOnWindowFocus: true,
+    refetchInterval: 3_000,
   });
 
   const authSessionQuery = useQuery<AuthSessionState>({
@@ -132,134 +92,51 @@ export function useCafeApi() {
     refetchOnWindowFocus: false,
   });
 
-  const youpiConfigQuery = useQuery<YoupiGatewayConfigInfo>({
-    queryKey: YOUPI_CONFIG_QUERY_KEY,
-    queryFn: () => apiJson<YoupiGatewayConfigInfo>('/api/payments/config'),
-    staleTime: 60_000,
-    refetchOnWindowFocus: false,
-  });
-
-  // Real-time Socket.IO subscription with cache-patching to prevent redundant full refetches
+  // Refetch the active route slice so unrelated slices stay empty in its cache.
   useEffect(() => {
     const socket = io({
       query: { outletId: 'seth-sawariya-main' },
       transports: ['websocket', 'polling'],
     });
 
-    const handleConnect = () => setSocketConnected(true);
+    const handleConnect = () => {
+      setSocketConnected(true);
+      socket.emit('outlet:join', {});
+    };
     const handleDisconnect = () => setSocketConnected(false);
 
-    const handleOrderCreated = (payload?: { order?: CafeOrder; rewardPoints?: number }) => {
-      if (!payload?.order) return;
-      queryClient.setQueryData<CafeBootstrapState>(BOOTSTRAP_QUERY_KEY, (prev) => {
-        if (!prev) return prev;
-        const exists = prev.orders.some((o) => o.id === payload.order!.id);
-        return {
-          ...prev,
-          orders: exists ? prev.orders : [payload.order!, ...prev.orders],
-          rewardPoints:
-            typeof payload.rewardPoints === 'number' ? payload.rewardPoints : prev.rewardPoints,
-          updatedAt: new Date().toISOString(),
-        };
-      });
-    };
-
-    const handleOrderUpdated = (payload?: { order?: CafeOrder }) => {
-      if (!payload?.order) return;
-      queryClient.setQueryData<CafeBootstrapState>(BOOTSTRAP_QUERY_KEY, (prev) => {
-        if (!prev) return prev;
-        const exists = prev.orders.some((o) => o.id === payload.order!.id);
-        return {
-          ...prev,
-          orders: exists
-            ? prev.orders.map((o) => (o.id === payload.order!.id ? payload.order! : o))
-            : prev.orders,
-          updatedAt: new Date().toISOString(),
-        };
-      });
-    };
-
-    const handlePaymentUpdated = (payload?: { payment?: YoupiPaymentRecord }) => {
-      if (!payload?.payment) {
-        void queryClient.invalidateQueries({ queryKey: BOOTSTRAP_QUERY_KEY });
-        return;
-      }
-      queryClient.setQueryData<CafeBootstrapState>(BOOTSTRAP_QUERY_KEY, (prev) => {
-        if (!prev) return prev;
-        const exists = prev.payments.some((p) => p.id === payload.payment!.id);
-        return {
-          ...prev,
-          payments: exists
-            ? prev.payments.map((p) => (p.id === payload.payment!.id ? payload.payment! : p))
-            : [payload.payment!, ...prev.payments],
-          updatedAt: new Date().toISOString(),
-        };
-      });
-    };
-
-    const handleTableUpdated = (payload?: { table?: CafeTable }) => {
-      if (!payload?.table) {
-        void queryClient.invalidateQueries({ queryKey: BOOTSTRAP_QUERY_KEY });
-        return;
-      }
-      queryClient.setQueryData<CafeBootstrapState>(BOOTSTRAP_QUERY_KEY, (prev) => {
-        if (!prev) return prev;
-        const exists = prev.tables.some((t) => t.id === payload.table!.id);
-        return {
-          ...prev,
-          tables: exists
-            ? prev.tables.map((t) => (t.id === payload.table!.id ? payload.table! : t))
-            : [...prev.tables, payload.table!],
-          updatedAt: new Date().toISOString(),
-        };
-      });
-    };
-
-    const handleSettingsUpdated = (payload?: { settings?: CafeSettings }) => {
-      if (!payload?.settings) return;
-      queryClient.setQueryData<CafeBootstrapState>(BOOTSTRAP_QUERY_KEY, (prev) =>
-        prev
-          ? { ...prev, cafeSettings: payload.settings!, updatedAt: new Date().toISOString() }
-          : prev
-      );
-      void queryClient.invalidateQueries({ queryKey: YOUPI_CONFIG_QUERY_KEY });
-    };
-
-    const handleSync = (meta?: { event?: string }) => {
-      const granularEvents = new Set([
-        'order:created',
-        'order:updated',
-        'payment:updated',
-        'settings:updated',
-      ]);
-      // Staff sockets receive full granular events directly; invalidate on public/non-granular events
-      const isStaffAuthed = Boolean(
-        queryClient.getQueryData<AuthSessionState>(AUTH_SESSION_QUERY_KEY)?.authenticated
-      );
-      if (isStaffAuthed && meta?.event && granularEvents.has(meta.event)) {
-        return;
-      }
+    const invalidateRouteData = () => {
       void queryClient.invalidateQueries({ queryKey: BOOTSTRAP_QUERY_KEY });
     };
 
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
-    socket.on('order:created', handleOrderCreated);
-    socket.on('order:updated', handleOrderUpdated);
-    socket.on('payment:updated', handlePaymentUpdated);
-    socket.on('table:updated', handleTableUpdated);
-    socket.on('settings:updated', handleSettingsUpdated);
-    socket.on('cafe:sync', handleSync);
+    socket.on('order:created', invalidateRouteData);
+    socket.on('order:new', invalidateRouteData);
+    socket.on('order:updated', invalidateRouteData);
+    socket.on('order:refunded', invalidateRouteData);
+    socket.on('table:updated', invalidateRouteData);
+    socket.on('inventory:updated', invalidateRouteData);
+    socket.on('stock:low', invalidateRouteData);
+    socket.on('activity:updated', invalidateRouteData);
+    socket.on('customer:updated', invalidateRouteData);
+    socket.on('settings:updated', invalidateRouteData);
+    socket.on('cafe:sync', invalidateRouteData);
 
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
-      socket.off('order:created', handleOrderCreated);
-      socket.off('order:updated', handleOrderUpdated);
-      socket.off('payment:updated', handlePaymentUpdated);
-      socket.off('table:updated', handleTableUpdated);
-      socket.off('settings:updated', handleSettingsUpdated);
-      socket.off('cafe:sync', handleSync);
+      socket.off('order:created', invalidateRouteData);
+      socket.off('order:new', invalidateRouteData);
+      socket.off('order:updated', invalidateRouteData);
+      socket.off('order:refunded', invalidateRouteData);
+      socket.off('table:updated', invalidateRouteData);
+      socket.off('inventory:updated', invalidateRouteData);
+      socket.off('stock:low', invalidateRouteData);
+      socket.off('activity:updated', invalidateRouteData);
+      socket.off('customer:updated', invalidateRouteData);
+      socket.off('settings:updated', invalidateRouteData);
+      socket.off('cafe:sync', invalidateRouteData);
       socket.disconnect();
     };
   }, [queryClient]);
@@ -292,123 +169,19 @@ export function useCafeApi() {
     onSuccess: invalidate,
   });
 
-  const createYoupiPaymentMutation = useMutation({
-    mutationFn: (payload: {
-      orderId: string;
-      customerId?: string;
-      customerName?: string;
-      customerPhone?: string;
-      idempotencyKey: string;
-      preferredApp?: UpiAppId;
-    }) =>
-      apiJson<{ payment: YoupiPaymentRecord; duplicate: boolean }>('/api/payments', {
-        method: 'POST',
-        headers: { 'Idempotency-Key': payload.idempotencyKey },
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: BOOTSTRAP_QUERY_KEY }),
-        queryClient.invalidateQueries({ queryKey: YOUPI_CONFIG_QUERY_KEY }),
-      ]);
-    },
-  });
-
-  const settleOrderPaymentMutation = useMutation({
-    mutationFn: (payload: {
-      orderId: string;
-      action: 'settle' | 'fail' | 'refund';
-      network?: CardNetwork;
-      last4?: string;
-      authCode?: string;
-      note?: string;
-    }) =>
-      apiJson<{ order: CafeOrder }>(
-        `/api/orders/${encodeURIComponent(payload.orderId)}/settle-payment`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            action: payload.action,
-            network: payload.network,
-            last4: payload.last4,
-            authCode: payload.authCode,
-            note: payload.note,
-          }),
-        }
+  const createPaymentSessionMutation = useMutation({
+    mutationFn: (orderId: string) =>
+      apiJson<{ checkoutUrl?: string; paymentId?: string; paymentStatus?: string }>(
+        `/api/orders/${encodeURIComponent(orderId)}/payment-session`,
+        { method: 'POST' }
       ),
     onSuccess: invalidate,
   });
 
-  const markYoupiSubmittedMutation = useMutation({
-    mutationFn: (paymentId: string) =>
-      apiJson<{ payment: YoupiPaymentRecord }>(
-        `/api/payments/${encodeURIComponent(paymentId)}/submitted`,
-        { method: 'POST', body: JSON.stringify({}) }
-      ),
-    onSuccess: invalidate,
-  });
-
-  const cancelYoupiPaymentMutation = useMutation({
-    mutationFn: (paymentId: string) =>
-      apiJson<{ payment: YoupiPaymentRecord }>(
-        `/api/payments/${encodeURIComponent(paymentId)}/cancel`,
-        { method: 'POST', body: JSON.stringify({}) }
-      ),
-    onSuccess: invalidate,
-  });
-
-  const verifyBankCreditMutation = useMutation({
-    mutationFn: (payload: {
-      paymentId: string;
-      decision: 'approve' | 'reject';
-      utr?: string;
-      note?: string;
-    }) =>
-      apiJson<{ payment: YoupiPaymentRecord }>(
-        `/api/payments/${encodeURIComponent(payload.paymentId)}/verify-bank`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            decision: payload.decision,
-            utr: payload.utr,
-            note: payload.note,
-          }),
-        }
-      ),
-    onSuccess: invalidate,
-  });
-
-  const refundYoupiPaymentMutation = useMutation({
-    mutationFn: (payload: {
-      paymentId: string;
-      refundRef?: string;
-      reason?: string;
-    }) =>
-      apiJson<{ payment: YoupiPaymentRecord }>(
-        `/api/payments/${encodeURIComponent(payload.paymentId)}/refund`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            refundRef: payload.refundRef,
-            reason: payload.reason,
-          }),
-        }
-      ),
-    onSuccess: invalidate,
-  });
-
-  const simulateYoupiWebhookMutation = useMutation({
-    mutationFn: (payload: {
-      paymentId: string;
-      outcome: 'OBSERVED_SUCCESS' | 'RECONCILED' | 'MANUAL_REVIEW' | 'FAILED' | 'EXPIRED' | 'CANCELLED';
-      utr?: string;
-    }) =>
-      apiJson<{ payment: YoupiPaymentRecord }>(
-        `/api/payments/${encodeURIComponent(payload.paymentId)}/simulate-webhook`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ outcome: payload.outcome, utr: payload.utr }),
-        }
+  const refreshPaymentStatusMutation = useMutation({
+    mutationFn: (orderId: string) =>
+      apiJson<{ paymentStatus: CafeOrder['paymentStatus'] | null }>(
+        `/api/orders/${encodeURIComponent(orderId)}/payment-status`
       ),
     onSuccess: invalidate,
   });
@@ -421,6 +194,27 @@ export function useCafeApi() {
     onSuccess: invalidate,
   });
 
+  const payCounterOrderMutation = useMutation({
+    mutationFn: (orderId: string) =>
+      apiJson<{ ok: boolean; order: CafeOrder }>(
+        `/api/orders/${encodeURIComponent(orderId)}/pay-counter`,
+        { method: 'POST' }
+      ),
+    onSuccess: invalidate,
+  });
+
+  const refundOrderMutation = useMutation({
+    mutationFn: (payload: { orderId: string; reason: string }) =>
+      apiJson<{ ok: boolean; order: CafeOrder }>(
+        `/api/orders/${encodeURIComponent(payload.orderId)}/refund`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ reason: payload.reason }),
+        }
+      ),
+    onSuccess: invalidate,
+  });
+
   const toggleKotItemMutation = useMutation({
     mutationFn: (payload: { orderId: string; menuItemId: string }) =>
       apiJson<{ order: CafeOrder }>(
@@ -430,6 +224,47 @@ export function useCafeApi() {
           body: JSON.stringify({ menuItemId: payload.menuItemId }),
         }
       ),
+    onSuccess: invalidate,
+  });
+
+  const toggleMenuAvailabilityMutation = useMutation({
+    mutationFn: (menuItemId: string) =>
+      apiJson<{ ok: boolean; item: MenuItem }>(
+        `/api/menu/${encodeURIComponent(menuItemId)}/toggle-availability`,
+        { method: 'POST' }
+      ),
+    onSuccess: invalidate,
+  });
+
+  const submitOrderFeedbackMutation = useMutation({
+    mutationFn: (payload: {
+      orderId: string;
+      rating: number;
+      tags?: string[];
+      comment?: string;
+      customerPhone?: string;
+    }) =>
+      apiJson<{ ok: boolean; order: CafeOrder; pointsAwarded: number }>(
+        `/api/orders/${encodeURIComponent(payload.orderId)}/feedback`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            rating: payload.rating,
+            tags: payload.tags,
+            comment: payload.comment,
+            customerPhone: payload.customerPhone,
+          }),
+        }
+      ),
+    onSuccess: invalidate,
+  });
+
+  const submitCustomerFeedbackMutation = useMutation({
+    mutationFn: (payload: CustomerFeedbackInput) =>
+      apiJson<{ ok: boolean }>('/api/customer-feedback', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
     onSuccess: invalidate,
   });
 
@@ -471,6 +306,15 @@ export function useCafeApi() {
       apiJson(`/api/inventory/${encodeURIComponent(id)}/restock`, {
         method: 'POST',
         body: JSON.stringify({}),
+      }),
+    onSuccess: invalidate,
+  });
+
+  const requestReorderMutation = useMutation({
+    mutationFn: (payload: { id: string; note?: string }) =>
+      apiJson('/api/inventory/request-reorder', {
+        method: 'POST',
+        body: JSON.stringify(payload),
       }),
     onSuccess: invalidate,
   });
@@ -520,30 +364,19 @@ export function useCafeApi() {
   const saveSettingsMutation = useMutation({
     mutationFn: (payload: z.input<typeof cafeSettingsSchema>) =>
       apiJson('/api/settings', { method: 'PUT', body: JSON.stringify(payload) }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: BOOTSTRAP_QUERY_KEY }),
-        queryClient.invalidateQueries({ queryKey: YOUPI_CONFIG_QUERY_KEY }),
-      ]);
-    },
+    onSuccess: invalidate,
   });
 
   const resetSettingsMutation = useMutation({
     mutationFn: () => apiJson('/api/settings/reset', { method: 'POST' }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: BOOTSTRAP_QUERY_KEY }),
-        queryClient.invalidateQueries({ queryKey: YOUPI_CONFIG_QUERY_KEY }),
-      ]);
-    },
+    onSuccess: invalidate,
   });
 
   return {
     data: bootstrapQuery.data ?? FALLBACK_BOOTSTRAP,
     authSession: authSessionQuery.data ?? { authenticated: false, session: null },
     isAuthLoading: authSessionQuery.isLoading,
-    youpiConfig: youpiConfigQuery.data,
-    isLoading: bootstrapQuery.isLoading,
+    isLoading: bootstrapQuery.isLoading || bootstrapQuery.isPlaceholderData,
     isError: bootstrapQuery.isError,
     errorMessage:
       bootstrapQuery.error instanceof Error ? bootstrapQuery.error.message : undefined,
@@ -552,21 +385,22 @@ export function useCafeApi() {
     loginPinMutation,
     logoutPinMutation,
     createOrderMutation,
-    createYoupiPaymentMutation,
-    settleOrderPaymentMutation,
-    markYoupiSubmittedMutation,
-    cancelYoupiPaymentMutation,
-    verifyBankCreditMutation,
-    refundYoupiPaymentMutation,
-    simulateYoupiWebhookMutation,
+    createPaymentSessionMutation,
+    refreshPaymentStatusMutation,
     advanceOrderMutation,
+    payCounterOrderMutation,
+    refundOrderMutation,
     toggleKotItemMutation,
+    toggleMenuAvailabilityMutation,
+    submitOrderFeedbackMutation,
+    submitCustomerFeedbackMutation,
     reserveTableMutation,
     checkInTableMutation,
     addTableMutation,
     transferTableMutation,
     mergeTablesMutation,
     restockItemMutation,
+    requestReorderMutation,
     addIngredientMutation,
     addCustomerMutation,
     addLoyaltyRuleMutation,

@@ -51,7 +51,6 @@
 | **15. Background Jobs** | `bullmq` `6.7.6` | MIT | Requires Redis `>=5.0` | Redis hosting | **DEFER (No Redis in Runtime)** — Not installed because Redis is unavailable in the container; server persistence and event broadcasts run asynchronously in-process with modular job interfaces. |
 | **16. Transactional Email** | `resend` `6.38.0` | MIT | Node SDK | Free tier (3k/mo) + API key | **DEFER / ENV-GUARDED** — Requires `RESEND_API_KEY` + verified domain; core receipts use PDF/print without external SaaS failure points. |
 | **17. File Uploads** | `better-upload` `2.0.3` + `@aws-sdk/client-s3` | MIT | Requires S3/R2 bucket | S3/R2 storage | **DEFER** — Existing cafe menu uses local/curated static assets; no user file-upload workflow exists yet. |
-| **18. Payment Gateway** | `razorpay` `2.9.8` | MIT | Node SDK | ~2% txn fee + KYC keys | **DEFER (Phase 2/3)** — Per Section 2 defaults, POS records manual Cash/Card/UPI (augmented by zero-fee dynamic `upi://pay` QR codes). |
 | **19. Error Monitoring** | `@sentry/react` / `@sentry/node` `11.12.0` | MIT | React 19 / Express | Free tier + `SENTRY_DSN` | **DEFER** — No `SENTRY_DSN` configured; Express centralized error handler + React error handling cover local reliability without external telemetry bloat. |
 
 ---
@@ -69,6 +68,6 @@
    - Convert all 7 modal/settings forms to RHF + Zod + `shadcn/ui` `Dialog`/`Switch` with real inline validation messages.
    - Add sortable/searchable `@tanstack/react-table` views inside `OrderManagementScreen`, `InventoryStockScreen`, and `CrmCustomersScreen` alongside existing card layouts.
 4. **QR Codes, ExcelJS, React PDF & Recharts Reuse**:
-   - Add Table Self-Order QR modal (`TableLayoutScreen`) and Dynamic UPI Payment QR modal (`PosTerminalScreen`) using `qrcode`.
+   - Add a Table Self-Order QR modal (`TableLayoutScreen`) using `qrcode`.
    - Implement real `.xlsx` workbook generation (`src/utils/exporters.ts` with `exceljs`) and lazy-loaded GST Invoice / Sales Report PDFs (`src/components/CafePdfDocuments.tsx` with `@react-pdf/renderer`).
    - Upgrade `ReportsAnalyticsScreen` bar chart to Recharts and lazy-load heavy admin screens in `App.tsx` to optimize bundle size.

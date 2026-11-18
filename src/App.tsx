@@ -8,19 +8,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { AppShell } from './components/AppShell';
-import { CustomerCartScreen } from './components/CustomerCartScreen';
-import { CustomerHomeScreen } from './components/CustomerHomeScreen';
-import { CustomerMenuScreen } from './components/CustomerMenuScreen';
-import { CustomerRewardsScreen } from './components/CustomerRewardsScreen';
-import { LiveTrackingScreen } from './components/LiveTrackingScreen';
-import { SplashScreen } from './components/SplashScreen';
-import type { SettingsTab } from './components/SettingsProfileScreen';
-import type { PosCardSlipInput } from './components/PosTerminalScreen';
-import { YoupiCheckoutModal } from './components/YoupiCheckoutModal';
 import { useCafeApi } from './hooks/useCafeApi';
-import type { YoupiPaymentRecord } from './payments/types';
-import { type UpiAppId, getUpiAppLabel } from './payments/upiUri';
 import { useCafeStore } from './store/useCafeStore';
+import { isKitchenPath } from './routing/routes';
 import type {
   CafeOrder,
   CafeSettings,
@@ -36,14 +26,10 @@ import type {
   StaffScreenId,
   WorkspaceMode,
 } from './types/cafe';
-import { calculateCartTotals, formatOrderCsv } from './utils/cafeLogic';
-import {
-  buildCustomersExcelBuffer,
-  buildInventoryExcelBuffer,
-  buildLoyaltyLedgerExcelBuffer,
-  buildOrdersExcelBuffer,
-  triggerBlobDownload,
-} from './utils/exporters';
+import { MENU_ITEMS } from './data/cafeSeedData';
+import type { CustomerFeedbackInput } from './shared/schemas';
+import { calculateCartTotals, formatOrderCsv, isKitchenActiveOrder } from './utils/cafeLogic';
+import { triggerBlobDownload } from './utils/download';
 import {
   canStaffRoleAccessScreen,
   formatStaffRoleLabel,
@@ -52,6 +38,41 @@ import {
 
 const PosTerminalScreen = lazy(() =>
   import('./components/PosTerminalScreen').then((m) => ({ default: m.PosTerminalScreen }))
+);
+const KitchenOrdersScreen = lazy(() =>
+  import('./components/KitchenOrdersScreen').then((m) => ({ default: m.KitchenOrdersScreen }))
+);
+const KitchenTablesScreen = lazy(() =>
+  import('./components/KitchenTablesScreen').then((m) => ({ default: m.KitchenTablesScreen }))
+);
+const CustomerCartScreen = lazy(() =>
+  import('./components/CustomerCartScreen').then((m) => ({ default: m.CustomerCartScreen }))
+);
+const CustomerHomeScreen = lazy(() =>
+  import('./components/CustomerHomeScreen').then((m) => ({ default: m.CustomerHomeScreen }))
+);
+const CustomerMenuScreen = lazy(() =>
+  import('./components/CustomerMenuScreen').then((m) => ({ default: m.CustomerMenuScreen }))
+);
+const CustomerRewardsScreen = lazy(() =>
+  import('./components/CustomerRewardsScreen').then((m) => ({ default: m.CustomerRewardsScreen }))
+);
+const CustomerProfileScreen = lazy(() =>
+  import('./components/CustomerProfileScreen').then((m) => ({ default: m.CustomerProfileScreen }))
+);
+const LiveTrackingScreen = lazy(() =>
+  import('./components/LiveTrackingScreen').then((m) => ({ default: m.LiveTrackingScreen }))
+);
+const KitchenPosOrdersScreen = lazy(() =>
+  import('./components/KitchenPosOrdersScreen').then((m) => ({
+    default: m.KitchenPosOrdersScreen,
+  }))
+);
+const StaffWorkspaceHome = lazy(() =>
+  import('./components/StaffWorkspaceHome').then((m) => ({ default: m.StaffWorkspaceHome }))
+);
+const SplashScreen = lazy(() =>
+  import('./components/SplashScreen').then((m) => ({ default: m.SplashScreen }))
 );
 const KitchenDisplayScreen = lazy(() =>
   import('./components/KitchenDisplayScreen').then((m) => ({ default: m.KitchenDisplayScreen }))
@@ -88,16 +109,25 @@ const StaffRolesScreen = lazy(() =>
 const SettingsProfileScreen = lazy(() =>
   import('./components/SettingsProfileScreen').then((m) => ({ default: m.SettingsProfileScreen }))
 );
+import { ThermalReceiptModal } from './components/ThermalReceiptModal';
+import { CoffeeBrewLoader } from './components/CoffeeBrewLoader';
+import {
+  AdminDashboardSkeleton,
+  CustomerCartSkeleton,
+  KitchenDisplaySkeleton,
+  MenuScreenSkeleton,
+} from './components/SkeletonLoaders';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 function ScreenFallback() {
   return (
-    <div className="flex items-center justify-center py-20 text-xs text-on-surface-variant gap-2">
-      <span className="material-symbols-outlined text-[18px] animate-spin text-primary">
-        progress_activity
-      </span>
-      <span>Loading module...</span>
+    <div className="flex flex-col items-center justify-center py-12">
+      <CoffeeBrewLoader
+        size="sm"
+        title="Brewing Workspace"
+        subtitle="Extracting fresh data..."
+      />
     </div>
   );
 }
@@ -113,11 +143,6 @@ export default function App() {
     posCart,
     couponCode,
     cookingNote,
-    customerPayment,
-    customerUpiApp,
-    customerCardDraft,
-    posPayment,
-    posUpiApp,
     trackedOrderId,
     navigate,
     setServiceMode,
@@ -132,39 +157,39 @@ export default function App() {
     clearPosCart,
     setCouponCode,
     setCookingNote,
-    setCustomerPayment,
-    setCustomerUpiApp,
-    setCustomerCardDraft,
-    setPosPayment,
-    setPosUpiApp,
     setTrackedOrderId,
   } = useCafeStore();
+
+  const isKitchenRoute =
+    typeof window !== 'undefined' && isKitchenPath(window.location.pathname);
 
   const {
     data,
     authSession,
-    youpiConfig,
+    isLoading,
+    isAuthLoading,
     isError,
     errorMessage,
     refetch,
     loginPinMutation,
     logoutPinMutation,
     createOrderMutation,
-    createYoupiPaymentMutation,
-    settleOrderPaymentMutation,
-    markYoupiSubmittedMutation,
-    cancelYoupiPaymentMutation,
-    verifyBankCreditMutation,
-    refundYoupiPaymentMutation,
-    simulateYoupiWebhookMutation,
+    createPaymentSessionMutation,
+    refreshPaymentStatusMutation,
     advanceOrderMutation,
+    payCounterOrderMutation,
+    refundOrderMutation,
     toggleKotItemMutation,
+    toggleMenuAvailabilityMutation,
+    submitOrderFeedbackMutation,
+    submitCustomerFeedbackMutation,
     reserveTableMutation,
     checkInTableMutation,
     addTableMutation,
     transferTableMutation,
     mergeTablesMutation,
     restockItemMutation,
+    requestReorderMutation,
     addIngredientMutation,
     addCustomerMutation,
     addLoyaltyRuleMutation,
@@ -174,22 +199,18 @@ export default function App() {
     toggleStaffDutyMutation,
     saveSettingsMutation,
     resetSettingsMutation,
-  } = useCafeApi();
+  } = useCafeApi(activeScreen, isKitchenRoute);
 
-  const [activeYoupiPayment, setActiveYoupiPayment] = useState<YoupiPaymentRecord | null>(null);
-  const [youpiModalOpen, setYoupiModalOpen] = useState(false);
-  const [autoLaunchOneTap, setAutoLaunchOneTap] = useState(false);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('Cafe Profile');
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
   const checkoutInFlightRef = useRef(false);
   const customerAttemptKeyRef = useRef<{ signature: string; key: string } | null>(null);
   const posAttemptKeyRef = useRef<{ signature: string; key: string } | null>(null);
+  const pendingStaffScreenRef = useRef<StaffScreenId | null>(null);
 
   const {
     orders,
-    payments = [],
     tables,
     inventory,
     customers,
@@ -199,7 +220,22 @@ export default function App() {
     staffRoster,
     cafeSettings,
     rewardPoints,
+    menuItems,
+    activityLog,
   } = data;
+
+  // Thermal Receipt Modal & Feedback State
+  const [thermalModalOrder, setThermalModalOrder] = useState<CafeOrder | null>(null);
+  const [thermalModalOpen, setThermalModalOpen] = useState(false);
+  const [lastCompletedPosOrder, setLastCompletedPosOrder] = useState<CafeOrder | null>(null);
+
+  const handleOpenThermalReceipt = useCallback(
+    (order: CafeOrder) => {
+      setThermalModalOrder(order);
+      setThermalModalOpen(true);
+    },
+    []
+  );
 
   const showToast = useCallback((msg: string) => {
     toast.success(msg);
@@ -210,13 +246,43 @@ export default function App() {
     toast.error(message);
   }, []);
 
+  const handleStartPayment = useCallback(
+    async (orderId: string) => {
+      const checkoutWindow = window.open('about:blank', '_blank');
+      if (checkoutWindow) checkoutWindow.opener = null;
+      try {
+        const result = await createPaymentSessionMutation.mutateAsync(orderId);
+        if (result.checkoutUrl) {
+          if (checkoutWindow) checkoutWindow.location.assign(result.checkoutUrl);
+          else window.location.assign(result.checkoutUrl);
+          return;
+        }
+        checkoutWindow?.close();
+        if (result.paymentStatus === 'paid') showToast('Payment is already confirmed.');
+      } catch (error) {
+        checkoutWindow?.close();
+        throw error;
+      }
+    },
+    [createPaymentSessionMutation, showToast]
+  );
+
+  const handleRefreshPaymentStatus = useCallback(
+    async (orderId: string) => {
+      await refreshPaymentStatusMutation.mutateAsync(orderId);
+    },
+    [refreshPaymentStatusMutation]
+  );
+
   const handleNavigate = useCallback(
     (screen: ScreenId, mode?: WorkspaceMode) => {
       const targetMode = mode ?? workspaceMode;
       if (targetMode === 'staff' && screen !== 'splash') {
         if (!authSession.authenticated) {
+          pendingStaffScreenRef.current = screen as StaffScreenId;
           setPinError(null);
           setPinModalOpen(true);
+          return;
         } else if (!canStaffRoleAccessScreen(authSession.session?.role, screen as StaffScreenId)) {
           const fallbackScreen = getDefaultStaffScreenForRole(authSession.session?.role);
           toast.error(
@@ -230,20 +296,36 @@ export default function App() {
       navigate(screen, mode);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
-    [authSession.authenticated, authSession.session?.role, navigate, workspaceMode]
+    [authSession.authenticated, authSession.session?.role, navigate]
   );
 
   useEffect(() => {
+    if (workspaceMode !== 'staff' || activeScreen === 'splash') return;
+    if (isAuthLoading) return;
+    if (!authSession.authenticated) {
+      pendingStaffScreenRef.current = activeScreen as StaffScreenId;
+      setPinError(null);
+      setPinModalOpen(true);
+      return;
+    }
+    if (pinModalOpen) {
+      setPinModalOpen(false);
+    }
     if (
-      workspaceMode === 'staff' &&
-      activeScreen !== 'splash' &&
-      authSession.authenticated &&
       authSession.session?.role &&
       !canStaffRoleAccessScreen(authSession.session.role, activeScreen as StaffScreenId)
     ) {
-      navigate(getDefaultStaffScreenForRole(authSession.session.role), 'staff');
+      navigate(getDefaultStaffScreenForRole(authSession.session.role), 'staff', { replace: true });
     }
-  }, [activeScreen, authSession.authenticated, authSession.session?.role, navigate, workspaceMode]);
+  }, [
+    activeScreen,
+    authSession.authenticated,
+    authSession.session?.role,
+    isAuthLoading,
+    navigate,
+    pinModalOpen,
+    workspaceMode,
+  ]);
 
   const handleGlobalPinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -258,36 +340,22 @@ export default function App() {
       setPinInput('');
       setPinModalOpen(false);
       const role = sessionState.session?.role;
+      const requestedScreen = pendingStaffScreenRef.current;
+      pendingStaffScreenRef.current = null;
       const targetScreen =
-        workspaceMode === 'staff' &&
-        activeScreen !== 'splash' &&
-        canStaffRoleAccessScreen(role, activeScreen as StaffScreenId)
-          ? activeScreen
+        requestedScreen && canStaffRoleAccessScreen(role, requestedScreen)
+          ? requestedScreen
+          : workspaceMode === 'staff' &&
+              activeScreen !== 'splash' &&
+              canStaffRoleAccessScreen(role, activeScreen as StaffScreenId)
+            ? activeScreen
           : getDefaultStaffScreenForRole(role);
-      navigate(targetScreen, 'staff');
+      navigate(targetScreen, 'staff', { replace: true });
       showToast(`Signed in as ${formatStaffRoleLabel(role)}`);
     } catch (err) {
       setPinError(err instanceof Error ? err.message : 'Invalid staff PIN');
     }
   };
-
-  const openYoupiSessionForOrder = useCallback(
-    async (order: CafeOrder, preferredAppOverride?: UpiAppId) => {
-      const idempotencyKey =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? `yp_${order.id}_${crypto.randomUUID()}`
-          : `yp_${order.id}_${Date.now()}`;
-      const { payment } = await createYoupiPaymentMutation.mutateAsync({
-        orderId: order.id,
-        customerId: order.customerId,
-        idempotencyKey,
-        preferredApp: preferredAppOverride ?? order.preferredUpiApp ?? 'any',
-      });
-      setActiveYoupiPayment(payment);
-      setYoupiModalOpen(true);
-    },
-    [createYoupiPaymentMutation]
-  );
 
   const getStableAttemptKey = (
     ref: { current: { signature: string; key: string } | null },
@@ -306,27 +374,15 @@ export default function App() {
   };
 
   const handleCustomerCheckout = useCallback(
-    async (overrides?: {
-      paymentMode?: PaymentMode;
-      preferredUpiApp?: UpiAppId;
-      oneTap?: boolean;
-    }) => {
+    async (selectedPaymentMode: PaymentMode = 'upi') => {
       if (customerCart.length === 0 || checkoutInFlightRef.current) return;
       checkoutInFlightRef.current = true;
-      const effectivePaymentMode = overrides?.paymentMode ?? customerPayment;
-      const effectiveUpiApp = overrides?.preferredUpiApp ?? customerUpiApp;
-      if (overrides?.paymentMode) {
-        setCustomerPayment(overrides.paymentMode);
-      }
-      if (overrides?.preferredUpiApp) {
-        setCustomerUpiApp(overrides.preferredUpiApp);
-      }
       try {
         const signature = JSON.stringify({
           serviceMode,
           selectedTable,
           couponCode,
-          effectivePaymentMode,
+          paymentMode: selectedPaymentMode,
           items: customerCart.map((i) => `${i.menuItemId}:${i.quantity}`),
         });
         const idempotencyKey = getStableAttemptKey(customerAttemptKeyRef, 'cust', signature);
@@ -337,20 +393,9 @@ export default function App() {
           deliveryPartner: serviceMode === 'delivery' ? 'Direct Delivery' : undefined,
           items: customerCart,
           couponCode,
-          paymentMode: effectivePaymentMode,
-          preferredUpiApp: effectivePaymentMode === 'upi' ? effectiveUpiApp : undefined,
-          cardDetails:
-            effectivePaymentMode === 'card'
-              ? {
-                  method: customerCardDraft.method,
-                  network: customerCardDraft.network,
-                  last4: customerCardDraft.last4.trim() || undefined,
-                  holderName: customerCardDraft.holderName.trim() || undefined,
-                }
-              : undefined,
           cookingNote,
           isPosTerminal: false,
-          customerId: 'cust-1',
+          paymentMode: selectedPaymentMode,
           idempotencyKey,
         });
         customerAttemptKeyRef.current = null;
@@ -358,28 +403,16 @@ export default function App() {
         setCookingNote('');
         setTrackedOrderId(res.order.id);
         navigate('tracking', 'customer');
-        if (effectivePaymentMode === 'upi') {
+
+        if (selectedPaymentMode === 'upi') {
+          showToast(`Order #${res.order.id} reserved. Opening UPI Checkout...`);
           try {
-            setAutoLaunchOneTap(Boolean(overrides?.oneTap));
-            await openYoupiSessionForOrder(res.order, effectiveUpiApp);
-            showToast(
-              `Order #${res.order.id} created — complete via ${getUpiAppLabel(effectiveUpiApp)} (YouPI-PG)`
-            );
-          } catch (upiErr) {
-            setAutoLaunchOneTap(false);
-            showErrorToast(
-              upiErr,
-              `Order #${res.order.id} created, but UPI checkout could not start`
-            );
+            await handleStartPayment(res.order.id);
+          } catch {
+            showToast('You can complete payment from the tracking screen.');
           }
-        } else if (effectivePaymentMode === 'card') {
-          showToast(
-            customerCardDraft.method === 'online_card'
-              ? `Order #${res.order.id} paid via ${customerCardDraft.network} & sent to Kitchen KOT!`
-              : `Order #${res.order.id} placed — Card EDC machine requested at table!`
-          );
         } else {
-          showToast(`Order #${res.order.id} placed — pay cash at counter!`);
+          showToast(`Order #${res.order.id} confirmed! Please pay on counter.`);
         }
       } catch (err) {
         showErrorToast(err, 'Could not submit order');
@@ -392,18 +425,13 @@ export default function App() {
       cookingNote,
       couponCode,
       createOrderMutation,
-      customerCardDraft,
       customerCart,
-      customerPayment,
-      customerUpiApp,
       data.outletId,
+      handleStartPayment,
       navigate,
-      openYoupiSessionForOrder,
       selectedTable,
       serviceMode,
       setCookingNote,
-      setCustomerPayment,
-      setCustomerUpiApp,
       setTrackedOrderId,
       showErrorToast,
       showToast,
@@ -411,14 +439,15 @@ export default function App() {
   );
 
   const handlePosCheckout = useCallback(
-    async (cardSlip?: PosCardSlipInput) => {
+    async (selectedPaymentMode: PaymentMode = 'cash', customerId?: string) => {
       if (posCart.length === 0 || checkoutInFlightRef.current) return;
       checkoutInFlightRef.current = true;
       try {
         const signature = JSON.stringify({
           serviceMode,
           selectedTable,
-          posPayment,
+          paymentMode: selectedPaymentMode,
+          customerId,
           items: posCart.map((i) => `${i.menuItemId}:${i.quantity}`),
         });
         const idempotencyKey = getStableAttemptKey(posAttemptKeyRef, 'pos', signature);
@@ -429,38 +458,16 @@ export default function App() {
           deliveryPartner: serviceMode === 'delivery' ? 'Direct Delivery' : undefined,
           items: posCart,
           couponCode: '',
-          paymentMode: posPayment,
-          preferredUpiApp: posPayment === 'upi' ? posUpiApp : undefined,
-          cardDetails:
-            posPayment === 'card' && cardSlip
-              ? {
-                  method: 'edc_table',
-                  network: cardSlip.network,
-                  last4: cardSlip.last4,
-                  authCode: cardSlip.authCode,
-                }
-              : undefined,
           cookingNote: '',
           isPosTerminal: true,
+          paymentMode: selectedPaymentMode,
+          customerId,
           idempotencyKey,
         });
         posAttemptKeyRef.current = null;
+        setLastCompletedPosOrder(res.order);
         clearPosCart();
-        if (posPayment === 'upi') {
-          try {
-            await openYoupiSessionForOrder(res.order, posUpiApp);
-            showToast(
-              `POS Order #${res.order.id} sent to KOT — awaiting ${getUpiAppLabel(posUpiApp)}`
-            );
-          } catch (upiErr) {
-            showErrorToast(
-              upiErr,
-              `POS Order #${res.order.id} sent to KOT, but UPI session failed`
-            );
-          }
-        } else {
-          showToast(`POS Order #${res.order.id} dispatched to KOT (${res.order.kotNumber})`);
-        }
+        showToast(`POS Order #${res.order.id} dispatched to KOT (${res.order.kotNumber}).`);
       } catch (err) {
         showErrorToast(err, 'Failed to punch POS order');
       } finally {
@@ -471,15 +478,63 @@ export default function App() {
       clearPosCart,
       createOrderMutation,
       data.outletId,
-      openYoupiSessionForOrder,
       posCart,
-      posPayment,
-      posUpiApp,
       selectedTable,
       serviceMode,
       showErrorToast,
       showToast,
     ]
+  );
+
+  const handleToggleMenuAvailability = useCallback(
+    async (menuItemId: string) => {
+      try {
+        const res = await toggleMenuAvailabilityMutation.mutateAsync(menuItemId);
+        showToast(
+          `${res.item.name} is now ${res.item.isAvailable !== false ? 'IN STOCK' : 'SOLD OUT (86)'}`
+        );
+      } catch (err) {
+        showErrorToast(err, 'Could not toggle item availability');
+      }
+    },
+    [showErrorToast, showToast, toggleMenuAvailabilityMutation]
+  );
+
+  const handleQuickAddCustomer = useCallback(
+    async (name: string, phone: string) => {
+      try {
+        await addCustomerMutation.mutateAsync({
+          name,
+          phone,
+          segment: 'new',
+          favorites: '',
+          dpdpConsent: true,
+        });
+        showToast(`Customer ${name} registered for loyalty!`);
+      } catch (err) {
+        showErrorToast(err, 'Could not register customer');
+      }
+    },
+    [addCustomerMutation, showErrorToast, showToast]
+  );
+
+  const handleSubmitFeedback = useCallback(
+    async (orderId: string, rating: number, tags: string[], comment: string) => {
+      await submitOrderFeedbackMutation.mutateAsync({
+        orderId,
+        rating,
+        tags,
+        comment,
+      });
+    },
+    [submitOrderFeedbackMutation]
+  );
+
+  const handleSubmitCustomerFeedback = useCallback(
+    async (feedback: CustomerFeedbackInput) => {
+      await submitCustomerFeedbackMutation.mutateAsync(feedback);
+    },
+    [submitCustomerFeedbackMutation]
   );
 
   const handleToggleKotItem = useCallback(
@@ -505,6 +560,18 @@ export default function App() {
     [advanceOrderMutation, showErrorToast, showToast]
   );
 
+  const handleRefundOrder = useCallback(
+    async (orderId: string, reason: string) => {
+      try {
+        await refundOrderMutation.mutateAsync({ orderId, reason });
+        showToast(`Order #${orderId} refunded successfully`);
+      } catch (err) {
+        showErrorToast(err, 'Failed to refund order');
+      }
+    },
+    [refundOrderMutation, showErrorToast, showToast]
+  );
+
   const handleExportCsv = useCallback(() => {
     triggerBlobDownload('seth-sawariya-cafe-orders.csv', formatOrderCsv(orders), 'text/csv;charset=utf-8;');
     showToast('Exported Seth Sawariya CafeOS CSV report');
@@ -512,6 +579,7 @@ export default function App() {
 
   const handleExportOrdersExcel = useCallback(async () => {
     try {
+      const { buildOrdersExcelBuffer } = await import('./utils/exporters');
       const buf = await buildOrdersExcelBuffer(orders);
       triggerBlobDownload('seth-sawariya-orders.xlsx', buf, XLSX_MIME);
       showToast('Exported Seth Sawariya Orders Excel (.xlsx)');
@@ -522,6 +590,7 @@ export default function App() {
 
   const handleExportInventoryExcel = useCallback(async () => {
     try {
+      const { buildInventoryExcelBuffer } = await import('./utils/exporters');
       const buf = await buildInventoryExcelBuffer(inventory);
       triggerBlobDownload('seth-sawariya-inventory.xlsx', buf, XLSX_MIME);
       showToast('Exported Inventory Excel (.xlsx)');
@@ -532,6 +601,7 @@ export default function App() {
 
   const handleExportCustomersExcel = useCallback(async () => {
     try {
+      const { buildCustomersExcelBuffer } = await import('./utils/exporters');
       const buf = await buildCustomersExcelBuffer(customers);
       triggerBlobDownload('seth-sawariya-customers.xlsx', buf, XLSX_MIME);
       showToast('Exported CRM Customer Directory (.xlsx)');
@@ -542,6 +612,7 @@ export default function App() {
 
   const handleExportLedgerExcel = useCallback(async () => {
     try {
+      const { buildLoyaltyLedgerExcelBuffer } = await import('./utils/exporters');
       const buf = await buildLoyaltyLedgerExcelBuffer(pointLedger);
       triggerBlobDownload('seth-sawariya-loyalty-ledger.xlsx', buf, XLSX_MIME);
       showToast('Exported Loyalty Ledger Excel (.xlsx)');
@@ -623,6 +694,17 @@ export default function App() {
       }
     },
     [restockItemMutation, showErrorToast, showToast]
+  );
+
+  const handleRequestIngredientReorder = useCallback(
+    async (ingredientId: string, note?: string) => {
+      try {
+        await requestReorderMutation.mutateAsync({ id: ingredientId, note });
+      } catch (err) {
+        showErrorToast(err, 'Failed to send reorder request');
+      }
+    },
+    [requestReorderMutation, showErrorToast]
   );
 
   const handleAddIngredient = useCallback(
@@ -781,11 +863,13 @@ export default function App() {
     async (member: Omit<StaffMember, 'id'>) => {
       try {
         const allowedRoles = [
+          'Owner',
+          'Owner & Store Lead',
           'Barista',
-          'Cashier',
           'Kitchen Line',
-          'Store Manager',
           'Server / Steward',
+          'Cashier',
+          'Store Manager',
         ] as const;
         const role = allowedRoles.includes(member.role as (typeof allowedRoles)[number])
           ? (member.role as (typeof allowedRoles)[number])
@@ -853,7 +937,7 @@ export default function App() {
   );
 
   const liveKotCount = useMemo(
-    () => orders.filter((o) => o.status !== 'served').length,
+    () => orders.filter(isKitchenActiveOrder).length,
     [orders]
   );
 
@@ -862,29 +946,30 @@ export default function App() {
     [orders, trackedOrderId]
   );
 
-  const activePaymentForModal = useMemo(
-    () =>
-      activeYoupiPayment
-        ? payments.find((p) => p.id === activeYoupiPayment.id) ?? activeYoupiPayment
-        : null,
-    [activeYoupiPayment, payments]
-  );
+  const isStaffRouteBlocked =
+    workspaceMode === 'staff' &&
+    activeScreen !== 'splash' &&
+    (!authSession.authenticated ||
+      !authSession.session?.role ||
+      !canStaffRoleAccessScreen(authSession.session.role, activeScreen as StaffScreenId));
 
-  const handlePaymentModalUpdate = useCallback((next: YoupiPaymentRecord) => {
-    setActiveYoupiPayment(next);
-  }, []);
+  const [splashFinished, setSplashFinished] = useState(false);
 
-  const canRefund =
-    !authSession.authenticated ||
-    authSession.session?.role === 'owner' ||
-    authSession.session?.role === 'manager';
+  useEffect(() => {
+    if (activeScreen === 'splash' && splashFinished && !isLoading && !isAuthLoading && !isError) {
+      navigate('home', 'customer', { replace: true });
+    }
+  }, [activeScreen, isAuthLoading, isError, isLoading, navigate, splashFinished]);
 
   if (activeScreen === 'splash') {
     return (
-      <SplashScreen
-        onEnterCustomer={() => handleNavigate('home', 'customer')}
-        onEnterStaff={() => handleNavigate('pos-terminal', 'staff')}
-      />
+      <Suspense fallback={<ScreenFallback />}>
+        <SplashScreen
+          errorMessage={isError ? errorMessage : undefined}
+          onRetry={() => void refetch()}
+          onFinish={() => setSplashFinished(true)}
+        />
+      </Suspense>
     );
   }
 
@@ -899,10 +984,6 @@ export default function App() {
       isSyncError={isError}
       syncErrorMessage={errorMessage}
       onRetrySync={() => void refetch()}
-      onOpenPinUnlock={() => {
-        setPinError(null);
-        setPinModalOpen(true);
-      }}
       onLockStaff={() => {
         void logoutPinMutation
           .mutateAsync()
@@ -913,142 +994,198 @@ export default function App() {
           .catch((err) => showErrorToast(err, 'Could not lock session'));
       }}
       onNavigate={handleNavigate}
-      onShowSplash={() => navigate('splash')}
     >
       {activeScreen === 'home' && (
-        <CustomerHomeScreen
-          serviceMode={serviceMode}
-          selectedTable={selectedTable}
-          tables={tables}
-          cartCount={customerTotals.itemCount}
-          onSelectServiceAndTable={(mode, table) => {
-            setServiceMode(mode);
-            setSelectedTable(table);
-          }}
-          onNavigateMenu={(cat) => {
-            if (cat) setMenuCategory(cat);
-            handleNavigate('menu', 'customer');
-          }}
-          onNavigateCart={() => handleNavigate('cart', 'customer')}
-          onNavigateRewards={() => handleNavigate('rewards', 'customer')}
-          onAddToCart={addCustomerItem}
-          onReserveTable={async (input) => {
-            const res = await reserveTableMutation.mutateAsync(input);
-            return res.table;
-          }}
-          onNotify={showToast}
-        />
+        <Suspense fallback={<ScreenFallback />}>
+          <CustomerHomeScreen
+            serviceMode={serviceMode}
+            selectedTable={selectedTable}
+            tables={tables}
+            cartCount={customerTotals.itemCount}
+            orders={orders}
+            menuItems={menuItems || MENU_ITEMS}
+            onSelectServiceAndTable={(mode, table) => {
+              setServiceMode(mode);
+              setSelectedTable(table);
+            }}
+            onNavigateMenu={(cat) => {
+              if (cat) setMenuCategory(cat);
+              handleNavigate('menu', 'customer');
+            }}
+            onNavigateCart={() => handleNavigate('cart', 'customer')}
+            onNavigateRewards={() => handleNavigate('rewards', 'customer')}
+            onNavigateAdmin={() => handleNavigate('admin-dashboard', 'staff')}
+            onAddToCart={addCustomerItem}
+            onSubmitFeedback={handleSubmitCustomerFeedback}
+            onReserveTable={async (input) => {
+              const res = await reserveTableMutation.mutateAsync(input);
+              return res.table;
+            }}
+            onNotify={showToast}
+          />
+        </Suspense>
       )}
 
       {activeScreen === 'menu' && (
-        <CustomerMenuScreen
-          serviceMode={serviceMode}
-          selectedTable={selectedTable}
-          activeCategory={menuCategory}
-          onCategoryChange={setMenuCategory}
-          cart={customerCart}
-          cartTotal={customerTotals.total}
-          cartCount={customerTotals.itemCount}
-          onAddToCart={addCustomerItem}
-          onUpdateQty={updateCustomerQty}
-          onNavigateCart={() => handleNavigate('cart', 'customer')}
-          onToggleServiceMode={() => {
-            const order: ServiceMode[] = ['dine-in', 'takeaway', 'delivery'];
-            const next = order[(order.indexOf(serviceMode) + 1) % order.length];
-            setServiceMode(next);
-            showToast(`Switched mode to ${next}`);
-          }}
-        />
+        <Suspense fallback={<MenuScreenSkeleton />}>
+          <CustomerMenuScreen
+            items={menuItems || MENU_ITEMS}
+            serviceMode={serviceMode}
+            selectedTable={selectedTable}
+            activeCategory={menuCategory}
+            onCategoryChange={setMenuCategory}
+            cart={customerCart}
+            cartTotal={customerTotals.total}
+            cartCount={customerTotals.itemCount}
+            onAddToCart={addCustomerItem}
+            onUpdateQty={updateCustomerQty}
+            onNavigateCart={() => handleNavigate('cart', 'customer')}
+            onNavigateHome={() => handleNavigate('home', 'customer')}
+            onToggleServiceMode={() => {
+              const order: ServiceMode[] = ['dine-in', 'takeaway', 'delivery'];
+              const next = order[(order.indexOf(serviceMode) + 1) % order.length];
+              setServiceMode(next);
+              showToast(`Switched mode to ${next}`);
+            }}
+          />
+        </Suspense>
       )}
 
       {activeScreen === 'cart' && (
-        <CustomerCartScreen
-          cart={customerCart}
-          serviceMode={serviceMode}
-          selectedTable={selectedTable}
-          couponCode={couponCode}
-          cookingNote={cookingNote}
-          paymentMode={customerPayment}
-          preferredUpiApp={customerUpiApp}
-          cardDraft={customerCardDraft}
-          payeeVpa={youpiConfig?.payeeVpa || cafeSettings.upiVpa}
-          payeeName={youpiConfig?.payeeName || cafeSettings.cafeName}
-          onUpdateQty={updateCustomerQty}
-          onRemoveItem={removeCustomerItem}
-          onCouponChange={setCouponCode}
-          onCookingNoteChange={setCookingNote}
-          onPaymentModeChange={setCustomerPayment}
-          onPreferredUpiAppChange={setCustomerUpiApp}
-          onCardDraftChange={setCustomerCardDraft}
-          onCheckout={handleCustomerCheckout}
-          onBrowseMenu={() => handleNavigate('menu', 'customer')}
-        />
+        <Suspense fallback={<CustomerCartSkeleton />}>
+          <CustomerCartScreen
+            cart={customerCart}
+            serviceMode={serviceMode}
+            selectedTable={selectedTable}
+            tables={tables}
+            campaigns={campaigns}
+            availablePoints={rewardPoints}
+            couponCode={couponCode}
+            cookingNote={cookingNote}
+            onServiceModeChange={setServiceMode}
+            onTableChange={setSelectedTable}
+            onUpdateQty={updateCustomerQty}
+            onRemoveItem={removeCustomerItem}
+            onCouponChange={setCouponCode}
+            onCookingNoteChange={setCookingNote}
+            onCheckout={handleCustomerCheckout}
+            onBrowseMenu={() => handleNavigate('menu', 'customer')}
+          />
+        </Suspense>
       )}
 
       {activeScreen === 'tracking' && (
-        <LiveTrackingScreen
-          activeOrder={activeTrackedOrder}
-          activePayment={
-            activeTrackedOrder
-              ? payments.find((p) => p.orderId === activeTrackedOrder.id)
-              : undefined
-          }
-          allOrders={orders}
-          onSelectOrder={setTrackedOrderId}
-          onPayViaYoupi={(order) =>
-            void openYoupiSessionForOrder(order).catch((e) =>
-              showErrorToast(e, 'Unable to start UPI session')
-            )
-          }
-          onDownloadInvoicePdf={handleDownloadInvoicePdf}
-          onNotify={showToast}
-          onBackToMenu={() => handleNavigate('menu', 'customer')}
-        />
+        <Suspense fallback={<ScreenFallback />}>
+          <LiveTrackingScreen
+            activeOrder={activeTrackedOrder}
+            allOrders={orders}
+            onSelectOrder={setTrackedOrderId}
+            onDownloadInvoicePdf={handleDownloadInvoicePdf}
+            onStartPayment={handleStartPayment}
+            onRefreshPayment={handleRefreshPaymentStatus}
+            onSubmitFeedback={handleSubmitFeedback}
+            onPrintThermalReceipt={handleOpenThermalReceipt}
+            onNotify={showToast}
+            onBackToMenu={() => handleNavigate('menu', 'customer')}
+          />
+        </Suspense>
       )}
 
       {activeScreen === 'rewards' && (
-        <CustomerRewardsScreen
-          points={rewardPoints}
-          onRedeemCoupon={(code) => {
-            setCouponCode(code);
-            handleNavigate('cart', 'customer');
-            showToast(`Coupon ${code} selected for your cart`);
-          }}
-          onAddRewardItem={(item) => {
-            addCustomerItem(item);
-            handleNavigate('cart', 'customer');
-          }}
-        />
+        <Suspense fallback={<ScreenFallback />}>
+          <CustomerRewardsScreen
+            points={rewardPoints}
+            onRedeemCoupon={(code) => {
+              setCouponCode(code);
+              handleNavigate('cart', 'customer');
+              showToast(`Coupon ${code} selected for your cart`);
+            }}
+            onAddRewardItem={(item) => {
+              addCustomerItem(item);
+              handleNavigate('cart', 'customer');
+            }}
+          />
+        </Suspense>
       )}
 
+      {activeScreen === 'profile' && (
+        <Suspense fallback={<ScreenFallback />}>
+          <CustomerProfileScreen
+            onNotify={showToast}
+            onBrowseMenu={() => handleNavigate('menu', 'customer')}
+          />
+        </Suspense>
+      )}
+
+      {isStaffRouteBlocked ? (
+        <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 px-5 text-center">
+          <span className="material-symbols-outlined text-3xl text-primary">lock</span>
+          <h1 className="text-lg font-bold text-on-surface">Staff workspace locked</h1>
+          <p className="max-w-sm text-sm text-on-surface-variant">
+            {!authSession.authenticated
+              ? 'Enter a staff PIN to access this module.'
+              : 'Your staff role does not have access to this module.'}
+          </p>
+          {!authSession.authenticated && (
+            <button
+              type="button"
+              onClick={() => {
+                setPinError(null);
+                setPinModalOpen(true);
+              }}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-on-primary"
+            >
+              Unlock Staff Workspace
+            </button>
+          )}
+        </div>
+      ) : (
       <Suspense fallback={<ScreenFallback />}>
+        {activeScreen === 'staff-home' && authSession.session?.role && (
+          <StaffWorkspaceHome
+            role={authSession.session.role}
+            onNavigate={(screen) => handleNavigate(screen, 'staff')}
+          />
+        )}
+
         {activeScreen === 'pos-terminal' && (
           <PosTerminalScreen
             posCart={posCart}
             serviceMode={serviceMode}
             selectedTable={selectedTable}
             tables={tables}
-            paymentMode={posPayment}
-            preferredUpiApp={posUpiApp}
-            cafeName={cafeSettings.upiPayeeName || cafeSettings.cafeName}
-            upiVpa={cafeSettings.upiVpa || youpiConfig?.payeeVpa}
-            isSubmitting={createOrderMutation.isPending || createYoupiPaymentMutation.isPending}
+            menuItems={menuItems || MENU_ITEMS}
+            customers={customers}
+            isSubmitting={createOrderMutation.isPending}
+            lastCompletedOrder={lastCompletedPosOrder}
             onServiceModeChange={setServiceMode}
             onTableChange={setSelectedTable}
-            onPaymentModeChange={setPosPayment}
-            onPreferredUpiAppChange={setPosUpiApp}
             onAddPosItem={addPosItem}
             onUpdatePosQty={updatePosQty}
             onClearPosCart={clearPosCart}
             onCompletePosOrder={handlePosCheckout}
+            onToggleItemAvailability={handleToggleMenuAvailability}
+            onQuickAddCustomer={handleQuickAddCustomer}
+            onPrintReceipt={handleOpenThermalReceipt}
           />
         )}
 
         {activeScreen === 'kitchen-display-system' && (
           <KitchenDisplayScreen
             orders={orders}
+            inventory={inventory}
             onToggleKotItem={handleToggleKotItem}
             onAdvanceOrderStatus={handleAdvanceOrderStatus}
+            onRequestReorder={handleRequestIngredientReorder}
+            onNotify={showToast}
+          />
+        )}
+
+        {activeScreen === 'pos-orders' && (
+          <KitchenPosOrdersScreen
+            orders={orders}
+            onAdvanceOrderStatus={handleAdvanceOrderStatus}
+            onToggleKotItem={handleToggleKotItem}
             onNotify={showToast}
           />
         )}
@@ -1058,50 +1195,31 @@ export default function App() {
             orders={orders}
             inventory={inventory}
             tables={tables}
+            activityLog={activityLog}
             onRestockItem={handleRestockItem}
             onNavigateStaff={(screen) => handleNavigate(screen, 'staff')}
             onExportCsv={handleExportOrdersExcel}
           />
         )}
 
-        {activeScreen === 'order-management' && (
+        {activeScreen === 'order-management' && isKitchenRoute && (
+          <KitchenOrdersScreen
+            orders={orders}
+            onAdvanceOrderStatus={handleAdvanceOrderStatus}
+            onToggleKotItem={handleToggleKotItem}
+            onRefresh={() => void refetch()}
+            onNotify={showToast}
+          />
+        )}
+
+        {activeScreen === 'order-management' && !isKitchenRoute && (
           <OrderManagementScreen
             orders={orders}
-            payments={payments}
-            managerPinRequired={cafeSettings.managerPinRequired}
-            isStaffAuthenticated={authSession.authenticated}
-            canRefund={canRefund}
             onAdvanceOrderStatus={handleAdvanceOrderStatus}
-            onCollectYoupi={(order) =>
-              void openYoupiSessionForOrder(order).catch((e) =>
-                showErrorToast(e, 'Unable to open YouPI-PG session')
-              )
-            }
-            onVerifyBankCredit={async (payload) => {
-              const res = await verifyBankCreditMutation.mutateAsync(payload);
-              showToast(
-                res.payment.status === 'reconciled'
-                  ? `Order #${res.payment.orderId} confirmed settled (UTR ${res.payment.utr})`
-                  : `Order #${res.payment.orderId} payment marked rejected`
-              );
-            }}
-            onRefundYoupiPayment={async (payload) => {
-              const res = await refundYoupiPaymentMutation.mutateAsync(payload);
-              showToast(
-                `Order #${res.payment.orderId} UPI payment refunded (${res.payment.refundRef})`
-              );
-            }}
-            onSettleOrderPayment={async (payload) => {
-              const res = await settleOrderPaymentMutation.mutateAsync(payload);
-              showToast(
-                res.order.paymentStatus === 'paid'
-                  ? `Order #${res.order.id} payment settled (${res.order.paymentRef})`
-                  : res.order.paymentStatus === 'refunded'
-                    ? `Order #${res.order.id} marked refunded`
-                    : `Order #${res.order.id} payment updated`
-              );
-            }}
+            onPayCounterOrder={(orderId) => payCounterOrderMutation.mutateAsync(orderId).then(() => {})}
+            onRefundOrder={handleRefundOrder}
             onDownloadInvoicePdf={handleDownloadInvoicePdf}
+            onPrintThermalReceipt={handleOpenThermalReceipt}
             onExportExcel={handleExportOrdersExcel}
             onRefresh={() => void refetch()}
             onNotify={showToast}
@@ -1111,7 +1229,6 @@ export default function App() {
         {activeScreen === 'reports-analytics' && (
           <ReportsAnalyticsScreen
             orders={orders}
-            payments={payments}
             onExportCsv={handleExportCsv}
             onExportExcel={handleExportOrdersExcel}
             onDownloadReportPdf={handleDownloadReportPdf}
@@ -1119,11 +1236,24 @@ export default function App() {
           />
         )}
 
-        {activeScreen === 'table-layout' && (
+        {(activeScreen === 'table-layout' || activeScreen === 'kitchen-tables') &&
+          isKitchenRoute && (
+            <KitchenTablesScreen
+              tables={tables}
+              orders={orders}
+              detailsOnly={activeScreen === 'kitchen-tables'}
+              onAdvanceOrderStatus={handleAdvanceOrderStatus}
+              onNotify={showToast}
+            />
+          )}
+
+        {(activeScreen === 'table-layout' || activeScreen === 'kitchen-tables') &&
+          !isKitchenRoute && (
           <TableLayoutScreen
             tables={tables}
             orders={orders}
             selectedTable={selectedTable}
+            readOnly={activeScreen === 'kitchen-tables'}
             cafeSettings={cafeSettings}
             onSelectTableForPos={(tableId) => {
               setServiceMode('dine-in');
@@ -1205,14 +1335,13 @@ export default function App() {
         {activeScreen === 'settings-cafe-profile' && (
           <SettingsProfileScreen
             settings={cafeSettings}
-            youpiConfig={youpiConfig}
-            initialTab={settingsInitialTab}
             onSaveSettings={handleSaveSettings}
             onResetDefaults={handleResetSettings}
             onNotify={showToast}
           />
         )}
       </Suspense>
+      )}
 
       {/* Global Staff Role PIN Unlock Modal */}
       <Dialog
@@ -1226,21 +1355,45 @@ export default function App() {
       >
         <DialogContent
           data-testid="staff-pin-modal"
-          className="bg-surface-container border border-outline-variant/30 text-on-surface sm:max-w-sm rounded-2xl p-5"
+          className="bg-surface-container border border-outline-variant/20 text-on-surface sm:max-w-sm rounded-3xl p-6 shadow-2xl space-y-3"
         >
           <DialogHeader>
-            <DialogTitle className="text-lg font-bold text-primary flex items-center gap-2">
-              <span className="material-symbols-outlined text-[20px]">shield_person</span>
-              <span>Staff Workspace PIN</span>
+            <DialogTitle className="text-lg font-black text-on-surface flex items-center gap-2">
+              <span className="material-symbols-outlined text-[22px] text-[#FF6422]">shield_person</span>
+              <span>Staff & Admin Workspace PIN</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-on-surface-variant">
-              Enter your 4-digit role PIN to unlock live POS, KOT, orders, and operational records.
+              Enter your 4-digit role PIN to unlock the Admin Dashboard, POS, and Kitchen KDS.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={(e) => void handleGlobalPinSubmit(e)} className="space-y-4">
+
+          {/* Quick Role Fill Chips */}
+          <div className="space-y-1.5">
+            <span className="text-[11px] font-bold text-on-surface-variant block">Quick Roles (Click to fill):</span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setPinInput('7777')}
+                className="p-3 rounded-2xl bg-surface hover:bg-surface-variant border border-outline-variant/15 text-left transition-all cursor-pointer"
+              >
+                <span className="block text-xs font-black text-on-surface">👑 Owner (Full Admin & POS)</span>
+                <span className="text-[11px] text-[#FF6422] font-mono font-bold">PIN: 7777</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPinInput('3456')}
+                className="p-3 rounded-2xl bg-surface hover:bg-surface-variant border border-outline-variant/15 text-left transition-all cursor-pointer"
+              >
+                <span className="block text-xs font-black text-on-surface">🍳 Kitchen Staff (KDS)</span>
+                <span className="text-[11px] text-[#FF6422] font-mono font-bold">PIN: 3456</span>
+              </button>
+            </div>
+          </div>
+
+          <form onSubmit={(e) => void handleGlobalPinSubmit(e)} className="space-y-4 pt-1">
             <div>
-              <label className="block text-xs font-semibold text-on-surface-variant mb-1">
-                4-Digit Role PIN
+              <label className="block text-xs font-bold text-on-surface mb-1">
+                Enter 4-Digit PIN
               </label>
               <input
                 type="password"
@@ -1251,10 +1404,10 @@ export default function App() {
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
                 placeholder="••••"
-                className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-center text-lg tracking-[0.5em] font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-full px-3 py-3 rounded-2xl bg-surface text-on-surface text-center text-xl tracking-[0.5em] font-mono focus:outline-none focus:ring-2 focus:ring-[#FF6422]/50 border border-outline-variant/20"
               />
               {pinError && (
-                <p className="text-xs text-error mt-1.5" role="alert">
+                <p className="text-xs text-red-400 mt-1.5 font-semibold" role="alert">
                   {pinError}
                 </p>
               )}
@@ -1265,11 +1418,12 @@ export default function App() {
                 disabled={loginPinMutation.isPending}
                 onClick={() => {
                   setPinModalOpen(false);
+                  pendingStaffScreenRef.current = null;
                   if (workspaceMode === 'staff' && !authSession.authenticated) {
                     handleNavigate('home', 'customer');
                   }
                 }}
-                className="flex-1 py-2.5 rounded-lg bg-surface-container-high text-on-surface text-xs font-semibold cursor-pointer disabled:opacity-50"
+                className="flex-1 py-3 rounded-full bg-surface-container-high hover:bg-surface-variant text-on-surface text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
               >
                 Customer View
               </button>
@@ -1277,97 +1431,22 @@ export default function App() {
                 type="submit"
                 data-testid="staff-pin-submit"
                 disabled={loginPinMutation.isPending}
-                className="flex-1 py-2.5 rounded-lg bg-primary-container text-on-primary text-xs font-bold cursor-pointer disabled:opacity-50"
+                className="flex-1 py-3 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white text-xs font-bold shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50"
               >
-                {loginPinMutation.isPending ? 'Verifying...' : 'Unlock Staff'}
+                {loginPinMutation.isPending ? 'Verifying...' : 'Unlock Admin'}
               </button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      <YoupiCheckoutModal
-        open={youpiModalOpen}
-        payment={activePaymentForModal}
-        gatewayMode={youpiConfig?.mode}
-        autoLaunchOneTap={autoLaunchOneTap}
-        isSubmitting={
-          createYoupiPaymentMutation.isPending ||
-          markYoupiSubmittedMutation.isPending ||
-          cancelYoupiPaymentMutation.isPending ||
-          simulateYoupiWebhookMutation.isPending
-        }
-        onPaymentUpdate={handlePaymentModalUpdate}
-        onMarkSubmitted={async (paymentId) => {
-          try {
-            const res = await markYoupiSubmittedMutation.mutateAsync(paymentId);
-            setActiveYoupiPayment(res.payment);
-            showToast('Checking YouPI-PG bank alert observer...');
-          } catch (err) {
-            showErrorToast(err, 'Could not submit payment verification');
-            throw err;
-          }
-        }}
-        onCancelSession={async (paymentId) => {
-          try {
-            const res = await cancelYoupiPaymentMutation.mutateAsync(paymentId);
-            setActiveYoupiPayment(res.payment);
-            showToast('Checkout cancelled and queue slot released.');
-          } catch (err) {
-            showErrorToast(err, 'Could not cancel UPI session');
-            throw err;
-          }
-        }}
-        onRetrySession={async () => {
-          if (!activeYoupiPayment) return;
-          const targetOrder = orders.find((o) => o.id === activeYoupiPayment.orderId);
-          if (!targetOrder) {
-            const missingErr = new Error(`Order #${activeYoupiPayment.orderId} was not found.`);
-            showErrorToast(missingErr, missingErr.message);
-            throw missingErr;
-          }
-          try {
-            await openYoupiSessionForOrder(targetOrder);
-          } catch (err) {
-            showErrorToast(err, 'Could not restart UPI session');
-            throw err;
-          }
-        }}
-        onSimulateOutcome={
-          youpiConfig?.mode === 'youpi-sandbox-fallback'
-            ? async (paymentId, outcome) => {
-                try {
-                  const res = await simulateYoupiWebhookMutation.mutateAsync({ paymentId, outcome });
-                  setActiveYoupiPayment(res.payment);
-                  showToast(`Simulated YouPI webhook: ${outcome}`);
-                } catch (err) {
-                  showErrorToast(err, 'Webhook simulation failed');
-                  throw err;
-                }
-              }
-            : undefined
-        }
-        onOpenPaymentSettings={() => {
-          setYoupiModalOpen(false);
-          setAutoLaunchOneTap(false);
-          setSettingsInitialTab('Payments');
-          handleNavigate('settings-cafe-profile', 'staff');
-        }}
-        onClose={() => {
-          setYoupiModalOpen(false);
-          setAutoLaunchOneTap(false);
-        }}
-        continueLabel={
-          workspaceMode === 'staff' ? 'Done — Return to POS' : 'View Live Order Status'
-        }
-        onContinueToTracking={() => {
-          setYoupiModalOpen(false);
-          setAutoLaunchOneTap(false);
-          if (workspaceMode === 'customer') {
-            navigate('tracking', 'customer');
-          }
-        }}
+      <ThermalReceiptModal
+        open={thermalModalOpen}
+        onOpenChange={setThermalModalOpen}
+        order={thermalModalOrder}
+        settings={cafeSettings}
       />
+
     </AppShell>
   );
 }

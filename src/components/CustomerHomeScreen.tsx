@@ -1,7 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { CAFE_ASSETS, MENU_ITEMS } from '../data/cafeSeedData';
-import { CafeTable, MenuItem, ServiceMode } from '../types/cafe';
+import { CafeOrder, CafeTable, MenuCategory, MenuItem, ServiceMode } from '../types/cafe';
 import { CafeImage } from './CafeImage';
+import { CustomerReviewsSection } from './CustomerReviewsSection';
+import { FoodDetailsModal } from './FoodDetailsModal';
+import type { CustomerFeedbackInput } from '../shared/schemas';
+import { filterMenuItems } from '../utils/cafeLogic';
 
 export interface TableReservationInput {
   guestName: string;
@@ -15,28 +19,84 @@ interface CustomerHomeScreenProps {
   selectedTable: string;
   tables: CafeTable[];
   cartCount: number;
+  orders?: CafeOrder[];
+  menuItems?: MenuItem[];
   onSelectServiceAndTable: (mode: ServiceMode, table: string) => void;
-  onNavigateMenu: (category?: 'All' | 'Best Sellers' | 'Beverages' | 'Snacks' | 'Meals' | 'Combos' | 'Desserts') => void;
+  onNavigateMenu: (category?: MenuCategory) => void;
   onNavigateCart: () => void;
   onNavigateRewards: () => void;
-  onAddToCart: (item: MenuItem) => void;
+  onNavigateAdmin?: () => void;
+  onAddToCart: (item: MenuItem, quantity?: number) => void;
+  onSubmitFeedback: (feedback: CustomerFeedbackInput) => Promise<void>;
   onReserveTable?: (input: TableReservationInput) => Promise<CafeTable | void>;
   onNotify: (msg: string) => void;
 }
+
+const CATEGORY_ITEMS: Array<{
+  id: MenuCategory;
+  name: string;
+  image: string;
+  countLabel: string;
+}> = [
+  {
+    id: 'Pizza',
+    name: 'Pizza',
+    image: CAFE_ASSETS.pizzaMargherita,
+    countLabel: '36 Items',
+  },
+  {
+    id: 'Burger',
+    name: 'Burger',
+    image: CAFE_ASSETS.burgerClassic,
+    countLabel: '24 Items',
+  },
+  {
+    id: 'Pasta',
+    name: 'Pasta',
+    image: CAFE_ASSETS.pastaAlfredo,
+    countLabel: '18 Items',
+  },
+  {
+    id: 'Salad',
+    name: 'Salad',
+    image: CAFE_ASSETS.saladGarden,
+    countLabel: '16 Items',
+  },
+  {
+    id: 'Drink',
+    name: 'Drink',
+    image: CAFE_ASSETS.drinkCitrus,
+    countLabel: '20 Items',
+  },
+  {
+    id: 'Dessert',
+    name: 'Dessert',
+    image: CAFE_ASSETS.dessertCheesecake,
+    countLabel: '14 Items',
+  },
+];
 
 export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
   serviceMode,
   selectedTable,
   tables,
   cartCount,
+  orders = [],
+  menuItems = MENU_ITEMS,
   onSelectServiceAndTable,
   onNavigateMenu,
   onNavigateCart,
-  onNavigateRewards,
+  onNavigateRewards: _onNavigateRewards,
+  onNavigateAdmin,
   onAddToCart,
+  onSubmitFeedback,
   onReserveTable,
   onNotify,
 }) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<MenuCategory | 'All'>('All');
+  const [detailItem, setDetailItem] = useState<MenuItem | null>(null);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set(['margherita-pizza']));
   const [tableModalOpen, setTableModalOpen] = useState(false);
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [bookingGuests, setBookingGuests] = useState('2 Guests');
@@ -46,361 +106,432 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingSubmitting, setBookingSubmitting] = useState(false);
 
+  // Keyboard shortcut listener for modals
   useEffect(() => {
-    if (!tableModalOpen && !bookingModalOpen) return;
+    if (!tableModalOpen && !bookingModalOpen && !detailItem) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setTableModalOpen(false);
+        setDetailItem(null);
         if (!bookingSubmitting) setBookingModalOpen(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [bookingModalOpen, bookingSubmitting, tableModalOpen]);
+  }, [bookingModalOpen, bookingSubmitting, detailItem, tableModalOpen]);
 
-  const specialCombo = MENU_ITEMS.find((i) => i.id === 'special-combo')!;
-  const favorites = MENU_ITEMS.filter((i) => i.id === 'cold-coffee' || i.id === 'protein-shake');
+  const toggleFavorite = (id: string) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+        onNotify('Removed from favorites');
+      } else {
+        next.add(id);
+        onNotify('Added to favorites ❤️');
+      }
+      return next;
+    });
+  };
+
+  const handleBookingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bookingName.trim()) {
+      setBookingError('Please enter your name.');
+      return;
+    }
+    setBookingSubmitting(true);
+    setBookingError(null);
+    try {
+      const partySizeNum = parseInt(bookingGuests, 10) || 2;
+      await onReserveTable?.({
+        guestName: bookingName.trim(),
+        guestPhone: bookingPhone.trim() || undefined,
+        partySize: partySizeNum,
+        timeSlot: bookingTime,
+      });
+      onNotify(`Table reserved for ${bookingName.trim()} (${bookingGuests}) at ${bookingTime}`);
+      setBookingModalOpen(false);
+      setBookingName('');
+      setBookingPhone('');
+    } catch (err) {
+      setBookingError(err instanceof Error ? err.message : 'Failed to book table. Please try again.');
+    } finally {
+      setBookingSubmitting(false);
+    }
+  };
+
+  const hasSearchQuery = searchQuery.trim().length > 0;
+
+  const popularDishes = useMemo(() => {
+    return filterMenuItems(
+      menuItems.filter((item) => !item.id.startsWith('test-')),
+      selectedCategory,
+      searchQuery
+    );
+  }, [menuItems, searchQuery, selectedCategory]);
+  const visibleDishes = hasSearchQuery ? popularDishes : popularDishes.slice(0, 6);
 
   const modeLabel =
     serviceMode === 'dine-in'
-      ? `Dine-In (Table ${selectedTable.replace('T', '')})`
+      ? `Table ${selectedTable.replace('T', '')}`
       : serviceMode === 'takeaway'
-        ? 'Takeaway Pickup'
-        : 'Express Delivery';
+        ? 'Takeaway'
+        : 'Delivery';
 
   return (
-    <div className="flex flex-col w-full pb-6">
-      {/* Dynamic Table Presence & Mode Ribbon */}
-      <div className="pt-1 pb-3 flex items-center justify-between gap-2">
+    <div className="flex flex-col w-full pb-28 pt-1">
+      {/* Top Header Bar */}
+      <div className="flex items-center justify-between gap-2 pb-3">
+        {/* Left Hamburger / Side Nav Button */}
         <button
           type="button"
           onClick={() => setTableModalOpen(true)}
-          className="inline-flex items-center gap-1.5 bg-surface-container-high hover:bg-surface-variant px-3 py-2 rounded-full shadow-sm transition-colors cursor-pointer min-w-0"
+          aria-label="Table and Service Settings"
+          className="w-10 h-10 rounded-full bg-surface-container hover:bg-surface-container-high flex items-center justify-center text-on-surface transition-colors cursor-pointer shrink-0"
         >
-          <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse shrink-0" />
-          <span className="material-symbols-outlined text-[16px] text-primary shrink-0">
+          <span className="material-symbols-outlined text-[22px]">menu</span>
+        </button>
+
+        {/* Center Dine-In / Table Pill */}
+        <button
+          type="button"
+          onClick={() => setTableModalOpen(true)}
+          className="inline-flex items-center gap-1.5 bg-surface-container hover:bg-surface-container-high px-3 py-1.5 rounded-full border border-outline-variant/15 transition-colors cursor-pointer text-xs font-semibold text-on-surface"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          <span className="material-symbols-outlined text-[16px] text-[#FF6422]">
             {serviceMode === 'dine-in'
               ? 'table_restaurant'
               : serviceMode === 'takeaway'
                 ? 'takeout_dining'
                 : 'moped'}
           </span>
-          <span className="text-xs text-on-surface font-semibold tracking-wide truncate">
-            {modeLabel}
-          </span>
-          <span className="material-symbols-outlined text-[16px] text-on-surface-variant shrink-0">
+          <span className="tracking-tight">{modeLabel}</span>
+          <span className="material-symbols-outlined text-[16px] text-on-surface-variant">
             expand_more
           </span>
         </button>
 
-        <button
-          type="button"
-          onClick={onNavigateCart}
-          className="relative flex items-center gap-1.5 bg-surface-container hover:bg-surface-container-high px-3 py-2 rounded-full text-on-surface transition-colors shadow-sm whitespace-nowrap shrink-0 cursor-pointer"
-        >
-          <span className="material-symbols-outlined text-[18px] text-primary">shopping_bag</span>
-          <span className="text-xs font-semibold text-primary tabular-nums">{cartCount} items</span>
-          {cartCount > 0 && (
-            <span className="w-4 h-4 bg-primary-container text-on-primary text-[10px] flex items-center justify-center rounded-full font-bold tabular-nums">
-              {cartCount}
+        {/* Right Action Buttons */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={onNavigateCart}
+            aria-label="Cart"
+            className="relative w-10 h-10 rounded-full bg-surface-container hover:bg-surface-container-high flex items-center justify-center text-on-surface transition-colors cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[20px] text-on-surface">
+              shopping_bag
             </span>
-          )}
-        </button>
+            {cartCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-[#FF6422] text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-md">
+                {cartCount}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
-      {/* Hero Banner Section */}
+      {/* Greeting Headline */}
+      <div className="pt-2 pb-4">
+        <span className="text-[#FF6422] font-black text-2xl sm:text-3xl tracking-tight block leading-tight">
+          Delicious
+        </span>
+        <h1 className="text-on-surface font-extrabold text-2xl sm:text-3xl tracking-tight mt-0.5 leading-tight">
+          Food for you
+        </h1>
+        <p className="text-on-surface-variant text-xs sm:text-sm mt-1">
+          Discover and get great food from our restaurant
+        </p>
+      </div>
+
+      {/* Search Input Bar */}
       <div className="pb-5">
-        <div className="relative w-full rounded-xl overflow-hidden shadow-xl bg-surface-container-lowest min-h-[260px] flex items-end">
-          <CafeImage
-            src={CAFE_ASSETS.heroInterior}
-            alt="Seth Sawariya Cafe warm ambient interior"
-            className="absolute inset-0 w-full h-full object-cover"
+        <div className="relative flex items-center">
+          <span className="material-symbols-outlined absolute left-3.5 text-outline text-[20px] pointer-events-none">
+            search
+          </span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              const query = e.target.value;
+              setSearchQuery(query);
+              if (query.trim()) setSelectedCategory('All');
+            }}
+            placeholder="Search for food..."
+            aria-label="Search menu items"
+            className="w-full pl-10 pr-10 py-3 bg-surface-container text-xs sm:text-sm text-on-surface placeholder:text-outline rounded-2xl border border-outline-variant/15 focus:outline-none focus:ring-2 focus:ring-[#FF6422]/50 shadow-inner transition-all"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/75 to-transparent" />
-          <div className="absolute inset-0 bg-gradient-to-r from-surface-container-lowest/90 via-surface-container-lowest/60 to-transparent" />
-
-          <div className="relative z-10 p-6 w-full flex flex-col justify-end pt-12">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-10 h-10 rounded-full bg-primary-container/20 flex items-center justify-center backdrop-blur-md shadow-[0_0_20px_rgba(245,158,11,0.45)]">
-                <span className="material-symbols-outlined icon-filled text-primary text-[22px]">
-                  local_cafe
-                </span>
-              </div>
-              <span className="bg-primary/15 text-primary text-[11px] font-medium uppercase tracking-wider px-2.5 py-0.5 rounded-full backdrop-blur-sm">
-                Artisanal Roastery
-              </span>
-            </div>
-
-            <h1 className="text-[26px] sm:text-[32px] text-on-surface font-bold tracking-tight leading-tight">
-              Welcome to <br />
-              <span className="text-primary drop-shadow-[0_2px_12px_rgba(245,158,11,0.3)]">
-                Seth Sawariya Cafe
-              </span>
-            </h1>
-
-            <p className="text-sm text-on-surface-variant mt-1.5 flex flex-wrap items-center gap-1.5">
-              <span>Great Coffee</span>
-              <span className="text-primary text-[10px]">●</span>
-              <span>Delicious Food</span>
-              <span className="text-primary text-[10px]">●</span>
-              <span>Cozy Vibes</span>
-            </p>
-
-            <div className="mt-5 grid grid-cols-2 sm:max-w-sm gap-2.5">
-              <button
-                type="button"
-                onClick={() => onNavigateMenu('Beverages')}
-                className="h-12 bg-primary hover:bg-primary-fixed-dim text-on-primary text-sm font-bold rounded-lg flex items-center justify-center gap-1.5 shadow-[0_0_18px_rgba(245,158,11,0.35)] active:scale-[0.98] transition-all cursor-pointer"
-              >
-                <span className="material-symbols-outlined icon-filled text-[20px]">bolt</span>
-                <span>Order Now</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setBookingError(null);
-                  setBookingModalOpen(true);
-                }}
-                className="h-12 bg-surface-container/85 hover:bg-surface-container-high text-primary text-sm font-semibold rounded-lg flex items-center justify-center gap-1.5 backdrop-blur-md shadow-sm active:scale-[0.98] transition-all cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[20px]">calendar_today</span>
-                <span>Book a Table</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Access Service Matrix (4-Grid) */}
-      <div className="pb-5">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <button
-            type="button"
-            onClick={() => {
-              onSelectServiceAndTable('dine-in', selectedTable);
-              onNavigateMenu('Beverages');
-            }}
-            className="group flex flex-col items-center text-center p-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high transition-colors shadow-sm cursor-pointer"
-          >
-            <div className="w-11 h-11 rounded-full bg-surface-container-high group-hover:bg-primary/20 flex items-center justify-center transition-colors mb-1.5">
-              <span className="material-symbols-outlined text-primary text-[22px]">coffee</span>
-            </div>
-            <span className="text-[11px] font-semibold text-on-surface">Dine-In</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              onSelectServiceAndTable('takeaway', selectedTable);
-              onNavigateMenu('Beverages');
-            }}
-            className="group flex flex-col items-center text-center p-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high transition-colors shadow-sm cursor-pointer"
-          >
-            <div className="w-11 h-11 rounded-full bg-surface-container-high group-hover:bg-primary/20 flex items-center justify-center transition-colors mb-1.5">
-              <span className="material-symbols-outlined text-secondary text-[22px]">
-                shopping_bag
-              </span>
-            </div>
-            <span className="text-[11px] font-semibold text-on-surface">Takeaway</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onNavigateRewards}
-            className="group flex flex-col items-center text-center p-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high transition-colors shadow-sm cursor-pointer"
-          >
-            <div className="w-11 h-11 rounded-full bg-surface-container-high group-hover:bg-primary/20 flex items-center justify-center transition-colors mb-1.5">
-              <span className="material-symbols-outlined icon-filled text-tertiary text-[22px]">
-                loyalty
-              </span>
-            </div>
-            <span className="text-[11px] font-semibold text-on-surface">Rewards</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onNavigateMenu('Best Sellers')}
-            className="group flex flex-col items-center text-center p-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high transition-colors shadow-sm cursor-pointer"
-          >
-            <div className="w-11 h-11 rounded-full bg-surface-container-high group-hover:bg-primary/20 flex items-center justify-center transition-colors mb-1.5">
-              <span className="material-symbols-outlined text-primary text-[22px]">percent</span>
-            </div>
-            <span className="text-[11px] font-semibold text-on-surface">Offers</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Responsive Desktop 2-Column Split: Special Combo + Favorites */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pb-5">
-        {/* Today's Special Combo Showcase */}
-        <div className="lg:col-span-5 flex flex-col gap-4">
-          <div className="relative w-full rounded-xl bg-gradient-to-br from-surface-container to-surface-container-low p-4 shadow-lg overflow-hidden">
-            <div className="absolute -right-8 -bottom-8 w-36 h-36 bg-primary-container/15 rounded-full blur-2xl pointer-events-none" />
-            <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1">
-              <div className="flex items-center gap-1.5">
-                <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-primary-container text-on-primary text-[11px] font-bold uppercase tracking-wider">
-                  Chef&apos;s Pick
-                </span>
-                <span className="text-xs text-primary font-medium">Daily Special Combo</span>
-              </div>
-              <div className="flex items-center gap-1 text-tertiary text-[11px] font-semibold">
-                <span className="material-symbols-outlined text-[14px]">local_fire_department</span>
-                <span>Saves 35%</span>
-              </div>
-            </div>
-
-            <div className="mt-2.5 flex items-center gap-3.5">
-              <div className="w-24 h-24 rounded-lg overflow-hidden shrink-0 bg-surface-container-highest shadow-inner">
-                <CafeImage
-                  src={specialCombo.imageUrl}
-                  alt={specialCombo.name}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="flex-1 min-w-0 flex flex-col justify-center">
-                <h2 className="text-base text-on-surface font-semibold truncate leading-tight">
-                  {specialCombo.name}
-                </h2>
-                <p className="text-xs text-on-surface-variant line-clamp-2 mt-1">
-                  {specialCombo.description}
-                </p>
-                <div className="mt-2.5 flex items-center justify-between">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-xl text-primary font-bold tabular-nums">
-                      ₹{specialCombo.price}
-                    </span>
-                    <span className="text-xs text-on-surface-variant line-through tabular-nums">
-                      ₹310
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label="Add today's special combo"
-                    onClick={() => {
-                      onAddToCart(specialCombo);
-                      onNotify(`Added ${specialCombo.name} to cart`);
-                    }}
-                    className="px-3 py-1.5 bg-primary hover:bg-primary-fixed-dim text-on-primary text-xs font-bold rounded-lg flex items-center gap-1 shadow-sm active:scale-95 transition-transform cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">add</span>
-                    <span>Add</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Live Counter & Kitchen Assurance Badge */}
-          <div className="bg-surface-container-low rounded-xl p-4 flex items-center gap-3.5 shadow-sm">
-            <div className="w-12 h-12 rounded-full bg-tertiary-container/20 shrink-0 flex items-center justify-center">
-              <span className="material-symbols-outlined text-tertiary text-[24px]">timer</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-base text-on-surface font-semibold">
-                Average Prep Time: 8-12 min
-              </div>
-              <p className="text-xs text-on-surface-variant mt-0.5">
-                Fresh handcrafted brews made to order at Counter 1.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Featured Best Sellers Grid */}
-        <div className="lg:col-span-7">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined icon-filled text-primary text-[20px]">
-                stars
-              </span>
-              <h2 className="text-lg text-on-surface font-bold">Patron Favorites</h2>
-            </div>
+          {searchQuery ? (
             <button
               type="button"
-              onClick={() => onNavigateMenu('Beverages')}
-              className="text-xs text-primary font-semibold flex items-center gap-0.5 hover:underline cursor-pointer"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 text-outline hover:text-on-surface transition-colors cursor-pointer"
             >
-              <span>View Full Menu</span>
-              <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          ) : (
+            <span className="material-symbols-outlined absolute right-3.5 text-outline text-[20px] pointer-events-none">
+              tune
+            </span>
+          )}
+        </div>
+      </div>
+
+      {!hasSearchQuery && (
+        <>
+      {/* Promo Banner Card (Exact style from reference screenshot) */}
+      <div className="pb-6">
+        <div className="relative w-full rounded-3xl overflow-hidden bg-gradient-to-r from-amber-600/25 via-orange-500/20 to-amber-900/10 border border-[#FF6422]/20 p-5 sm:p-6 shadow-xl flex items-center justify-between min-h-[140px]">
+          <div className="relative z-10 max-w-[62%] sm:max-w-[65%] space-y-2">
+            <h2 className="text-base sm:text-lg font-black text-on-surface leading-snug tracking-tight">
+              Get 20% OFF <br />
+              <span className="text-xs sm:text-sm font-semibold text-on-surface-variant">
+                on your first order
+              </span>
+            </h2>
+            <button
+              type="button"
+              onClick={() => {
+                onNavigateMenu('Pizza');
+                onNotify('Applied 20% promo on menu items!');
+              }}
+              className="mt-1 px-4 py-1.5 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white text-xs font-bold shadow-[0_4px_14px_rgba(255,100,34,0.35)] transition-all active:scale-95 cursor-pointer inline-flex items-center gap-1"
+            >
+              <span>Order Now</span>
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            {favorites.map((item) => (
-              <div
-                key={item.id}
-                className="bg-surface-container p-2.5 rounded-xl flex flex-col justify-between shadow-sm group"
+          {/* Protruding Pizza Image */}
+          <div className="absolute -right-5 -bottom-5 w-36 h-36 sm:w-44 sm:h-44 rounded-full overflow-hidden shadow-[0_12px_28px_rgba(0,0,0,0.5)] border-4 border-surface-container/60 transform rotate-12 transition-transform duration-500 hover:rotate-0">
+            <CafeImage
+              src={CAFE_ASSETS.pizzaBanner}
+              alt="Promo Pizza"
+              className="w-full h-full object-cover"
+              fallbackIcon="local_pizza"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Categories Section */}
+      <div className="pb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-extrabold text-on-surface tracking-tight">Categories</h2>
+          <button
+            type="button"
+            onClick={() => onNavigateMenu()}
+            className="text-xs font-bold text-[#FF6422] hover:underline cursor-pointer"
+          >
+            View All
+          </button>
+        </div>
+
+        {/* Circular Category Buttons */}
+        <div className="flex items-center gap-3.5 overflow-x-auto no-scrollbar py-1">
+          {CATEGORY_ITEMS.map((cat) => {
+            const isSelected = selectedCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => {
+                  setSelectedCategory(isSelected ? 'All' : cat.id);
+                }}
+                className="flex flex-col items-center gap-1.5 shrink-0 group cursor-pointer"
               >
-                <div className="relative w-full aspect-square rounded-lg overflow-hidden bg-surface-container-highest mb-2">
-                  <CafeImage
-                    src={item.imageUrl}
-                    alt={item.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-surface-container-lowest/80 backdrop-blur-md flex items-center gap-1">
-                    <span className="material-symbols-outlined icon-filled text-primary text-[12px]">
-                      star
-                    </span>
-                    <span className="text-[11px] text-on-surface font-bold tabular-nums">
-                      {item.rating}
-                    </span>
+                <div
+                  className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full p-1 transition-all flex items-center justify-center ${
+                    isSelected
+                      ? 'ring-2 ring-[#FF6422] bg-[#FF6422]/15 shadow-md scale-105'
+                      : 'bg-surface-container hover:bg-surface-container-high border border-outline-variant/15'
+                  }`}
+                >
+                  <div className="w-full h-full rounded-full overflow-hidden shadow-sm">
+                    <CafeImage
+                      src={cat.image}
+                      alt={cat.name}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                      fallbackIcon="restaurant"
+                    />
                   </div>
                 </div>
-                <div className="flex flex-col">
-                  <span className="text-sm text-on-surface font-semibold truncate">{item.name}</span>
-                  <span className="text-xs text-on-surface-variant truncate">{item.description}</span>
-                  <div className="flex items-center justify-between mt-2 pt-1">
-                    <span className="text-base text-primary font-bold tabular-nums">₹{item.price}</span>
+                <span
+                  className={`text-[11px] font-bold tracking-tight transition-colors ${
+                    isSelected ? 'text-[#FF6422]' : 'text-on-surface'
+                  }`}
+                >
+                  {cat.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+        </>
+      )}
+
+      {/* Popular Dishes Section */}
+      <div className="pb-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <h2
+              className="text-base font-extrabold text-on-surface tracking-tight"
+              aria-live="polite"
+            >
+              {hasSearchQuery ? `Search Results (${popularDishes.length})` : 'Popular Dishes'}
+            </h2>
+            {selectedCategory !== 'All' && (
+              <span className="px-2 py-0.5 rounded-full bg-[#FF6422]/15 text-[#FF6422] text-[10px] font-black">
+                {selectedCategory}
+              </span>
+            )}
+          </div>
+          {!hasSearchQuery && (
+            <button
+              type="button"
+              onClick={() =>
+                onNavigateMenu(selectedCategory === 'All' ? undefined : selectedCategory)
+              }
+              className="text-xs font-bold text-[#FF6422] hover:underline cursor-pointer"
+            >
+              View All
+            </button>
+          )}
+        </div>
+
+        {/* Dish Cards List */}
+        <div className="space-y-3">
+          {popularDishes.length === 0 ? (
+            <div className="p-8 text-center bg-surface-container rounded-2xl text-on-surface-variant text-xs">
+              No items match "{searchQuery.trim()}".
+            </div>
+          ) : (
+            visibleDishes.map((dish) => {
+              const isFav = favorites.has(dish.id);
+              return (
+                <div
+                  key={dish.id}
+                  onClick={() => setDetailItem(dish)}
+                  className="group flex items-center justify-between gap-3 p-3 rounded-2xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 shadow-sm transition-all cursor-pointer hover:shadow-md"
+                >
+                  {/* Left Dish Photo */}
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden shrink-0 shadow-md ring-2 ring-outline-variant/10">
+                    <CafeImage
+                      src={dish.imageUrl}
+                      alt={dish.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      fallbackIcon="restaurant"
+                    />
+                  </div>
+
+                  {/* Middle Info */}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-xs sm:text-sm font-bold text-on-surface truncate group-hover:text-[#FF6422] transition-colors">
+                      {dish.name}
+                    </h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs sm:text-sm font-black text-on-surface">
+                        ₹{dish.price}
+                      </span>
+                      <span className="text-[11px] text-on-surface-variant">·</span>
+                      <div className="flex items-center gap-0.5">
+                        <span className="material-symbols-outlined text-amber-400 icon-filled text-[14px]">
+                          star
+                        </span>
+                        <span className="text-[11px] font-bold text-on-surface">
+                          {dish.rating?.toFixed(1) || '4.8'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Actions: Favorite & Quick Add */}
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
-                      aria-label={`Add ${item.name} to cart`}
-                      onClick={() => {
-                        onAddToCart(item);
-                        onNotify(`Added ${item.name} to cart`);
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFavorite(dish.id);
                       }}
-                      className="w-9 h-9 rounded-full bg-surface-container-high text-primary hover:bg-primary hover:text-on-primary transition-colors flex items-center justify-center cursor-pointer"
+                      aria-label="Favorite"
+                      className="w-8 h-8 rounded-full bg-surface hover:bg-surface-variant flex items-center justify-center transition-colors cursor-pointer"
+                    >
+                      <span
+                        className={`material-symbols-outlined text-[18px] transition-colors ${
+                          isFav ? 'text-red-500 icon-filled' : 'text-on-surface-variant'
+                        }`}
+                      >
+                        favorite
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAddToCart(dish);
+                        onNotify(`Added ${dish.name} to cart`);
+                      }}
+                      aria-label="Add to cart"
+                      className="w-8 h-8 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white flex items-center justify-center shadow-md active:scale-95 transition-all cursor-pointer font-bold"
                     >
                       <span className="material-symbols-outlined text-[18px]">add</span>
                     </button>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              );
+            })
+          )}
         </div>
       </div>
 
-      {/* Service Mode / Table Selector Dialog */}
+      {!hasSearchQuery && (
+        <CustomerReviewsSection
+          orders={orders}
+          onSelectDish={(dish) => setDetailItem(dish)}
+          onSubmitFeedback={onSubmitFeedback}
+          onNotify={onNotify}
+        />
+      )}
+
+      {/* Table Selector Modal */}
       {tableModalOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in"
           onClick={() => setTableModalOpen(false)}
         >
           <div
-            className="w-full max-w-md bg-surface-container-low rounded-2xl p-5 shadow-2xl space-y-4"
             onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-3xl bg-surface-container border border-outline-variant/20 p-5 shadow-2xl space-y-4"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-on-surface">Select Dining Mode &amp; Table</h3>
+            <div className="flex items-center justify-between pb-2 border-b border-outline-variant/15">
+              <h3 className="text-sm font-bold text-on-surface">Select Order Service Mode</h3>
               <button
                 type="button"
-                aria-label="Close selector"
                 onClick={() => setTableModalOpen(false)}
-                className="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant hover:text-on-surface cursor-pointer"
+                className="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
 
             <div className="grid grid-cols-3 gap-2">
-              {(['dine-in', 'takeaway', 'delivery'] as ServiceMode[]).map((mode) => (
+              {(['dine-in', 'takeaway', 'delivery'] as const).map((mode) => (
                 <button
                   key={mode}
                   type="button"
-                  onClick={() => onSelectServiceAndTable(mode, selectedTable)}
-                  className={`py-2.5 px-2 rounded-xl text-xs font-bold capitalize transition-all cursor-pointer ${
+                  onClick={() => {
+                    onSelectServiceAndTable(mode, selectedTable);
+                    onNotify(`Switched to ${mode}`);
+                  }}
+                  className={`py-2 px-1 rounded-xl text-xs font-bold capitalize transition-all cursor-pointer ${
                     serviceMode === mode
-                      ? 'bg-primary text-on-primary shadow-md'
+                      ? 'bg-[#FF6422] text-white shadow-md'
                       : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
                   }`}
                 >
@@ -410,195 +541,172 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
             </div>
 
             {serviceMode === 'dine-in' && (
-              <div className="space-y-2">
-                <p className="text-xs text-on-surface-variant font-medium">Choose Table</p>
+              <div>
+                <label className="block text-xs font-bold text-on-surface mb-2">
+                  Select Dine-In Table
+                </label>
                 <div className="grid grid-cols-4 gap-2">
-                  {tables.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => {
-                        onSelectServiceAndTable('dine-in', t.id);
-                        setTableModalOpen(false);
-                        onNotify(`Active table set to ${t.label}`);
-                      }}
-                      className={`py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        selectedTable === t.id
-                          ? 'bg-primary-container text-on-primary-container'
-                          : 'bg-surface-container-high text-on-surface hover:bg-surface-bright'
-                      }`}
-                    >
-                      {t.id}
-                    </button>
-                  ))}
+                  {(tables.length > 0 ? tables : [{ id: 'T1' }, { id: 'T2' }, { id: 'T3' }, { id: 'T4' }]).map((t) => {
+                    const tableId = t.id;
+                    const isSelected = selectedTable === tableId;
+                    return (
+                      <button
+                        key={tableId}
+                        type="button"
+                        onClick={() => {
+                          onSelectServiceAndTable('dine-in', tableId);
+                          onNotify(`Table set to ${tableId}`);
+                          setTableModalOpen(false);
+                        }}
+                        className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#FF6422] text-white shadow-md'
+                            : 'bg-surface-container-high text-on-surface hover:bg-surface-variant'
+                        }`}
+                      >
+                        {tableId}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => setTableModalOpen(false)}
-              className="w-full h-11 rounded-xl bg-primary text-on-primary font-bold text-sm cursor-pointer"
-            >
-              Confirm Selection
-            </button>
+            <div className="pt-2 space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setTableModalOpen(false);
+                  setBookingModalOpen(true);
+                }}
+                className="w-full py-2.5 rounded-full bg-surface-container-high text-xs font-bold text-on-surface flex items-center justify-center gap-1.5 cursor-pointer hover:bg-surface-variant transition-colors"
+              >
+                <span className="material-symbols-outlined text-[16px]">calendar_today</span>
+                <span>Book a Table in Advance</span>
+              </button>
+
+              {onNavigateAdmin && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTableModalOpen(false);
+                    onNavigateAdmin();
+                  }}
+                  className="w-full py-2.5 rounded-full bg-[#FF6422]/15 hover:bg-[#FF6422]/25 border border-[#FF6422]/25 text-xs font-bold text-[#FF6422] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[16px]">shield_person</span>
+                  <span>Open Admin & Staff Panel</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Book a Table Dialog */}
+      {/* Booking Modal */}
       {bookingModalOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
-          onClick={() => !bookingSubmitting && setBookingModalOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in"
+          onClick={() => setBookingModalOpen(false)}
         >
           <div
-            className="w-full max-w-md bg-surface-container-low rounded-2xl p-5 shadow-2xl space-y-4"
             onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-3xl bg-surface-container border border-outline-variant/20 p-5 shadow-2xl space-y-4"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-on-surface">Reserve Your Cozy Booth</h3>
+            <div className="flex items-center justify-between pb-2 border-b border-outline-variant/15">
+              <h3 className="text-sm font-bold text-on-surface">Book a Table</h3>
               <button
                 type="button"
-                aria-label="Close reservation modal"
-                disabled={bookingSubmitting}
                 onClick={() => setBookingModalOpen(false)}
-                className="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant cursor-pointer disabled:opacity-40"
+                className="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
-            <div className="space-y-3">
+
+            {bookingError && (
+              <p className="text-xs text-red-400 bg-red-950/40 p-2 rounded-lg">{bookingError}</p>
+            )}
+
+            <form onSubmit={handleBookingSubmit} className="space-y-3">
               <div>
-                <label
-                  htmlFor="booking-guest-name"
-                  className="text-xs text-on-surface-variant block mb-1 font-medium"
-                >
-                  Guest Name
-                </label>
+                <label className="block text-xs font-semibold text-on-surface mb-1">Your Name</label>
                 <input
-                  id="booking-guest-name"
                   type="text"
+                  required
                   value={bookingName}
-                  onChange={(e) => {
-                    setBookingName(e.target.value);
-                    if (bookingError) setBookingError(null);
-                  }}
-                  placeholder="e.g. Priya Sharma"
-                  className="w-full px-3 py-2.5 rounded-lg bg-surface-container text-on-surface placeholder:text-outline text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  onChange={(e) => setBookingName(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  className="w-full px-3 py-2 bg-surface text-xs rounded-xl border border-outline-variant/20 text-on-surface focus:outline-none focus:ring-1 focus:ring-[#FF6422]"
                 />
               </div>
+
               <div>
-                <label
-                  htmlFor="booking-guest-phone"
-                  className="text-xs text-on-surface-variant block mb-1 font-medium"
-                >
-                  Mobile Number (Optional)
-                </label>
+                <label className="block text-xs font-semibold text-on-surface mb-1">Phone (Optional)</label>
                 <input
-                  id="booking-guest-phone"
                   type="tel"
-                  inputMode="numeric"
                   value={bookingPhone}
-                  onChange={(e) => {
-                    setBookingPhone(e.target.value);
-                    if (bookingError) setBookingError(null);
-                  }}
-                  placeholder="10-digit mobile for SMS confirmation"
-                  className="w-full px-3 py-2.5 rounded-lg bg-surface-container text-on-surface placeholder:text-outline text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  onChange={(e) => setBookingPhone(e.target.value)}
+                  placeholder="e.g. 9876543210"
+                  className="w-full px-3 py-2 bg-surface text-xs rounded-xl border border-outline-variant/20 text-on-surface focus:outline-none focus:ring-1 focus:ring-[#FF6422]"
                 />
               </div>
-              <div>
-                <label className="text-xs text-on-surface-variant block mb-1">Party Size</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {['2 Guests', '4 Guests', '6 Guests'].map((g) => (
-                    <button
-                      key={g}
-                      type="button"
-                      onClick={() => setBookingGuests(g)}
-                      className={`py-2 rounded-lg text-xs font-semibold cursor-pointer ${
-                        bookingGuests === g
-                          ? 'bg-primary-container text-on-primary-container font-bold'
-                          : 'bg-surface-container-high text-on-surface'
-                      }`}
-                    >
-                      {g}
-                    </button>
-                  ))}
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-on-surface mb-1">Guests</label>
+                  <select
+                    value={bookingGuests}
+                    onChange={(e) => setBookingGuests(e.target.value)}
+                    className="w-full px-2 py-2 bg-surface text-xs rounded-xl border border-outline-variant/20 text-on-surface"
+                  >
+                    <option value="1 Guest">1 Guest</option>
+                    <option value="2 Guests">2 Guests</option>
+                    <option value="4 Guests">4 Guests</option>
+                    <option value="6 Guests">6 Guests</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-on-surface mb-1">Time</label>
+                  <select
+                    value={bookingTime}
+                    onChange={(e) => setBookingTime(e.target.value)}
+                    className="w-full px-2 py-2 bg-surface text-xs rounded-xl border border-outline-variant/20 text-on-surface"
+                  >
+                    <option value="1:00 PM">1:00 PM</option>
+                    <option value="7:30 PM">7:30 PM</option>
+                    <option value="8:30 PM">8:30 PM</option>
+                    <option value="9:15 PM">9:15 PM</option>
+                  </select>
                 </div>
               </div>
-              <div>
-                <label className="text-xs text-on-surface-variant block mb-1">Evening Slot</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {['6:30 PM', '7:30 PM', '8:30 PM'].map((slot) => (
-                    <button
-                      key={slot}
-                      type="button"
-                      onClick={() => setBookingTime(slot)}
-                      className={`py-2 rounded-lg text-xs font-semibold cursor-pointer ${
-                        bookingTime === slot
-                          ? 'bg-primary-container text-on-primary-container font-bold'
-                          : 'bg-surface-container-high text-on-surface'
-                      }`}
-                    >
-                      {slot}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {bookingError && (
-                <p role="alert" className="text-xs text-error font-medium">
-                  {bookingError}
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              disabled={bookingSubmitting}
-              onClick={async () => {
-                const trimmedName = bookingName.trim();
-                if (trimmedName.length < 2) {
-                  setBookingError('Please enter your name (at least 2 characters).');
-                  return;
-                }
-                const partySize = Number.parseInt(bookingGuests, 10) || 2;
-                const cleanedPhone = bookingPhone.replace(/\D/g, '').slice(-10);
-                if (bookingPhone.trim().length > 0 && cleanedPhone.length !== 10) {
-                  setBookingError('Enter a valid 10-digit mobile number or leave it blank.');
-                  return;
-                }
-                setBookingError(null);
-                if (!onReserveTable) {
-                  setBookingModalOpen(false);
-                  onNotify(`Reserved table for ${bookingGuests} at ${bookingTime}`);
-                  return;
-                }
-                setBookingSubmitting(true);
-                try {
-                  await onReserveTable({
-                    guestName: trimmedName,
-                    guestPhone: cleanedPhone || undefined,
-                    partySize,
-                    timeSlot: bookingTime,
-                  });
-                  setBookingModalOpen(false);
-                  setBookingName('');
-                  setBookingPhone('');
-                } catch (err) {
-                  setBookingError(
-                    err instanceof Error ? err.message : 'Unable to reserve table right now.'
-                  );
-                } finally {
-                  setBookingSubmitting(false);
-                }
-              }}
-              className="w-full h-11 rounded-xl bg-primary text-on-primary font-bold text-sm cursor-pointer disabled:opacity-50"
-            >
-              {bookingSubmitting ? 'Reserving Table...' : 'Confirm Table Reservation'}
-            </button>
+
+              <button
+                type="submit"
+                disabled={bookingSubmitting}
+                className="w-full mt-2 py-3 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
+              >
+                {bookingSubmitting ? 'Confirming...' : 'Confirm Reservation'}
+              </button>
+            </form>
           </div>
         </div>
       )}
+
+      {/* Food Details Modal */}
+      <FoodDetailsModal
+        item={detailItem}
+        isOpen={Boolean(detailItem)}
+        onClose={() => setDetailItem(null)}
+        onAddToCart={(item, opts) => {
+          onAddToCart(item, opts.quantity);
+          onNotify(`Added ${opts.quantity}x ${item.name} (${opts.size}) to cart`);
+        }}
+        isFavorite={detailItem ? favorites.has(detailItem.id) : false}
+        onToggleFavorite={toggleFavorite}
+      />
     </div>
   );
 };

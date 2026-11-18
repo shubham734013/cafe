@@ -1,9 +1,14 @@
-import type { PaymentOrderSyncStatus } from '../payments/types';
-import type { UpiAppId } from '../payments/upiUri';
-
 export type WorkspaceMode = 'customer' | 'staff';
 
-export type StaffRole = 'owner' | 'manager' | 'cashier' | 'barista' | 'server';
+export type StaffRole =
+  | 'super-admin'
+  | 'owner'
+  | 'manager'
+  | 'cashier'
+  | 'barista'
+  | 'server'
+  | 'kitchen'
+  | 'waiter';
 
 export interface AuthSessionState {
   authenticated: boolean;
@@ -14,11 +19,13 @@ export interface AuthSessionState {
     exp: number;
   } | null;
 }
-
-export type CustomerScreenId = 'home' | 'menu' | 'cart' | 'tracking' | 'rewards';
+export type CustomerScreenId = 'home' | 'menu' | 'cart' | 'tracking' | 'rewards' | 'profile';
 export type StaffScreenId =
+  | 'staff-home'
   | 'pos-terminal'
+  | 'pos-orders'
   | 'kitchen-display-system'
+  | 'kitchen-tables'
   | 'admin-dashboard'
   | 'order-management'
   | 'reports-analytics'
@@ -36,8 +43,28 @@ export type ServiceMode = 'dine-in' | 'takeaway' | 'delivery';
 export type PaymentMode = 'upi' | 'cash' | 'card';
 export type CardNetwork = 'Visa' | 'Mastercard' | 'RuPay' | 'Amex';
 export type CardMethodType = 'edc_table' | 'online_card';
-export type OrderStatus = 'placed' | 'preparing' | 'ready' | 'served';
-export type MenuCategory = 'All' | 'Best Sellers' | 'Beverages' | 'Snacks' | 'Meals' | 'Combos' | 'Desserts';
+export type OrderStatus =
+  | 'placed'
+  | 'accepted'
+  | 'preparing'
+  | 'ready'
+  | 'served'
+  | 'paid'
+  | 'cancelled';
+export type MenuCategory =
+  | 'All'
+  | 'Best Sellers'
+  | 'Beverages'
+  | 'Snacks'
+  | 'Meals'
+  | 'Combos'
+  | 'Desserts'
+  | 'Pizza'
+  | 'Burger'
+  | 'Pasta'
+  | 'Salad'
+  | 'Drink'
+  | 'Dessert';
 export type DateRangeKey = 'Today' | 'Last 7 Days' | 'This Month' | 'Quarter to Date';
 export type ReportCategory = 'Sales Report' | 'Item Report' | 'Inventory Report' | 'Customer Report' | 'Staff Performance';
 
@@ -60,10 +87,12 @@ export interface MenuItem {
   rating: number;
   isVeg: boolean;
   isBestSeller?: boolean;
+  isAvailable?: boolean;
   station: 'Barista' | 'Grill' | 'Fryer' | 'Cold Bar' | 'Kitchen';
   defaultNote: string;
   imageUrl: string;
   unitsSold: number;
+  reviewsCount?: number;
 }
 
 export interface CartItem {
@@ -89,6 +118,7 @@ export interface CardPaymentMetadata {
 export interface CafeOrder {
   id: string;
   kotNumber: string;
+  isPosTerminal?: boolean;
   serviceMode: ServiceMode;
   tableNumber?: string;
   deliveryPartner?: string;
@@ -98,12 +128,12 @@ export interface CafeOrder {
   discount: number;
   tax: number;
   total: number;
-  paymentMode: PaymentMode;
-  paymentStatus?: PaymentOrderSyncStatus;
-  paymentId?: string;
+  paymentMode?: PaymentMode;
+  paymentStatus?: 'unpaid' | 'pending' | 'observed' | 'paid' | 'manual_review' | 'failed' | 'expired' | 'cancelled' | 'refunded';
+  paymentProvider?: 'upi-gateway';
+  gatewayOrderId?: string;
   customerId?: string;
   paymentRef?: string;
-  preferredUpiApp?: UpiAppId;
   paymentChannelLabel?: string;
   cardDetails?: CardPaymentMetadata;
   loyaltyPointsAwarded?: number;
@@ -113,6 +143,34 @@ export interface CafeOrder {
   isUrgent?: boolean;
   serverName?: string;
   cookingNote?: string;
+  rating?: number;
+  feedbackTags?: string[];
+  feedbackComment?: string;
+  refundAmount?: number;
+  refundReason?: string;
+  refundedAt?: string;
+  refundedBy?: string;
+}
+
+export interface CafeActivityLogItem {
+  id: string;
+  type:
+    | 'order_created'
+    | 'order_paid'
+    | 'order_advanced'
+    | 'order_refunded'
+    | 'stock_updated'
+    | 'table_updated'
+    | 'feedback_received'
+    | 'campaign_toggled';
+  title: string;
+  description: string;
+  actorName: string;
+  actorRole?: string;
+  timestamp: string;
+  severity: 'info' | 'success' | 'warning' | 'error';
+  orderId?: string;
+  amount?: number;
 }
 
 export interface CafeTable {
@@ -144,6 +202,9 @@ export interface InventoryIngredient {
   icon: string;
   unitCost: number;
   movementType: 'in' | 'out';
+  reorderRequested?: boolean;
+  reorderRequestedAt?: string;
+  reorderNote?: string;
 }
 
 export interface CustomerProfile {
@@ -158,6 +219,7 @@ export interface CustomerProfile {
   favorites: string;
   lastVisit: string;
   note?: string;
+  loyaltyPoints?: number;
 }
 
 export interface LoyaltyRule {
@@ -172,6 +234,7 @@ export interface LoyaltyRule {
 
 export interface PointLedgerEntry {
   id: string;
+  orderId?: string;
   initials: string;
   customerName: string;
   context: string;
@@ -240,4 +303,20 @@ export interface DailyOrderVolumePoint {
   ordersCount: number;
   revenue: number;
   isPeak?: boolean;
+}
+
+export interface CustomerReview {
+  id: string;
+  customerName: string;
+  avatarUrl?: string;
+  initials?: string;
+  rating: number; // 1 to 5
+  comment: string;
+  tags?: string[];
+  dishName?: string;
+  dishImage?: string;
+  diningMode?: string;
+  isVerified?: boolean;
+  dateLabel: string;
+  likesCount?: number;
 }

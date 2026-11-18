@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { CAFE_ASSETS } from '../data/cafeSeedData';
 import { AuthSessionState, ScreenId, StaffScreenId, WorkspaceMode } from '../types/cafe';
+import { isKitchenPath } from '../routing/routes';
 import { canStaffRoleAccessScreen, formatStaffRoleLabel } from '../utils/rbac';
 import { CafeBrandEmblem } from './CafeBrandEmblem';
 import { CafeImage } from './CafeImage';
@@ -15,42 +16,47 @@ interface AppShellProps {
   isSyncError?: boolean;
   syncErrorMessage?: string;
   onRetrySync?: () => void;
-  onOpenPinUnlock?: () => void;
   onLockStaff?: () => void;
   onNavigate: (screen: ScreenId, mode?: WorkspaceMode) => void;
-  onShowSplash: () => void;
   children: React.ReactNode;
 }
 
 const CUSTOMER_NAV: { id: ScreenId; label: string; icon: string }[] = [
   { id: 'home', label: 'Home', icon: 'home' },
-  { id: 'menu', label: 'Menu', icon: 'restaurant_menu' },
-  { id: 'cart', label: 'Cart', icon: 'shopping_bag' },
+  { id: 'menu', label: 'Search', icon: 'search' },
   { id: 'tracking', label: 'Orders', icon: 'receipt_long' },
-  { id: 'rewards', label: 'Rewards', icon: 'loyalty' },
+  { id: 'cart', label: 'Cart', icon: 'shopping_bag' },
 ];
 
 const STAFF_NAV_MOBILE: { id: StaffScreenId; label: string; icon: string }[] = [
   { id: 'admin-dashboard', label: 'Dashboard', icon: 'dashboard' },
   { id: 'pos-terminal', label: 'POS', icon: 'point_of_sale' },
+  { id: 'kitchen-display-system', label: 'Kitchen', icon: 'countertops' },
   { id: 'order-management', label: 'Orders', icon: 'receipt_long' },
   { id: 'table-layout', label: 'Tables', icon: 'table_restaurant' },
 ];
 
 const STAFF_NAV_SIDEBAR: { id: StaffScreenId; label: string; icon: string }[] = [
+  { id: 'admin-dashboard', label: 'Dashboard', icon: 'dashboard' },
   { id: 'pos-terminal', label: 'POS Terminal', icon: 'point_of_sale' },
-  { id: 'kitchen-display-system', label: 'Kitchen KOT', icon: 'countertops' },
-  { id: 'admin-dashboard', label: 'Admin Dashboard', icon: 'dashboard' },
-  { id: 'order-management', label: 'Order Management', icon: 'receipt_long' },
-  { id: 'reports-analytics', label: 'Reports & Analytics', icon: 'insights' },
-  { id: 'table-layout', label: 'Table Management', icon: 'table_restaurant' },
+  { id: 'kitchen-display-system', label: 'Kitchen KDS', icon: 'countertops' },
+  { id: 'order-management', label: 'Orders & Billing', icon: 'receipt_long' },
+  { id: 'table-layout', label: 'Tables & Floor', icon: 'table_restaurant' },
   { id: 'inventory-stock', label: 'Inventory & Stock', icon: 'inventory_2' },
-  { id: 'crm-customers', label: 'CRM & Customers', icon: 'groups' },
-  { id: 'loyalty-rewards', label: 'Loyalty & Rewards', icon: 'stars' },
+  { id: 'crm-customers', label: 'Customers & CRM', icon: 'groups' },
   { id: 'offers-campaigns', label: 'Offers & Campaigns', icon: 'local_offer' },
+  { id: 'loyalty-rewards', label: 'Loyalty & Rewards', icon: 'stars' },
+  { id: 'reports-analytics', label: 'Reports & Analytics', icon: 'insights' },
   { id: 'staff-roles', label: 'Staff & Roles', icon: 'badge' },
-  { id: 'settings-cafe-profile', label: 'Settings & Profile', icon: 'settings' },
+  { id: 'settings-cafe-profile', label: 'Settings', icon: 'settings' },
 ];
+
+const KITCHEN_NAV_SCREENS = new Set<StaffScreenId>([
+  'kitchen-display-system',
+  'order-management',
+  'table-layout',
+  'inventory-stock',
+]);
 
 const SCREEN_TITLES: Record<ScreenId, string> = {
   splash: 'Welcome',
@@ -59,8 +65,12 @@ const SCREEN_TITLES: Record<ScreenId, string> = {
   cart: 'Cart',
   tracking: 'Order Tracking',
   rewards: 'Rewards',
+  profile: 'Personal Profile',
+  'staff-home': 'Owner Workspace',
   'pos-terminal': 'POS Terminal',
+  'pos-orders': 'POS Orders',
   'kitchen-display-system': 'Kitchen Display System',
+  'kitchen-tables': 'Kitchen Table Details',
   'admin-dashboard': 'Live Operations & Mgmt',
   'order-management': 'Order Management',
   'reports-analytics': 'Reports & Analytics',
@@ -83,32 +93,69 @@ export const AppShell: React.FC<AppShellProps> = ({
   isSyncError = false,
   syncErrorMessage,
   onRetrySync,
-  onOpenPinUnlock,
   onLockStaff,
   onNavigate,
-  onShowSplash,
   children,
 }) => {
   const [notifOpen, setNotifOpen] = useState(false);
   const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
+  const [isLightTheme, setIsLightTheme] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('cafe_customer_theme') === 'light';
+    }
+    return false;
+  });
 
-  const isStaff = workspaceMode === 'staff';
   const activeRole = authSession?.authenticated ? authSession.session?.role : null;
+  const isStaffWorkspace = workspaceMode === 'staff';
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      if (!isStaffWorkspace && isLightTheme) {
+        document.documentElement.classList.add('customer-theme-light');
+        document.body.classList.add('customer-theme-light');
+      } else {
+        document.documentElement.classList.remove('customer-theme-light');
+        document.body.classList.remove('customer-theme-light');
+      }
+    }
+  }, [isLightTheme, isStaffWorkspace]);
+
+  const toggleCustomerTheme = () => {
+    setIsLightTheme((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('cafe_customer_theme', next ? 'light' : 'dark');
+      }
+      return next;
+    });
+  };
+  const isStaff = isStaffWorkspace && Boolean(activeRole);
+  const canShowStaffModules = isStaff;
+  const isKitchenRoute =
+    typeof window !== 'undefined' && isKitchenPath(window.location.pathname);
 
   const visibleStaffNav = useMemo(() => {
-    if (!activeRole) return STAFF_NAV_SIDEBAR;
-    return STAFF_NAV_SIDEBAR.filter((item) => canStaffRoleAccessScreen(activeRole, item.id));
-  }, [activeRole]);
+    if (!activeRole) return [];
+    return STAFF_NAV_SIDEBAR.filter(
+      (item) =>
+        canStaffRoleAccessScreen(activeRole, item.id) &&
+        (!isKitchenRoute || KITCHEN_NAV_SCREENS.has(item.id))
+    );
+  }, [activeRole, isKitchenRoute]);
 
   const visibleMobileStaffTabs = useMemo(() => {
-    if (!activeRole) return STAFF_NAV_MOBILE;
-    const permitted = STAFF_NAV_MOBILE.filter((item) =>
-      canStaffRoleAccessScreen(activeRole, item.id)
+    if (!activeRole) return [];
+    return STAFF_NAV_MOBILE.filter(
+      (item) =>
+        canStaffRoleAccessScreen(activeRole, item.id) &&
+        (!isKitchenRoute || KITCHEN_NAV_SCREENS.has(item.id))
     );
-    return permitted.length > 0 ? permitted : [STAFF_NAV_SIDEBAR.find((s) => canStaffRoleAccessScreen(activeRole, s.id)) ?? STAFF_NAV_MOBILE[2]];
-  }, [activeRole]);
+  }, [activeRole, isKitchenRoute]);
 
   const isActiveInMobilePrimaryTabs = visibleMobileStaffTabs.some((t) => t.id === activeScreen);
+  const hasMoreStaffNav =
+    !isKitchenRoute && visibleStaffNav.length > visibleMobileStaffTabs.length;
 
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-surface text-on-surface flex flex-col md:flex-row">
@@ -126,105 +173,125 @@ export const AppShell: React.FC<AppShellProps> = ({
             </div>
           </div>
 
-          {/* Customer Experience Links */}
-          <div className="space-y-1">
-            <p className="px-2.5 text-[11px] font-semibold uppercase tracking-wider text-outline mb-1.5">
-              Customer App
-            </p>
-            {CUSTOMER_NAV.map((item) => {
-              const active = activeScreen === item.id;
-              return (
+          {!isStaffWorkspace && (
+            <div className="space-y-1">
+              <p className="px-2.5 text-[11px] font-semibold uppercase tracking-wider text-outline mb-1.5">
+                Customer App
+              </p>
+              {CUSTOMER_NAV.map((item) => {
+                const active = activeScreen === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onNavigate(item.id, 'customer')}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm transition-colors cursor-pointer ${
+                      active
+                        ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
+                        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low font-medium'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <span
+                        className={`material-symbols-outlined text-[20px] ${
+                          active ? 'icon-filled' : ''
+                        }`}
+                      >
+                        {item.icon}
+                      </span>
+                      <span>{item.label}</span>
+                    </span>
+                    {item.id === 'cart' && cartCount > 0 && (
+                      <span
+                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums ${
+                          active
+                            ? 'bg-on-primary/20 text-on-primary'
+                            : 'bg-primary/20 text-primary'
+                        }`}
+                      >
+                        {cartCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              <div className="pt-3 border-t border-outline-variant/15 space-y-1">
+                <p className="px-2.5 text-[11px] font-semibold uppercase tracking-wider text-outline mb-1.5">
+                  Management
+                </p>
                 <button
-                  key={item.id}
                   type="button"
-                  onClick={() => onNavigate(item.id, 'customer')}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm transition-colors cursor-pointer ${
-                    active
-                      ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
-                      : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low font-medium'
-                  }`}
+                  onClick={() => onNavigate('admin-dashboard', 'staff')}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-sm bg-[#FF6422]/10 hover:bg-[#FF6422]/20 text-[#FF6422] font-bold border border-[#FF6422]/20 transition-all cursor-pointer"
                 >
                   <span className="flex items-center gap-2.5">
-                    <span
-                      className={`material-symbols-outlined text-[20px] ${
-                        active ? 'icon-filled' : ''
-                      }`}
-                    >
-                      {item.icon}
-                    </span>
-                    <span>{item.label}</span>
+                    <span className="material-symbols-outlined text-[20px]">admin_panel_settings</span>
+                    <span>Admin Panel</span>
                   </span>
-                  {item.id === 'cart' && cartCount > 0 && (
-                    <span
-                      className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums ${
-                        active
-                          ? 'bg-on-primary/20 text-on-primary'
-                          : 'bg-primary/20 text-primary'
-                      }`}
-                    >
-                      {cartCount}
-                    </span>
-                  )}
+                  <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                 </button>
-              );
-            })}
-          </div>
+              </div>
+            </div>
+          )}
 
           {/* Staff & Admin CafeOS Links */}
-          <div className="space-y-1">
-            <div className="px-2.5 flex items-center justify-between mb-1.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-outline">
-                Staff &amp; Admin CafeOS
-              </p>
-              {activeRole && (
-                <span className="px-1.5 py-0.5 rounded bg-primary/15 text-primary text-[9px] font-bold uppercase">
-                  {activeRole}
-                </span>
-              )}
-            </div>
-            {visibleStaffNav.map((item) => {
-              const active = activeScreen === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onNavigate(item.id, 'staff')}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm transition-colors cursor-pointer ${
-                    active
-                      ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
-                      : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low font-medium'
-                  }`}
-                >
-                  <span className="flex items-center gap-2.5 truncate">
-                    <span
-                      className={`material-symbols-outlined text-[20px] ${
-                        active ? 'icon-filled' : ''
-                      }`}
-                    >
-                      {item.icon}
-                    </span>
-                    <span className="truncate">{item.label}</span>
+          {canShowStaffModules && (
+            <div className="space-y-1">
+              <div className="px-2.5 flex items-center justify-between mb-1.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-outline">
+                  Staff &amp; Admin CafeOS
+                </p>
+                {activeRole && (
+                  <span className="px-1.5 py-0.5 rounded bg-primary/15 text-primary text-[9px] font-bold uppercase">
+                    {activeRole}
                   </span>
-                  {item.id === 'kitchen-display-system' && liveKotCount > 0 && (
-                    <span
-                      className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums ${
-                        active
-                          ? 'bg-on-primary/20 text-on-primary'
-                          : 'bg-tertiary/20 text-tertiary'
-                      }`}
-                    >
-                      {liveKotCount}
+                )}
+              </div>
+              {visibleStaffNav.map((item) => {
+                const active = activeScreen === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onNavigate(item.id, 'staff')}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm transition-colors cursor-pointer ${
+                      active
+                        ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
+                        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low font-medium'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2.5 truncate">
+                      <span
+                        className={`material-symbols-outlined text-[20px] ${
+                          active ? 'icon-filled' : ''
+                        }`}
+                      >
+                        {item.icon}
+                      </span>
+                      <span className="truncate">{item.label}</span>
                     </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                    {item.id === 'kitchen-display-system' && liveKotCount > 0 && (
+                      <span
+                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums ${
+                          active
+                            ? 'bg-on-primary/20 text-on-primary'
+                            : 'bg-tertiary/20 text-tertiary'
+                        }`}
+                      >
+                        {liveKotCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Bottom Actions */}
         <div className="space-y-1.5 mt-4">
-          {authSession?.authenticated ? (
+          {canShowStaffModules && !isKitchenRoute ? (
             <button
               type="button"
               onClick={onLockStaff}
@@ -236,26 +303,7 @@ export const AppShell: React.FC<AppShellProps> = ({
               </span>
               <span className="text-[10px] font-bold uppercase">Lock</span>
             </button>
-          ) : (
-            onOpenPinUnlock && (
-              <button
-                type="button"
-                onClick={onOpenPinUnlock}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-primary-container/15 hover:bg-primary-container/25 text-xs font-semibold text-primary transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">pin</span>
-                <span>Staff PIN Unlock</span>
-              </button>
-            )
-          )}
-          <button
-            type="button"
-            onClick={onShowSplash}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-container-low hover:bg-surface-container text-xs text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[18px]">auto_awesome</span>
-            <span>View Splash Screen</span>
-          </button>
+          ) : null}
         </div>
       </aside>
 
@@ -265,7 +313,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         <header className="fixed top-0 left-0 right-0 md:left-64 z-30 pt-safe bg-surface/85 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.25)]">
           <div className="h-14 md:h-16 px-4 max-w-7xl mx-auto flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
-              {isStaff ? (
+              {isStaffWorkspace ? (
                 <div className="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-primary-container shrink-0 md:hidden">
                   <span className="material-symbols-outlined text-[20px]">local_cafe</span>
                 </div>
@@ -279,9 +327,9 @@ export const AppShell: React.FC<AppShellProps> = ({
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="text-sm sm:text-base font-bold text-primary tracking-tight truncate">
                     {cafeName}
-                    {isStaff && <span className="hidden sm:inline"> POS</span>}
+                    {isStaffWorkspace && <span className="hidden sm:inline"> Staff</span>}
                   </span>
-                  {isStaff && (
+                  {isStaffWorkspace && (
                     <span className="hidden sm:inline-block px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[10px] font-bold uppercase shrink-0">
                       {activeRole ? formatStaffRoleLabel(activeRole) : 'Staff Locked'}
                     </span>
@@ -295,25 +343,6 @@ export const AppShell: React.FC<AppShellProps> = ({
 
             {/* Right Header Controls */}
             <div className="flex items-center gap-1 shrink-0">
-              {/* Quick Mode Switcher */}
-              <button
-                type="button"
-                data-testid="workspace-mode-switcher"
-                onClick={() =>
-                  onNavigate(
-                    isStaff ? 'home' : 'pos-terminal',
-                    isStaff ? 'customer' : 'staff'
-                  )
-                }
-                className="px-2.5 sm:px-3 py-1.5 rounded-full bg-surface-container-high hover:bg-surface-bright text-xs font-semibold text-primary flex items-center gap-1 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[15px]">swap_horiz</span>
-                <span className="sm:hidden">{isStaff ? 'Cafe' : 'POS'}</span>
-                <span className="hidden sm:inline">
-                  {isStaff ? 'Customer View' : 'Staff POS'}
-                </span>
-              </button>
-
               {isStaff && canStaffRoleAccessScreen(activeRole, 'settings-cafe-profile') && (
                 <button
                   type="button"
@@ -325,7 +354,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                 </button>
               )}
 
-              <div className="relative">
+              {activeRole !== 'barista' && <div className="relative">
                 <button
                   type="button"
                   aria-label="Notifications"
@@ -363,25 +392,60 @@ export const AppShell: React.FC<AppShellProps> = ({
                     </div>
                   </div>
                 )}
-              </div>
+              </div>}
 
-              <button
+              {!isStaffWorkspace ? (
+                <>
+                  <button
+                    type="button"
+                    aria-label={isLightTheme ? 'Switch to Dark Theme' : 'Switch to Light Theme'}
+                    onClick={toggleCustomerTheme}
+                    className="px-2.5 py-1 rounded-full bg-surface-container hover:bg-surface-container-high flex items-center gap-1 text-xs font-bold text-on-surface transition-all cursor-pointer shadow-sm border border-outline-variant/15"
+                  >
+                    <span className="material-symbols-outlined text-[15px] text-amber-400">
+                      {isLightTheme ? 'light_mode' : 'dark_mode'}
+                    </span>
+                    <span className="text-[11px] font-bold hidden sm:inline">
+                      {isLightTheme ? 'Light' : 'Dark'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('admin-dashboard', 'staff')}
+                    className="px-2.5 py-1 rounded-full bg-[#FF6422]/15 hover:bg-[#FF6422]/25 text-[#FF6422] border border-[#FF6422]/25 flex items-center gap-1 text-xs font-bold transition-all cursor-pointer shadow-sm"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">shield_person</span>
+                    <span>Admin</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onNavigate('home', 'customer')}
+                  className="px-2.5 py-1 rounded-full bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant/15 flex items-center gap-1 text-xs font-bold transition-all cursor-pointer shadow-sm"
+                >
+                  <span className="material-symbols-outlined text-[15px] text-[#FF6422]">restaurant</span>
+                  <span className="hidden sm:inline">Customer App</span>
+                </button>
+              )}
+
+              {(!isStaffWorkspace || (activeRole && canStaffRoleAccessScreen(activeRole, 'staff-roles'))) && <button
                 type="button"
-                aria-label={isStaff ? 'Open Staff Permissions & PIN' : 'Open Rewards Profile'}
+                aria-label={isStaffWorkspace ? 'Open Staff Permissions' : 'Open Personal Profile'}
                 onClick={() => {
-                  if (isStaff) {
-                    if (!authSession?.authenticated && onOpenPinUnlock) {
-                      onOpenPinUnlock();
-                    } else {
+                  if (isStaffWorkspace) {
+                    if (activeRole && canStaffRoleAccessScreen(activeRole, 'staff-roles')) {
                       onNavigate('staff-roles', 'staff');
                     }
-                  } else {
-                    onNavigate('rewards', 'customer');
+                    return;
                   }
+                  onNavigate('profile', 'customer');
                 }}
-                className="w-9 h-9 rounded-full overflow-hidden ring-1 ring-primary/40 flex items-center justify-center shrink-0 cursor-pointer"
+                disabled={isStaffWorkspace && !activeRole}
+                className="w-9 h-9 rounded-full overflow-hidden ring-1 ring-primary/40 flex items-center justify-center shrink-0 cursor-pointer disabled:cursor-default"
               >
-                {isStaff ? (
+                {isStaffWorkspace ? (
                   <div className="w-full h-full bg-gradient-to-tr from-primary-container to-primary flex items-center justify-center text-on-primary">
                     <span className="material-symbols-outlined text-[18px]">shield_person</span>
                   </div>
@@ -392,7 +456,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                     className="w-full h-full object-cover"
                   />
                 )}
-              </button>
+              </button>}
             </div>
           </div>
         </header>
@@ -425,7 +489,8 @@ export const AppShell: React.FC<AppShellProps> = ({
         </main>
 
         {/* Mobile Bottom Tab Bar */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 pb-safe bg-surface-container-lowest/95 backdrop-blur-xl shadow-[0_-1px_12px_rgba(0,0,0,0.35)]">
+        {(!isStaffWorkspace || isStaff) && (
+          <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 pb-safe bg-surface-container-lowest/95 backdrop-blur-xl shadow-[0_-1px_12px_rgba(0,0,0,0.35)]">
           {isStaff ? (
             <div className="flex items-center justify-around h-16 px-1">
               {visibleMobileStaffTabs.map((tab) => {
@@ -453,8 +518,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                 );
               })}
 
-              {/* Mobile "More" Drawer Button unlocking all 12 Staff Modules */}
-              <button
+              {hasMoreStaffNav && <button
                 type="button"
                 data-testid="mobile-staff-more-btn"
                 onClick={() => setMoreDrawerOpen(true)}
@@ -473,7 +537,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                   )}
                 </span>
                 <span className="text-[11px] tracking-tight mt-0.5">More</span>
-              </button>
+              </button>}
             </div>
           ) : (
             <div className="flex items-center justify-around h-16 px-1">
@@ -484,22 +548,22 @@ export const AppShell: React.FC<AppShellProps> = ({
                     key={tab.id}
                     type="button"
                     onClick={() => onNavigate(tab.id, 'customer')}
-                    className={`relative flex flex-col items-center justify-center min-w-[56px] min-h-[44px] px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+                    className={`relative flex flex-col items-center justify-center min-w-[56px] min-h-[44px] px-2 py-1 rounded-2xl transition-all cursor-pointer ${
                       active
-                        ? 'text-primary-container bg-surface-container-high/70 font-bold'
-                        : 'text-on-surface-variant hover:text-on-surface'
+                        ? 'text-[#FF6422] font-black scale-105'
+                        : 'text-on-surface-variant hover:text-on-surface font-semibold'
                     }`}
                   >
                     <span className="relative inline-flex items-center justify-center">
                       <span
-                        className={`material-symbols-outlined text-[22px] ${
-                          active ? 'icon-filled' : ''
+                        className={`material-symbols-outlined text-[24px] ${
+                          active ? 'icon-filled text-[#FF6422]' : ''
                         }`}
                       >
                         {tab.icon}
                       </span>
                       {tab.id === 'cart' && cartCount > 0 && (
-                        <span className="absolute -top-1 -right-2.5 w-4 h-4 rounded-full bg-primary-container text-on-primary text-[9px] font-bold flex items-center justify-center tabular-nums shadow-sm">
+                        <span className="absolute -top-1 -right-2.5 w-4 h-4 rounded-full bg-[#FF6422] text-white text-[9px] font-black flex items-center justify-center tabular-nums shadow-md">
                           {cartCount}
                         </span>
                       )}
@@ -510,10 +574,13 @@ export const AppShell: React.FC<AppShellProps> = ({
               })}
             </div>
           )}
-        </nav>
+          </nav>
+        )}
 
         {/* Mobile Staff Modules Slide-Up Drawer */}
-        {isStaff && moreDrawerOpen && (
+        {canShowStaffModules &&
+          hasMoreStaffNav &&
+          moreDrawerOpen && (
           <div
             className="md:hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end"
             onClick={() => setMoreDrawerOpen(false)}
@@ -571,42 +638,17 @@ export const AppShell: React.FC<AppShellProps> = ({
                 })}
               </div>
 
-              <div className="flex gap-2 pt-2 border-t border-outline-variant/20">
-                {authSession?.authenticated ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMoreDrawerOpen(false);
-                      onLockStaff?.();
-                    }}
-                    className="flex-1 py-2.5 rounded-xl bg-surface-container-high text-primary text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">lock</span>
-                    <span>Switch / Lock PIN</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMoreDrawerOpen(false);
-                      onOpenPinUnlock?.();
-                    }}
-                    className="flex-1 py-2.5 rounded-xl bg-primary text-on-primary text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">pin</span>
-                    <span>Unlock Staff PIN</span>
-                  </button>
-                )}
+              <div className="pt-2 border-t border-outline-variant/20">
                 <button
                   type="button"
                   onClick={() => {
                     setMoreDrawerOpen(false);
-                    onNavigate('home', 'customer');
+                    onLockStaff?.();
                   }}
-                  className="flex-1 py-2.5 rounded-xl bg-surface-container-low text-on-surface text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full py-2.5 rounded-xl bg-surface-container-high text-primary text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <span className="material-symbols-outlined text-[16px]">storefront</span>
-                  <span>Customer View</span>
+                  <span className="material-symbols-outlined text-[16px]">lock</span>
+                  <span>Switch / Lock PIN</span>
                 </button>
               </div>
             </div>

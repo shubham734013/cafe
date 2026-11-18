@@ -25,17 +25,20 @@ export async function buildOrdersExcelBuffer(orders: CafeOrder[]): Promise<Uint8
   const sheet = workbook.addWorksheet('Orders');
   sheet.columns = [
     { header: 'Order ID', key: 'id', width: 14 },
-    { header: 'KOT', key: 'kot', width: 10 },
-    { header: 'Channel', key: 'channel', width: 14 },
-    { header: 'Table / Partner', key: 'location', width: 18 },
-    { header: 'Items', key: 'items', width: 42 },
-    { header: 'Status', key: 'status', width: 14 },
-    { header: 'Payment', key: 'payment', width: 12 },
+    { header: 'KOT #', key: 'kot', width: 10 },
+    { header: 'Channel', key: 'channel', width: 12 },
+    { header: 'Table / Location', key: 'location', width: 16 },
+    { header: 'Items Ordered', key: 'items', width: 42 },
+    { header: 'KOT Status', key: 'status', width: 12 },
+    { header: 'Payment Mode', key: 'paymentMode', width: 14 },
+    { header: 'Payment Status', key: 'paymentStatus', width: 16 },
     { header: 'Subtotal (INR)', key: 'subtotal', width: 15 },
     { header: 'Discount (INR)', key: 'discount', width: 15 },
     { header: 'Tax (INR)', key: 'tax', width: 13 },
     { header: 'Total (INR)', key: 'total', width: 15 },
-    { header: 'Time', key: 'time', width: 16 },
+    { header: 'Refund (INR)', key: 'refund', width: 14 },
+    { header: 'Refund Reason', key: 'refundReason', width: 22 },
+    { header: 'Time', key: 'time', width: 14 },
   ];
 
   styleHeaderRow(sheet.getRow(1));
@@ -44,23 +47,27 @@ export async function buildOrdersExcelBuffer(orders: CafeOrder[]): Promise<Uint8
     sheet.addRow({
       id: order.id,
       kot: order.kotNumber,
-      channel: order.serviceMode,
+      channel: order.serviceMode.toUpperCase(),
       location:
         order.serviceMode === 'dine-in'
           ? `Table ${order.tableNumber || 'T1'}`
           : order.deliveryPartner || 'Takeaway',
       items: order.items.map((i) => `${i.quantity}x ${i.name}`).join('; '),
       status: order.status.toUpperCase(),
-      payment: order.paymentMode.toUpperCase(),
+      paymentMode: (order.paymentMode || 'cash').toUpperCase(),
+      paymentStatus: (order.paymentStatus || 'unpaid').toUpperCase(),
       subtotal: order.subtotal,
       discount: order.discount,
       tax: order.tax,
       total: order.total,
+      refund: order.refundAmount || 0,
+      refundReason: order.refundReason || '-',
       time: order.createdAtLabel,
     });
   }
 
-  ['H', 'I', 'J', 'K'].forEach((col) => {
+  // Format currency columns only (Subtotal, Discount, Tax, Total, Refund)
+  ['I', 'J', 'K', 'L', 'M'].forEach((col) => {
     sheet.getColumn(col).numFmt = '₹#,##0.00';
   });
 
@@ -153,16 +160,4 @@ export async function buildLoyaltyLedgerExcelBuffer(ledger: PointLedgerEntry[]):
 
   const buffer = await workbook.xlsx.writeBuffer();
   return new Uint8Array(buffer as ArrayBuffer);
-}
-
-export function triggerBlobDownload(filename: string, data: BlobPart, mimeType: string): void {
-  const blob = new Blob([data], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
 }

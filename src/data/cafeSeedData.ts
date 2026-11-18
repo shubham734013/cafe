@@ -3,6 +3,7 @@ import {
   CafeSettings,
   CafeTable,
   CustomerProfile,
+  CustomerReview,
   DateRangeKey,
   InventoryIngredient,
   LoyaltyRule,
@@ -43,9 +44,139 @@ export const CAFE_ASSETS = {
     'https://lh3.googleusercontent.com/aida-public/AB6AXuBwp0p4rmK_1hg52c32CbUA_h6S1VSIaw6HEZSb3hC0LRn_WlJoED7xy-EVdHVU-Fqu7NNnGL86iS628IVi5l4_CXfR5b5OjLCXZn0bFV3MhJ1YvYB-xGcZIbhxpB1N3BmIGYWWycS3q1wSu733R8qFutcPOc_CQZq0Fxpbf5xW45Vll9ZcPZE2CtxGPLXKhCishaQ8JLOFic3O91bzyQoezsnYFd2sSShDndyeMoR0EVjqL3vWB-aUsw',
   campaignBanner:
     'https://lh3.googleusercontent.com/aida-public/AB6AXuDNgWv8wPZI3i_dx1sdAFrNnuLHKVHI8_zCKsyjDgMgLOStCcWt-df6zreCwM27sYMsJt6giEhSHB8XmuMBdic1h3JGh59dujJzy1cTsz7d7wh9Ab914oJoIJzpOq9quwPSvM_yCq6ZerNu7NcLi1Vg8KVGi8hGia2pZVURBABc2AL6QflX2bi2MfETxUPOt2qOmYx7K3LxYwu6AKNO-wVSgOrknHUeB8can3uDMs5f',
+  pizzaMargherita:
+    'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&auto=format&fit=crop&q=80',
+  pizzaBanner:
+    'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600&auto=format&fit=crop&q=80',
+  burgerClassic:
+    'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=600&auto=format&fit=crop&q=80',
+  pastaAlfredo:
+    'https://images.unsplash.com/photo-1546549032-9571cd6b27df?w=600&auto=format&fit=crop&q=80',
+  saladGarden:
+    'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&auto=format&fit=crop&q=80',
+  drinkCitrus:
+    'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=600&auto=format&fit=crop&q=80',
+  dessertCheesecake:
+    'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600&auto=format&fit=crop&q=80',
 };
 
 export const MENU_ITEMS: MenuItem[] = [
+  {
+    id: 'margherita-pizza',
+    name: 'Margherita Pizza',
+    description: 'Fresh mozzarella, tomatoes, basil and our homemade sauce.',
+    price: 249,
+    category: 'Pizza',
+    rating: 4.8,
+    reviewsCount: 124,
+    isVeg: true,
+    isBestSeller: true,
+    station: 'Kitchen',
+    defaultNote: 'Crisp thin crust, extra basil',
+    imageUrl: CAFE_ASSETS.pizzaMargherita,
+    unitsSold: 342,
+  },
+  {
+    id: 'classic-cheeseburger',
+    name: 'Classic Burger',
+    description: 'Juicy herb grilled patty, cheddar melt, crisp lettuce & house sauce.',
+    price: 189,
+    category: 'Burger',
+    rating: 4.8,
+    reviewsCount: 98,
+    isVeg: true,
+    isBestSeller: true,
+    station: 'Grill',
+    defaultNote: 'Toasted brioche, extra cheese',
+    imageUrl: CAFE_ASSETS.burgerClassic,
+    unitsSold: 284,
+  },
+  {
+    id: 'creamy-alfredo-pasta',
+    name: 'Pasta Alfredo',
+    description: 'Penne in rich parmesan cream sauce, roasted garlic & fresh herbs.',
+    price: 219,
+    category: 'Pasta',
+    rating: 4.7,
+    reviewsCount: 76,
+    isVeg: true,
+    isBestSeller: true,
+    station: 'Kitchen',
+    defaultNote: 'Al dente penne, extra parmesan',
+    imageUrl: CAFE_ASSETS.pastaAlfredo,
+    unitsSold: 210,
+  },
+  {
+    id: 'mediterranean-salad',
+    name: 'Fresh Salad',
+    description: 'Crisp garden greens, kalamata olives, cherry tomatoes & feta.',
+    price: 169,
+    category: 'Salad',
+    rating: 4.6,
+    reviewsCount: 64,
+    isVeg: true,
+    station: 'Cold Bar',
+    defaultNote: 'Lemon oregano vinaigrette on side',
+    imageUrl: CAFE_ASSETS.saladGarden,
+    unitsSold: 145,
+  },
+  {
+    id: 'citrus-sunrise-drink',
+    name: 'Citrus Drink',
+    description: 'Freshly pressed orange citrus, mint leaves, crushed ice & splash of grenadine.',
+    price: 129,
+    category: 'Drink',
+    rating: 4.9,
+    reviewsCount: 152,
+    isVeg: true,
+    isBestSeller: true,
+    station: 'Cold Bar',
+    defaultNote: 'Chilled with crushed ice',
+    imageUrl: CAFE_ASSETS.drinkCitrus,
+    unitsSold: 410,
+  },
+  {
+    id: 'berry-cheesecake',
+    name: 'Dessert Cake',
+    description: 'Velvety New York baked cheesecake topped with wild strawberry compote.',
+    price: 199,
+    category: 'Dessert',
+    rating: 4.9,
+    reviewsCount: 116,
+    isVeg: true,
+    station: 'Cold Bar',
+    defaultNote: 'Extra wild berry drizzle',
+    imageUrl: CAFE_ASSETS.dessertCheesecake,
+    unitsSold: 230,
+  },
+  {
+    id: 'test-chai-1',
+    name: '₹1 Test Cutting Chai',
+    description: '₹1 gateway test item for live UPI payment verification',
+    price: 1,
+    category: 'Beverages',
+    rating: 5.0,
+    isVeg: true,
+    isBestSeller: true,
+    station: 'Barista',
+    defaultNote: 'Live Gateway Test',
+    imageUrl: CAFE_ASSETS.coldCoffee,
+    unitsSold: 999,
+  },
+  {
+    id: 'test-cookie-1',
+    name: '₹1 Test Mini Cookie',
+    description: '₹1 gateway test item for live UPI QR scan',
+    price: 1,
+    category: 'Snacks',
+    rating: 5.0,
+    isVeg: true,
+    isBestSeller: true,
+    station: 'Grill',
+    defaultNote: 'Live Gateway Test',
+    imageUrl: CAFE_ASSETS.dailyCombo,
+    unitsSold: 888,
+  },
   {
     id: 'cold-coffee',
     name: 'Cold Coffee',
@@ -197,7 +328,6 @@ export const MENU_ITEMS: MenuItem[] = [
     unitsSold: 84,
   },
 ];
-
 export const INITIAL_ORDERS: CafeOrder[] = [
   {
     id: 'SSCB421',
@@ -241,7 +371,6 @@ export const INITIAL_ORDERS: CafeOrder[] = [
     tax: 0,
     total: 377,
     paymentMode: 'upi',
-    paymentRef: 'UPI-9021',
     status: 'preparing',
     createdAtLabel: '2:14 PM',
     elapsedMinutes: 5,
@@ -251,6 +380,7 @@ export const INITIAL_ORDERS: CafeOrder[] = [
   {
     id: 'SSCB422',
     kotNumber: '#422',
+    isPosTerminal: true,
     serviceMode: 'takeaway',
     items: [
       {
@@ -289,7 +419,6 @@ export const INITIAL_ORDERS: CafeOrder[] = [
     tax: 0,
     total: 347,
     paymentMode: 'upi',
-    paymentRef: 'Token #18',
     status: 'ready',
     createdAtLabel: '2:11 PM',
     elapsedMinutes: 3,
@@ -318,7 +447,6 @@ export const INITIAL_ORDERS: CafeOrder[] = [
     tax: 0,
     total: 149,
     paymentMode: 'upi',
-    paymentRef: 'Txn: 8841',
     status: 'placed',
     createdAtLabel: '2:05 PM',
     elapsedMinutes: 1,
@@ -368,7 +496,6 @@ export const INITIAL_ORDERS: CafeOrder[] = [
     tax: 0,
     total: 512,
     paymentMode: 'upi',
-    paymentRef: 'Prepaid',
     status: 'preparing',
     createdAtLabel: '1:58 PM',
     elapsedMinutes: 8,
@@ -417,7 +544,6 @@ export const INITIAL_ORDERS: CafeOrder[] = [
     tax: 0,
     total: 377,
     paymentMode: 'cash',
-    paymentRef: 'Cash Bill Settled',
     status: 'served',
     createdAtLabel: '1:45 PM',
     elapsedMinutes: 18,
@@ -425,7 +551,6 @@ export const INITIAL_ORDERS: CafeOrder[] = [
     serverName: 'Rohan M.',
   },
 ];
-
 export const INITIAL_TABLES: CafeTable[] = [
   { id: 'T1', label: 'Table T1', seats: 4, zone: 'Cleaned & Ready', floor: 'Floor 1 (Main Hall)', status: 'available' },
   { id: 'T2', label: 'Table T2', seats: 2, zone: 'Window Side', floor: 'Floor 1 (Main Hall)', status: 'occupied', activeOrderId: 'SSCB423', elapsedLabel: '18m' },
@@ -543,7 +668,7 @@ export const INVENTORY_REPORT_ITEMS = [
 export const STAFF_PERFORMANCE_ROWS = [
   { id: 'st-1', name: 'Neha V.', role: 'Senior Barista & Floor', ordersHandled: 148, avgPrep: '4m 40s', rating: '4.9' },
   { id: 'st-2', name: 'Rohan M.', role: 'Hot Kitchen Chef', ordersHandled: 132, avgPrep: '6m 12s', rating: '4.8' },
-  { id: 'st-3', name: 'Aarav S.', role: 'POS Cashier & Counter', ordersHandled: 184, avgPrep: '1m 50s', rating: '4.9' },
+  { id: 'st-3', name: 'Seth S. (Owner)', role: 'Master POS & Admin Lead', ordersHandled: 215, avgPrep: '1m 20s', rating: '5.0' },
 ];
 
 export const INITIAL_INVENTORY: InventoryIngredient[] = [
@@ -666,6 +791,7 @@ export const INITIAL_CUSTOMERS: CustomerProfile[] = [
     avgTicket: 236,
     favorites: 'Cold Coffee, Paneer Wrap',
     lastVisit: 'Today, 1:45 PM',
+    loyaltyPoints: 280,
   },
   {
     id: 'cust-2',
@@ -679,6 +805,7 @@ export const INITIAL_CUSTOMERS: CustomerProfile[] = [
     favorites: 'Hazelnut Brew, Veg Sandwich',
     lastVisit: '20 Jan (Dine-In T3)',
     note: 'Prefers oat milk & no white sugar',
+    loyaltyPoints: 420,
   },
   {
     id: 'cust-3',
@@ -691,6 +818,7 @@ export const INITIAL_CUSTOMERS: CustomerProfile[] = [
     avgTicket: 240,
     favorites: 'Protein Shake, Brown Bread',
     lastVisit: 'Yesterday',
+    loyaltyPoints: 190,
   },
   {
     id: 'cust-4',
@@ -703,6 +831,7 @@ export const INITIAL_CUSTOMERS: CustomerProfile[] = [
     avgTicket: 245,
     favorites: 'French Fries, Cold Coffee',
     lastVisit: '18 Jan',
+    loyaltyPoints: 590,
   },
   {
     id: 'cust-5',
@@ -836,17 +965,17 @@ export const INITIAL_CAMPAIGNS: PromoCampaign[] = [
 export const INITIAL_STAFF_ROSTER: StaffMember[] = [
   {
     id: 'staff-1',
-    initials: 'AS',
-    name: 'Amit Sharma',
-    role: 'Cashier',
-    roleIcon: 'point_of_sale',
-    shiftLabel: '2 PM – 10 PM',
-    shiftBucket: 'afternoon',
+    initials: 'SS',
+    name: 'Seth Sawariya Owner',
+    role: 'Owner & Store Lead',
+    roleIcon: 'shield_person',
+    shiftLabel: 'Full Day (Store Lead)',
+    shiftBucket: 'fullday',
     isOnDuty: true,
     phone: '+91 98765 11223',
-    statLeft: '+91 98765 11223',
-    statRight: 'PIN: ••••',
-    stationBadge: 'POS & Settle Authorized',
+    statLeft: 'Master Admin & POS Control',
+    statRight: 'PIN: 7777',
+    stationBadge: 'Master POS & Admin Authorized',
     stationIcon: 'verified_user',
   },
   {
@@ -879,20 +1008,6 @@ export const INITIAL_STAFF_ROSTER: StaffMember[] = [
   },
   {
     id: 'staff-4',
-    initials: 'SM',
-    name: 'Sonal Meena',
-    role: 'Store Manager',
-    roleIcon: 'shield_person',
-    shiftLabel: 'Full Day (Lead)',
-    shiftBucket: 'fullday',
-    isOnDuty: true,
-    statLeft: 'Full Admin & POS Override',
-    statRight: 'Floor 1 & Stock',
-    stationBadge: 'Daily Inventory Audit',
-    stationIcon: 'inventory_2',
-  },
-  {
-    id: 'staff-5',
     initials: 'VJ',
     name: 'Vikas Joshi',
     role: 'Server / Steward',
@@ -923,3 +1038,108 @@ export const INITIAL_CAFE_SETTINGS: CafeSettings = {
   upiVpa: '',
   upiPayeeName: 'Seth Sawariya Cafe',
 };
+
+export const CUSTOMER_REVIEWS: CustomerReview[] = [
+  {
+    id: 'rev-1',
+    customerName: 'Aarav Sharma',
+    avatarUrl:
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    initials: 'AS',
+    rating: 5,
+    comment:
+      'Hands down the crispiest wood-fired style Margherita in town! The basil was super fragrant and mozzarella melted to perfection. Table service was crazy fast too.',
+    tags: ['🔥 Crispy Crust', '⚡ Fast Service', '🌿 Fresh Basil'],
+    dishName: 'Margherita Pizza',
+    dishImage: CAFE_ASSETS.pizzaMargherita,
+    diningMode: 'Verified Dine-In • Table 3',
+    isVerified: true,
+    dateLabel: '2 hours ago',
+    likesCount: 24,
+  },
+  {
+    id: 'rev-2',
+    customerName: 'Pooja Patel',
+    avatarUrl:
+      'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
+    initials: 'PP',
+    rating: 5,
+    comment:
+      'The burger patty was juicy and the secret house sauce is out of this world! Paired it with peri-peri fries. Cozy vibes and great lighting for photos.',
+    tags: ['🍔 Juicy Patty', '🍟 Crisp Fries', '✨ Cozy Ambience'],
+    dishName: 'Classic Burger',
+    dishImage: CAFE_ASSETS.burgerClassic,
+    diningMode: 'Verified Dine-In • Table 1',
+    isVerified: true,
+    dateLabel: 'Yesterday',
+    likesCount: 19,
+  },
+  {
+    id: 'rev-3',
+    customerName: 'Rohan Mehta',
+    avatarUrl:
+      'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80',
+    initials: 'RM',
+    rating: 5,
+    comment:
+      'Creamy Alfredo done right! Rich parmesan sauce without feeling overly heavy. Staff made sure we were comfortable and refills came quick.',
+    tags: ['🍝 Creamy & Rich', '👌 Authentic Flavor', '❤️ Polite Staff'],
+    dishName: 'Pasta Alfredo',
+    dishImage: CAFE_ASSETS.pastaAlfredo,
+    diningMode: 'Verified Takeaway',
+    isVerified: true,
+    dateLabel: '2 days ago',
+    likesCount: 15,
+  },
+  {
+    id: 'rev-4',
+    customerName: 'Kavita Jain',
+    avatarUrl:
+      'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
+    initials: 'KJ',
+    rating: 5,
+    comment:
+      'Their signature cold coffee with hazelnut syrup never disappoints! Perfect froth, zero bitterness. Our regular weekend hangout spot.',
+    tags: ['☕ Best Brew', '👌 Perfect Froth', '⭐ Frequent Diner'],
+    dishName: 'Cold Coffee Special',
+    dishImage: CAFE_ASSETS.coldCoffee,
+    diningMode: 'Verified Dine-In • Table 4',
+    isVerified: true,
+    dateLabel: '3 days ago',
+    likesCount: 31,
+  },
+  {
+    id: 'rev-5',
+    customerName: 'Ananya Verma',
+    avatarUrl:
+      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
+    initials: 'AV',
+    rating: 5,
+    comment:
+      'The blueberry cheesecake was the showstopper! Smooth velvety texture with a buttery crumble base. 10/10 sweet finish.',
+    tags: ['🍰 Velvety Texture', '🍓 Fresh Berries', '✨ Must Try'],
+    dishName: 'Cheesecake Slice',
+    dishImage: CAFE_ASSETS.dessertCheesecake,
+    diningMode: 'Verified Dine-In • Table 2',
+    isVerified: true,
+    dateLabel: '4 days ago',
+    likesCount: 18,
+  },
+  {
+    id: 'rev-6',
+    customerName: 'Devansh Singhania',
+    avatarUrl:
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    initials: 'DS',
+    rating: 5,
+    comment:
+      'Super crisp greens, fresh cherry tomatoes, and tangy vinaigrette. Perfect light lunch option when you want something healthy.',
+    tags: ['🥗 Crisp Greens', '🌱 100% Fresh', '⚡ Quick Pickup'],
+    dishName: 'Fresh Garden Salad',
+    dishImage: CAFE_ASSETS.saladGarden,
+    diningMode: 'Verified Takeaway',
+    isVerified: true,
+    dateLabel: '5 days ago',
+    likesCount: 12,
+  },
+];

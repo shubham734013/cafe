@@ -15,14 +15,14 @@ import { addTableSchema, tableTransferMergeSchema } from '../shared/schemas';
 import { buildTableSeatOrderPath, buildTableSeatOrderUrl } from '../shared/upi';
 import { resolveEffectiveTableState } from '../state/cafeStateMachines';
 import { CafeOrder, CafeSettings, CafeTable, TableFloor } from '../types/cafe';
-import { triggerBlobDownload } from '../utils/exporters';
-import { generateTableQrPdfBlob } from './CafePdfDocuments';
+import { triggerBlobDownload } from '../utils/download';
 import { QrPreviewModal } from './QrPreviewModal';
 
 interface TableLayoutScreenProps {
   tables: CafeTable[];
   orders: CafeOrder[];
   selectedTable: string;
+  readOnly?: boolean;
   cafeSettings?: CafeSettings;
   onSelectTableForPos: (tableId: string) => void;
   onCheckInTable: (tableId: string) => void | Promise<void>;
@@ -41,6 +41,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
   tables,
   orders,
   selectedTable,
+  readOnly = false,
   cafeSettings,
   onSelectTableForPos,
   onCheckInTable,
@@ -58,6 +59,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
   const [qrTableId, setQrTableId] = useState<string | null>(null);
   const [pendingCheckInId, setPendingCheckInId] = useState<string | null>(null);
   const [printingQrTableId, setPrintingQrTableId] = useState<string | null>(null);
+  const [detailOrder, setDetailOrder] = useState<CafeOrder | null>(null);
 
   const effectiveSettings = cafeSettings ?? INITIAL_CAFE_SETTINGS;
 
@@ -76,6 +78,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://cafeos.local';
       const orderPath = buildTableSeatOrderPath(table.id);
       const orderUrl = buildTableSeatOrderUrl(origin, table.id);
+      const { generateTableQrPdfBlob } = await import('./CafePdfDocuments');
       const blob = await generateTableQrPdfBlob({
         table,
         orderUrl,
@@ -337,14 +340,14 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
                 </div>
 
                 <div className="flex items-center gap-1">
-                  <button
+                  {!readOnly && <button
                     type="button"
                     aria-label={`Show QR for Table ${table.id}`}
                     onClick={() => setQrTableId(table.id)}
                     className="w-7 h-7 rounded-lg bg-surface-container-highest/80 hover:bg-surface-bright text-primary flex items-center justify-center transition-colors cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-[15px]">qr_code_2</span>
-                  </button>
+                  </button>}
                   {isOccupied ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-error-container/40 text-error text-[11px] font-semibold tabular-nums">
                       <span className="w-1.5 h-1.5 rounded-full bg-error animate-pulse" />
@@ -367,30 +370,32 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
               {isOccupied ? (
                 <div className="py-1 flex flex-col gap-0.5">
                   <span className="text-[11px] text-secondary font-semibold">
-                    #{activeOrder?.id || table.activeOrderId || 'SSCB421'}
+                    #{activeOrder?.id || table.activeOrderId || (readOnly ? 'Order unavailable' : 'SSCB421')}
                   </span>
                   <div className="flex items-center justify-between text-on-surface">
                     <span className="text-xs text-on-surface-variant">
                       {(() => {
                         const cnt = activeOrder
                           ? activeOrder.items.reduce((s, i) => s + i.quantity, 0)
-                          : 2;
+                          : readOnly ? 0 : 2;
                         return `${cnt} ${cnt === 1 ? 'item' : 'items'}`;
                       })()}
                     </span>
                     <span className="text-xs font-bold text-primary tabular-nums">
-                      ₹{activeOrder?.total ?? 228}
+                      {activeOrder ? `₹${activeOrder.total}` : readOnly ? '' : '₹228'}
                     </span>
                   </div>
                 </div>
               ) : isReserved ? (
                 <div className="py-1 flex flex-col">
                   <span className="text-xs text-on-surface font-medium truncate">
-                    {table.reservedBy}
+                    {readOnly ? 'Reserved' : table.reservedBy}
                   </span>
-                  <span className="text-[11px] text-on-surface-variant truncate">
-                    Party of {table.reservedPartySize ?? 4}
-                  </span>
+                  {!readOnly && (
+                    <span className="text-[11px] text-on-surface-variant truncate">
+                      Party of {table.reservedPartySize ?? 4}
+                    </span>
+                  )}
                 </div>
               ) : (
                 <div className="py-2">
@@ -402,7 +407,14 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
                 {isOccupied ? (
                   <button
                     type="button"
-                    onClick={() => onSelectTableForPos(table.id)}
+                    onClick={() => {
+                      if (readOnly) {
+                        if (activeOrder) setDetailOrder(activeOrder);
+                      } else {
+                        onSelectTableForPos(table.id);
+                      }
+                    }}
+                    disabled={readOnly && !activeOrder}
                     className={`w-full py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
                       table.billReady
                         ? 'bg-primary-container text-on-primary font-bold shadow-md hover:opacity-90'
@@ -412,8 +424,12 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
                     <span className="material-symbols-outlined text-[16px]">
                       {table.billReady ? 'payments' : 'receipt_long'}
                     </span>
-                    <span>{table.billReady ? 'Bill Ready' : 'View Order'}</span>
+                    <span>{readOnly ? 'View Order Details' : table.billReady ? 'Bill Ready' : 'View Order'}</span>
                   </button>
+                ) : readOnly ? (
+                  <p className="py-2 text-center text-xs text-on-surface-variant">
+                    {isReserved ? 'Reserved table' : 'No active order'}
+                  </p>
                 ) : isReserved ? (
                   <button
                     type="button"
@@ -434,7 +450,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
                     <span>Assign</span>
                   </button>
                 )}
-                <button
+                {!readOnly && <button
                   type="button"
                   data-testid={`print-qr-btn-${table.id}`}
                   aria-label={`Print QR PDF for Table ${table.id}`}
@@ -446,7 +462,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
                   <span>
                     {printingQrTableId === table.id ? 'Generating PDF...' : 'Print QR'}
                   </span>
-                </button>
+                </button>}
               </div>
             </div>
           );
@@ -455,7 +471,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
       )}
 
       {/* Operational Action Dock */}
-      <div className="bg-surface-container-low p-2.5 rounded-xl flex items-center justify-between gap-2 shadow-lg">
+      {!readOnly && <div className="bg-surface-container-low p-2.5 rounded-xl flex items-center justify-between gap-2 shadow-lg">
         <button
           type="button"
           onClick={() => openTableAction('merge')}
@@ -482,7 +498,35 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
           <span className="material-symbols-outlined text-[18px]">add</span>
           <span className="text-xs font-bold truncate">Add Table</span>
         </button>
-      </div>
+      </div>}
+
+      {detailOrder && (
+        <Dialog open onOpenChange={(open) => !open && setDetailOrder(null)}>
+          <DialogContent className="max-h-[85vh] overflow-y-auto bg-surface-container border border-outline-variant/30 text-on-surface sm:max-w-md rounded-2xl p-5">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold">
+                Table {detailOrder.tableNumber} · Order #{detailOrder.id}
+              </DialogTitle>
+              <DialogDescription>
+                {detailOrder.createdAtLabel} · {detailOrder.status}
+              </DialogDescription>
+            </DialogHeader>
+            <ul className="divide-y divide-outline-variant/20">
+              {detailOrder.items.map((item) => (
+                <li key={item.menuItemId} className="py-3">
+                  <p className="font-semibold">{item.quantity}× {item.name}</p>
+                  {item.note && <p className="mt-1 text-xs text-on-surface-variant">{item.note}</p>}
+                </li>
+              ))}
+            </ul>
+            {detailOrder.cookingNote && (
+              <p className="rounded-xl bg-surface-container-low p-3 text-sm">
+                Note: {detailOrder.cookingNote}
+              </p>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Add Table Dialog (shadcn + React Hook Form + Zod) */}
       <Dialog open={addTableOpen} onOpenChange={setAddTableOpen}>

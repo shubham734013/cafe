@@ -191,13 +191,13 @@ export const LoyaltyRewardsAdminScreen: React.FC<LoyaltyRewardsAdminScreenProps>
             <span className="px-1.5 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold uppercase tracking-wider">
               Sync Matrix
             </span>
-            <span className="text-[11px] text-on-surface-variant">POS Auto-Credit Active</span>
+            <span className="text-[11px] text-on-surface-variant">POS Auto-Credit Disabled</span>
           </div>
           <p className="text-xs text-on-surface mt-0.5 truncate font-medium">
             Automated Reward Engine
           </p>
           <p className="text-[11px] text-on-surface-variant truncate">
-            Instant auto-credit upon POS bill settle
+            Automatic point awards are unavailable while payment collection is disabled.
           </p>
         </div>
         <button

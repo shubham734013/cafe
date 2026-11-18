@@ -15,6 +15,7 @@ export const cafeOpenApiSpec = {
     { name: 'CRM & Loyalty' },
     { name: 'Campaigns & Staff' },
     { name: 'Auth & Settings' },
+    { name: 'Payments' },
   ],
   paths: {
     '/health': {
@@ -29,9 +30,26 @@ export const cafeOpenApiSpec = {
     '/bootstrap': {
       get: {
         tags: ['System'],
-        summary: 'Fetch full authoritative CafeOS state snapshot',
+        summary: 'Fetch full or route-scoped authorized CafeOS state',
+        parameters: [
+          {
+            name: 'screen',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Optional screen identifier to return only the data used by that route.',
+          },
+          {
+            name: 'scope',
+            in: 'query',
+            required: false,
+            schema: { type: 'string', enum: ['main', 'kitchen'] },
+            description: 'Use kitchen for kitchen-specific route data.',
+          },
+        ],
         responses: {
-          '200': { description: 'Complete CafeOS state bundle' },
+          '200': { description: 'Authorized CafeOS state, optionally reduced to one route' },
+          '400': { description: 'Unknown screen or scope' },
         },
       },
     },
@@ -50,11 +68,10 @@ export const cafeOpenApiSpec = {
             'application/json': {
               schema: {
                 type: 'object',
-                required: ['serviceMode', 'items', 'paymentMode'],
+                required: ['serviceMode', 'items'],
                 properties: {
                   serviceMode: { type: 'string', enum: ['dine-in', 'takeaway', 'delivery'] },
                   tableNumber: { type: 'string', example: 'T3' },
-                  paymentMode: { type: 'string', enum: ['upi', 'cash', 'card'] },
                   couponCode: { type: 'string', example: 'CAFE50' },
                   isPosTerminal: { type: 'boolean' },
                 },
@@ -68,12 +85,86 @@ export const cafeOpenApiSpec = {
         },
       },
     },
+    '/customer-feedback': {
+      post: {
+        tags: ['CRM & Loyalty'],
+        summary: 'Submit customer feedback for the cafe team',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['customerName', 'rating', 'comment'],
+                properties: {
+                  customerName: { type: 'string', maxLength: 80 },
+                  rating: { type: 'integer', minimum: 1, maximum: 5 },
+                  comment: { type: 'string', minLength: 3, maxLength: 1000 },
+                  tags: { type: 'array', items: { type: 'string', maxLength: 60 } },
+                  dishName: { type: 'string', maxLength: 80 },
+                  diningMode: { type: 'string', enum: ['dine-in', 'takeaway', 'delivery'] },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '201': { description: 'Feedback saved and sent to the cafe team' },
+          '400': { description: 'Validation error' },
+          '429': { description: 'Too many feedback submissions' },
+        },
+      },
+    },
     '/orders/{id}/advance': {
       post: {
         tags: ['Orders & KOT'],
         summary: 'Advance KOT status (placed -> preparing -> ready -> served)',
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: { '200': { description: 'Order updated' }, '404': { description: 'Not found' } },
+      },
+      '/orders/{id}/payment-session': {
+        post: {
+          tags: ['Payments'],
+          summary: 'Create or resume a hosted UPI Gateway checkout for an accessible order',
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: {
+            '200': { description: 'Hosted checkout URL and current payment status' },
+            '403': { description: 'Order is not accessible to this customer or staff role' },
+            '503': { description: 'UPI Gateway is not configured' },
+          },
+        },
+      },
+      '/orders/{id}/payment-status': {
+        get: {
+          tags: ['Payments'],
+          summary: 'Refresh payment status from the UPI Gateway API',
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: {
+            '200': { description: 'Current verified payment status' },
+            '403': { description: 'Order is not accessible to this customer or staff role' },
+          },
+        },
+      },
+      '/webhooks/upi-gateway': {
+        post: {
+          tags: ['Payments'],
+          summary: 'Receive a timestamp-signed UPI Gateway webhook and verify order status',
+          description: 'The CafeOS server re-fetches payment status from the gateway before updating an order.',
+          parameters: [
+            {
+              name: 'X-Signature',
+              in: 'header',
+              required: true,
+              schema: { type: 'string' },
+              description: 'Timestamped HMAC-SHA256 signature supplied by UPI Gateway.',
+            },
+          ],
+          responses: {
+            '200': { description: 'Webhook verified and processed' },
+            '401': { description: 'Invalid or expired signature' },
+            '503': { description: 'Payment verification or persistence is unavailable; retry' },
+          },
+        },
       },
     },
     '/orders/{id}/toggle-item': {

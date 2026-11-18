@@ -10,15 +10,11 @@ import {
   InvalidDomainTransitionError,
   assertCanCheckInTable,
   assertCanMoveTableParty,
-  canTransitionOrderPaymentStatus,
   canTransitionOrderStatus,
-  deriveInitialOrderPayment,
   deriveWorkspaceMode,
-  deriveYoupiCheckoutPhase,
   getStaffDutyStatus,
   resolveEffectiveTableState,
   transitionCampaignStatus,
-  transitionOrderPayment,
   transitionOrderStatus,
   transitionStaffDuty,
 } from './cafeStateMachines';
@@ -40,71 +36,6 @@ test('Order KOT status state machine enforces placed -> preparing -> ready -> se
     assert.equal(err.httpStatus, 409);
     return true;
   });
-});
-
-test('Order payment & card metadata state machine enforces valid transitions and syncs cardDetails.status', () => {
-  assert.equal(canTransitionOrderPaymentStatus('pending', 'paid'), true);
-  assert.equal(canTransitionOrderPaymentStatus('paid', 'refunded'), true);
-  assert.equal(canTransitionOrderPaymentStatus('failed', 'paid'), true);
-  assert.equal(canTransitionOrderPaymentStatus('paid', 'paid'), false);
-  assert.equal(canTransitionOrderPaymentStatus('pending', 'refunded'), false);
-  assert.equal(canTransitionOrderPaymentStatus('refunded', 'paid'), false);
-
-  // Initial online card order starts settled
-  const onlineCard = deriveInitialOrderPayment({
-    orderNumberSeq: 1,
-    paymentMode: 'card',
-    isPosTerminal: false,
-    cardDetails: { method: 'online_card', network: 'Visa', last4: '4242' },
-  });
-  assert.equal(onlineCard.paymentStatus, 'paid');
-  assert.equal(onlineCard.cardDetails?.status, 'settled');
-
-  // Initial table EDC card order starts pending
-  const edcCard = deriveInitialOrderPayment({
-    orderNumberSeq: 2,
-    paymentMode: 'card',
-    isPosTerminal: false,
-    cardDetails: { method: 'edc_table', network: 'Mastercard', last4: '8812' },
-  });
-  assert.equal(edcCard.paymentStatus, 'pending');
-  assert.equal(edcCard.cardDetails?.status, 'pending');
-
-  const baseOrder = { ...INITIAL_ORDERS[0], paymentMode: 'card' as const, paymentStatus: 'pending' as const, cardDetails: edcCard.cardDetails };
-  const settled = transitionOrderPayment(baseOrder, {
-    action: 'settle',
-    network: 'Mastercard',
-    last4: '8812',
-    authCode: 'EDC555',
-  });
-  assert.equal(settled.nextPaymentStatus, 'paid');
-  assert.equal(settled.nextCardDetails?.status, 'settled');
-  assert.equal(settled.shouldAwardPoints, true);
-
-  // Refund from pending -> 409
-  assert.throws(
-    () => transitionOrderPayment(baseOrder, { action: 'refund' }),
-    (err) => err instanceof InvalidDomainTransitionError && err.httpStatus === 409
-  );
-
-  // Settle from already-paid -> 409
-  const paidOrder = { ...baseOrder, paymentStatus: 'paid' as const, cardDetails: settled.nextCardDetails };
-  assert.throws(
-    () => transitionOrderPayment(paidOrder, { action: 'settle' }),
-    (err) => err instanceof InvalidDomainTransitionError && err.httpStatus === 409
-  );
-
-  // Refund from paid -> refunded
-  const refunded = transitionOrderPayment(paidOrder, { action: 'refund', note: 'Customer cancelled' });
-  assert.equal(refunded.nextPaymentStatus, 'refunded');
-  assert.equal(refunded.nextCardDetails?.status, 'refunded');
-
-  // Any transition from refunded -> 409
-  const refundedOrder = { ...paidOrder, paymentStatus: 'refunded' as const };
-  assert.throws(
-    () => transitionOrderPayment(refundedOrder, { action: 'settle' }),
-    (err) => err instanceof InvalidDomainTransitionError && err.httpStatus === 409
-  );
 });
 
 test('Table availability state machine resolves preparing & live orders deterministically and guards check-in / transfer / merge', () => {
@@ -154,7 +85,7 @@ test('Campaign lifecycle state machine handles active <-> paused, scheduled -> a
   );
 });
 
-test('Staff duty, YouPI checkout phase, and workspace navigation derivation stay deterministic', () => {
+test('Staff duty and workspace navigation derivation stay deterministic', () => {
   const staff = INITIAL_STAFF_ROSTER[0];
   assert.equal(getStaffDutyStatus(staff), 'on_duty');
   const offDuty = transitionStaffDuty(staff);
@@ -166,19 +97,6 @@ test('Staff duty, YouPI checkout phase, and workspace navigation derivation stay
   assert.equal(backOn.dutyStatus, 'on_duty');
   assert.equal(backOn.isOnDuty, true);
   assert.equal(backOn.statRight, 'Clocked In');
-
-  assert.equal(deriveYoupiCheckoutPhase({ status: 'initiated' }), 'awaiting_payment');
-  assert.equal(deriveYoupiCheckoutPhase({ status: 'active' }), 'awaiting_payment');
-  assert.equal(deriveYoupiCheckoutPhase({ status: 'queued' }), 'awaiting_payment');
-  assert.equal(deriveYoupiCheckoutPhase({ status: 'processing' }), 'verifying_observer');
-  assert.equal(deriveYoupiCheckoutPhase({ status: 'observed' }), 'observed_pending_bank');
-  assert.equal(deriveYoupiCheckoutPhase({ status: 'reconciled' }), 'succeeded');
-  assert.equal(deriveYoupiCheckoutPhase({ status: 'succeeded' }), 'succeeded');
-  assert.equal(deriveYoupiCheckoutPhase({ status: 'refunded' }), 'refunded');
-  assert.equal(deriveYoupiCheckoutPhase({ status: 'manual_review' }), 'manual_review');
-  assert.equal(deriveYoupiCheckoutPhase({ status: 'failed' }), 'retryable_terminal');
-  assert.equal(deriveYoupiCheckoutPhase({ status: 'expired' }), 'retryable_terminal');
-  assert.equal(deriveYoupiCheckoutPhase({ status: 'cancelled' }), 'retryable_terminal');
 
   // Navigation mode cannot get desynced from active screen
   assert.equal(deriveWorkspaceMode('menu', 'staff'), 'customer');

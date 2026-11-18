@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: upi-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: secret_root
+      MYSQL_DATABASE: upi_gateway
+      MYSQL_USER: upi_user
+      MYSQL_PASSWORD: secret_user
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+
+  app:
+    image: php:8.2-apache
+    container_name: upi-gateway
+    working_dir: /var/www/html
+    volumes:
+      - ./cafe/upi-gateway:/var/www/html
+    environment:
+      APP_ENV: production
+      APP_DEBUG: false
+      APP_KEY: base64:$(openssl rand -base64 32)
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: upi_gateway
+      DB_USERNAME: upi_user
+      DB_PASSWORD: secret_user
+      UPI_GATEWAY_API_KEY: dev_cafeos_gateway_key
+      UPI_GATEWAY_API_SECRET: dev_cafeos_gateway_secret
+      UPI_GATEWAY_WEBHOOK_SECRET: dev_cafeos_gateway_webhook_secret
+      CAFEOS_WEBHOOK_URL: http://host.docker.internal:3002/api/webhooks/upi-gateway
+    ports:
+      - "3003:80"
+    depends_on:
+      - db
+
+volumes:
+  db_data:

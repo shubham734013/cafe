@@ -5,6 +5,17 @@ import type { StaffRole } from '../types/cafe';
 const STAFF_SESSION_COOKIE = 'cafeos_staff_session';
 const CUSTOMER_SESSION_COOKIE = 'cafeos_customer_session';
 const PIN_SALT = 'cafeos-pin-salt-v1';
+const configuredSuperAdminPin = process.env.CAFE_SUPER_ADMIN_PIN?.trim();
+const isProduction = process.env.NODE_ENV === 'production';
+
+const STAFF_PIN_ENV_VARS = [
+  'CAFE_SUPER_ADMIN_PIN',
+  'CAFE_OWNER_PIN',
+  'CAFE_MANAGER_PIN',
+  'CAFE_CASHIER_PIN',
+  'CAFE_BARISTA_PIN',
+  'CAFE_SERVER_PIN',
+] as const;
 
 function getAuthSecret(): string {
   const configured = process.env.CAFE_AUTH_SECRET?.trim();
@@ -16,10 +27,33 @@ function getAuthSecret(): string {
 }
 
 export function assertAuthSecretConfigured(): void {
-  void getAuthSecret();
+  const secret = getAuthSecret();
+  if (isProduction && secret.length < 32) {
+    throw new Error('CAFE_AUTH_SECRET must be at least 32 characters in production.');
+  }
+  if (isProduction) {
+    const missingPins = STAFF_PIN_ENV_VARS.filter((name) => !process.env[name]?.trim());
+    if (missingPins.length) {
+      throw new Error(`Set all production staff PIN variables: ${missingPins.join(', ')}.`);
+    }
+  }
+  const pins = ROLE_CONFIGS.map(({ role, pin }) => ({ role, pin }));
+  for (const { role, pin } of pins) {
+    if (!/^\d{4}$/.test(pin)) {
+      throw new Error(`The configured ${role} PIN must be exactly 4 digits.`);
+    }
+    if (pins.some((other) => other.role !== role && other.pin === pin)) {
+      throw new Error(`The configured ${role} PIN must be unique across staff roles.`);
+    }
+  }
 }
 
 const ROLE_CONFIGS: Array<{ role: StaffRole; staffName: string; pin: string }> = [
+  ...(configuredSuperAdminPin
+    ? [{ role: 'super-admin' as const, staffName: 'CafeOS Super Admin', pin: configuredSuperAdminPin }]
+    : process.env.NODE_ENV === 'production'
+      ? []
+      : [{ role: 'super-admin' as const, staffName: 'CafeOS Super Admin', pin: '9999' }]),
   {
     role: 'owner',
     staffName: 'Seth Sawariya Owner',
@@ -89,7 +123,7 @@ export function hasStaffRole(
   allowedRoles: readonly StaffRole[]
 ): boolean {
   if (!session) return false;
-  return allowedRoles.includes(session.role);
+  return session.role === 'super-admin' || allowedRoles.includes(session.role);
 }
 
 function signToken(payload: object): string {

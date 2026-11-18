@@ -1,10 +1,5 @@
 import { z } from 'zod';
-import { isValidUpiVpa } from '../payments/upiUri';
-
 export const serviceModeSchema = z.enum(['dine-in', 'takeaway', 'delivery']);
-export const paymentModeSchema = z.enum(['upi', 'cash', 'card']);
-export const upiAppIdSchema = z.enum(['any', 'paytm', 'gpay', 'phonepe', 'amazonpay']);
-export const cardNetworkSchema = z.enum(['Visa', 'Mastercard', 'RuPay', 'Amex']);
 export const orderStatusSchema = z.enum(['placed', 'preparing', 'ready', 'served']);
 export const tableFloorSchema = z.enum([
   'Floor 1 (Main Hall)',
@@ -24,19 +19,6 @@ export const cartItemSchema = z.object({
   checked: z.boolean().optional(),
 });
 
-export const cardPaymentInputSchema = z.object({
-  method: z.enum(['edc_table', 'online_card']).default('edc_table'),
-  network: cardNetworkSchema.optional(),
-  last4: z
-    .string()
-    .trim()
-    .regex(/^\d{4}$/, 'Enter only last 4 digits of card')
-    .optional()
-    .or(z.literal('')),
-  holderName: z.string().trim().max(60).optional(),
-  authCode: z.string().trim().max(24).optional(),
-});
-
 export const createOrderSchema = z.object({
   outletId: z.string().min(1).default('seth-sawariya-main'),
   serviceMode: serviceModeSchema,
@@ -44,26 +26,11 @@ export const createOrderSchema = z.object({
   deliveryPartner: z.string().trim().min(1).max(60).optional(),
   items: z.array(cartItemSchema).min(1, 'Order must contain at least one item'),
   couponCode: z.string().trim().max(32).optional().default(''),
-  paymentMode: paymentModeSchema,
-  preferredUpiApp: upiAppIdSchema.optional(),
-  cardDetails: cardPaymentInputSchema.optional(),
   cookingNote: z.string().trim().max(240).optional().default(''),
   isPosTerminal: z.boolean().optional().default(false),
+  paymentMode: z.enum(['upi', 'cash', 'card']).optional().default('upi'),
   customerId: z.string().trim().max(64).optional(),
   idempotencyKey: z.string().trim().max(120).optional(),
-});
-
-export const settleOrderPaymentSchema = z.object({
-  action: z.enum(['settle', 'fail', 'refund']),
-  network: cardNetworkSchema.optional(),
-  last4: z
-    .string()
-    .trim()
-    .regex(/^\d{4}$/, 'Enter exactly 4 card digits')
-    .optional()
-    .or(z.literal('')),
-  authCode: z.string().trim().max(24).optional(),
-  note: z.string().trim().max(200).optional(),
 });
 
 export const toggleKotItemSchema = z.object({
@@ -152,7 +119,15 @@ export const createCampaignSchema = z.object({
 
 export const addStaffSchema = z.object({
   name: z.string().trim().min(2, 'Staff name is required').max(80),
-  role: z.enum(['Barista', 'Cashier', 'Kitchen Line', 'Store Manager', 'Server / Steward']),
+  role: z.enum([
+    'Owner',
+    'Owner & Store Lead',
+    'Barista',
+    'Kitchen Line',
+    'Server / Steward',
+    'Cashier',
+    'Store Manager',
+  ]),
   shiftLabel: z.string().trim().min(3, 'Shift timing is required').max(40),
   phone: z
     .string()
@@ -179,17 +154,6 @@ export const cafeSettingsSchema = z.object({
   managerPinRequired: z.boolean(),
   kotPrinterConnected: z.boolean(),
   posPrinterConnected: z.boolean(),
-  upiVpa: z
-    .string()
-    .trim()
-    .max(120)
-    .optional()
-    .default('')
-    .refine(
-      (v) => v === '' || isValidUpiVpa(v),
-      'Enter a valid UPI ID (e.g., yourname@okicici or shop@paytm)'
-    ),
-  upiPayeeName: z.string().trim().max(60).optional().default(''),
 });
 
 export const staffPinLoginSchema = z.object({
@@ -197,4 +161,30 @@ export const staffPinLoginSchema = z.object({
     .string()
     .trim()
     .regex(/^\d{4}$/, 'Enter 4-digit staff PIN'),
+});
+
+export const orderFeedbackSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  tags: z.array(z.string().trim().max(40)).optional().default([]),
+  comment: z.string().trim().max(500).optional().default(''),
+  customerPhone: z.string().trim().max(20).optional(),
+});
+
+export const customerFeedbackSchema = z.object({
+  customerName: z.string().trim().min(2, 'Enter your name').max(80),
+  rating: z.number().int().min(1).max(5),
+  tags: z.array(z.string().trim().min(1).max(60)).max(8).default([]),
+  comment: z.string().trim().min(3, 'Please share a little more detail').max(1000),
+  dishName: z.string().trim().max(80).optional(),
+  diningMode: serviceModeSchema.optional(),
+});
+export type CustomerFeedbackInput = z.infer<typeof customerFeedbackSchema>;
+
+export const orderRefundSchema = z.object({
+  reason: z.string().trim().min(2, 'Enter refund reason').max(200).default('Customer requested refund'),
+});
+
+export const requestReorderSchema = z.object({
+  id: z.string().trim().min(1, 'Ingredient ID is required'),
+  note: z.string().trim().max(200).optional(),
 });

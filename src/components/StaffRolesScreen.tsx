@@ -84,14 +84,12 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
   const onFloorSummary = useMemo(() => {
     const active = roster.filter((s) => getStaffDutyStatus(s) === 'on_duty');
     if (active.length === 0) return 'No active floor punches';
-    const mgr = active.filter((s) => /manager/i.test(s.role)).length;
-    const pos = active.filter((s) => /cashier/i.test(s.role)).length;
+    const own = active.filter((s) => /owner|manager/i.test(s.role)).length;
     const kit = active.filter((s) => /barista|kitchen/i.test(s.role)).length;
     const srv = active.filter((s) => /server|steward/i.test(s.role)).length;
     const parts = [
-      mgr > 0 ? `${mgr} Mgr` : null,
-      pos > 0 ? `${pos} Pos` : null,
-      kit > 0 ? `${kit} Kit` : null,
+      own > 0 ? `${own} Owner/Lead` : null,
+      kit > 0 ? `${kit} Kitchen` : null,
       srv > 0 ? `${srv} Floor` : null,
     ].filter(Boolean);
     return parts.join(' • ') || `${active.length} Assigned`;
@@ -116,11 +114,15 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
       name: parsed.name,
       role: parsed.role,
       roleIcon:
-        parsed.role === 'Cashier'
-          ? 'point_of_sale'
-          : parsed.role === 'Store Manager'
-            ? 'shield_person'
-            : 'coffee_maker',
+        /owner/i.test(parsed.role) || parsed.role === 'Store Manager'
+          ? 'shield_person'
+          : /kitchen/i.test(parsed.role)
+            ? 'skillet'
+            : /server/i.test(parsed.role)
+              ? 'table_bar'
+              : parsed.role === 'Cashier'
+                ? 'point_of_sale'
+                : 'coffee_maker',
       shiftLabel: parsed.shiftLabel,
       shiftBucket: 'afternoon',
       isOnDuty: true,
@@ -283,7 +285,7 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
                   <div className="relative shrink-0">
                     <div
                       className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm ${
-                        staff.role === 'Store Manager'
+                        /owner|manager/i.test(staff.role)
                           ? 'bg-primary-container text-on-primary'
                           : 'bg-surface-container-highest text-primary'
                       }`}
@@ -407,52 +409,49 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-2.5 rounded-lg bg-surface-container-low flex flex-col">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+              <div className="p-2.5 rounded-lg bg-surface-container-low flex flex-col md:col-span-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-primary font-bold">Admin / Mgr</span>
-                  <span className="px-1.5 py-0.5 rounded bg-tertiary-container/20 text-tertiary text-[10px] font-bold">
-                    Full
+                  <span className="text-primary font-bold flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px]">shield_person</span>
+                    Owner &amp; Store Lead (PIN: 7777)
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-primary-container/20 text-primary text-[10px] font-bold">
+                    Full Admin &amp; POS
                   </span>
                 </div>
                 <span className="text-on-surface-variant text-[11px] mt-1">
-                  Discounts, refunds, staff rates, tax changes &amp; closing day
+                  Unified POS billing, counter checkout, live orders, reports, inventory, discounts &amp; store settings.
                 </span>
               </div>
 
               <div className="p-2.5 rounded-lg bg-surface-container-low flex flex-col">
                 <div className="flex items-center justify-between">
-                  <span className="text-on-surface font-bold">Cashier</span>
-                  <span className="px-1.5 py-0.5 rounded bg-surface-variant text-on-surface text-[10px] font-bold">
-                    POS Only
+                  <span className="text-on-surface font-bold flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px]">skillet</span>
+                    Kitchen / Barista (PIN: 3456)
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-secondary-container/20 text-secondary text-[10px] font-bold">
+                    KDS Station
                   </span>
                 </div>
                 <span className="text-on-surface-variant text-[11px] mt-1">
-                  Bill punch, split settlement, UPI QR &amp; shift cash handoff
+                  KOT queue display, bump tickets, cooking timers &amp; 86-inventory items.
                 </span>
               </div>
 
               <div className="p-2.5 rounded-lg bg-surface-container-low flex flex-col">
                 <div className="flex items-center justify-between">
-                  <span className="text-on-surface font-bold">Barista</span>
+                  <span className="text-on-surface font-bold flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px]">table_bar</span>
+                    Server / Steward
+                  </span>
                   <span className="px-1.5 py-0.5 rounded bg-surface-variant text-on-surface text-[10px] font-bold">
-                    KOT Only
+                    Floor Service
                   </span>
                 </div>
                 <span className="text-on-surface-variant text-[11px] mt-1">
-                  KOT queue view, bump tickets &amp; ingredient 86-list toggles
-                </span>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-surface-container-low flex flex-col">
-                <div className="flex items-center justify-between">
-                  <span className="text-on-surface font-bold">Server</span>
-                  <span className="px-1.5 py-0.5 rounded bg-surface-variant text-on-surface text-[10px] font-bold">
-                    Order Take
-                  </span>
-                </div>
-                <span className="text-on-surface-variant text-[11px] mt-1">
-                  Table allocation, captain pad order taking, no bill settlement
+                  Table assignment, floor guest assistance &amp; handheld table ordering.
                 </span>
               </div>
             </div>
@@ -548,10 +547,9 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
                     {...staffForm.register('role')}
                     className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                   >
+                    <option value="Owner">Owner &amp; Store Lead</option>
                     <option value="Barista">Head Barista</option>
-                    <option value="Cashier">Cashier</option>
                     <option value="Kitchen Line">Kitchen Line</option>
-                    <option value="Store Manager">Store Manager</option>
                     <option value="Server / Steward">Server / Steward</option>
                   </select>
                 </div>

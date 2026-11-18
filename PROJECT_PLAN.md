@@ -12,13 +12,13 @@
 | **Money Representation** | Integer **paise** (`1 INR = 100 paise`) | No floating point arithmetic. Single rounding rule (`Math.round` / half-up to nearest paise, optional invoice rupee rounding tracked separately as `roundOffPaise`). |
 | **Stock Deduction & Cancellation** | Deduct ingredient stock at order **`CONFIRMED`** via recipe/BOM | On cancellation: restore stock only if line item has **not** reached `PREPARING`. If `PREPARING` or later, keep deducted and log **Wastage**. |
 | **Real-Time Updates** | **Server-Sent Events (SSE)** + HTTP polling fallback | Avoids WebSocket dependency across reverse proxies/containers; broadcasts `order.updated`, `kot.updated`, `table.updated`, `stock.updated`. |
-| **Payments** | Manual **Cash / UPI / Card / Split** recorded by staff first | Optional payment gateway adapter (Phase 2/3) will confirm payments strictly via verified provider webhooks. Never store card details. |
+| **Payments** | No online payment provider is connected | Payment integrations are out of scope until a replacement is selected and implemented. |
 | **Locale & Currency** | `Asia/Kolkata` (**IST**) & **INR (₹)** | Formatted via `Intl.NumberFormat('en-IN')`; timestamps stored UTC in DB, rendered/bucketed in IST. |
 | **Taxation (India GST)** | Configurable **CGST + SGST** split (`2.5% + 2.5%` default, item/category override) | Supports tax-inclusive and tax-exclusive pricing, GSTIN/FSSAI receipt metadata, sequential invoice numbering (`INV-FY-XXXX`). |
 | **Tenant-Ready Schema** | `outlet_id` foreign key on all core operational tables | Starts with a single seeded cafe (`Seth Sawariya Cafe`), enabling multi-outlet expansion cleanly later. |
 | **Privacy (DPDP)** | Explicit consent flags for CRM profile storage & marketing | Supports customer opt-out, JSON/CSV data export, and anonymization/deletion without breaking historical tax invoices. |
 | **Design System** | Preserve existing warm-dark CafeOS Material 3 palette & UI patterns | `#17120f` surface, `#ffc174` / `#f59e0b` primary amber, `Plus Jakarta Sans`, responsive desktop sidebar + mobile bottom dock (`src/index.css`, `src/components/AppShell.tsx`). |
-| **Cost & Self-Hosting** | Open-source, self-hostable, zero mandatory paid SaaS | Paid channels (WhatsApp Business API, SMS OTP, payment gateway) isolated behind provider interfaces and disabled/mock-safe by default. |
+| **Cost & Self-Hosting** | Open-source, self-hostable, zero mandatory paid SaaS | Paid channels (WhatsApp Business API, SMS OTP, and online payments) remain unavailable until explicitly configured and validated. |
 | **Reference License Rule** | **Zero code copied** from the 4 reference repositories | `nodedr-restaurant-pos` & `elitale/restro` are `AGPL-3.0-only`; `restaurant-pos` & `Cafe-Management-System` have no license (`null`). All features are cleanly engineered in our stack using architectural patterns only. |
 
 ---
@@ -107,13 +107,13 @@
   - Staff toggling "86 it" immediately blocks item ordering on Customer Menu & POS and persists across browser reloads.
   - Cart and server quote totals match down to the exact paise with CGST/SGST breakdown.
 
-### Phase 3: Core Order Engine, POS Billing, Split Payments, Thermal Receipt & Refunds
+### Phase 3: Core Order Engine, POS Order Entry & Thermal Receipts
 - **Scope:**
-  - Build transactional `/api/orders` lifecycle (`PLACED -> CONFIRMED -> PREPARING -> READY -> SERVED -> SETTLED` + `CANCELLED`) with `idempotency_key`, immutable `order_events`, and sequential GST invoice numbers (`INV-YYYY-NNNN`).
-  - Upgrade `PosTerminalScreen.tsx`: Hold/Resume bills, multi-tender / split bill (by amount or equal split), manual Cash/UPI (with dynamic UPI `upi://pay` QR string)/Card entry, Manager PIN verification for voids/refunds/manual discounts, and browser-printable 80mm thermal GST Receipt & KOT view.
+  - Build transactional `/api/orders` lifecycle (`PLACED -> CONFIRMED -> PREPARING -> READY -> SERVED` + `CANCELLED`) with `idempotency_key`, immutable `order_events`, and sequential GST invoice numbers (`INV-YYYY-NNNN`).
+  - Upgrade `PosTerminalScreen.tsx`: Hold/Resume orders, Manager PIN verification for voids/manual discounts, and browser-printable 80mm thermal GST Receipt & KOT view. Payment processing, settlement, and refunds remain out of scope until a replacement is selected.
 - **Acceptance Criteria:**
   - Duplicate order submissions with same `idempotency_key` never create duplicate orders or double stock deductions.
-  - Cancelled/refunded settled bills require Manager PIN (when enabled), record audit trail, and update daily sales cleanly.
+  - Order cancellations require Manager PIN (when enabled), record an audit trail, and update daily sales cleanly.
 
 ### Phase 4: Real-Time SSE + KDS & Live Customer Order Tracking
 - **Scope:**

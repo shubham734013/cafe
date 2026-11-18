@@ -1,120 +1,112 @@
 import React, { useEffect, useState } from 'react';
 import { CafeBrandEmblem } from './CafeBrandEmblem';
+import { CoffeeBrewLoader } from './CoffeeBrewLoader';
 
 interface SplashScreenProps {
-  onEnterCustomer: () => void;
-  onEnterStaff: () => void;
+  errorMessage?: string;
+  onRetry: () => void;
+  onFinish?: () => void;
 }
 
-const PHRASES = [
-  'Warming the espresso group head...',
-  'Brewing your experience...',
-  'Synchronizing live KOT tables...',
-  'Setting cozy cafe ambiance...',
-];
-
-const WIDTHS = ['45%', '68%', '84%', '96%'];
-
 export const SplashScreen: React.FC<SplashScreenProps> = ({
-  onEnterCustomer,
-  onEnterStaff,
+  errorMessage,
+  onRetry,
+  onFinish,
 }) => {
-  const [index, setIndex] = useState(1);
+  const [progress, setProgress] = useState(12);
 
   useEffect(() => {
+    if (errorMessage) return;
+
+    // Artisanal 2.2-second brew pouring journey so user can enjoy the animation
     const interval = setInterval(() => {
-      setIndex((prev) => (prev + 1) % PHRASES.length);
-    }, 1800);
+      setProgress((prev) => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          setTimeout(() => {
+            onFinish?.();
+          }, 300);
+          return 100;
+        }
+        const delta = Math.floor(Math.random() * 8 + 6);
+        return Math.min(100, prev + delta);
+      });
+    }, 140);
+
     return () => clearInterval(interval);
-  }, []);
+  }, [errorMessage, onFinish]);
 
   return (
-    <div className="min-h-screen w-full bg-surface text-on-surface flex flex-col justify-between items-center text-center relative overflow-hidden py-10 px-6">
-      {/* Warm Atmospheric Light Orbs */}
-      <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-80 h-80 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-16 left-1/2 -translate-x-1/2 w-96 h-96 bg-primary-container/10 rounded-full blur-3xl pointer-events-none" />
+    <main className="relative flex min-h-dvh w-full flex-col items-center justify-center overflow-hidden bg-surface px-6 py-10 text-center text-on-surface select-none">
+      {/* Ambient Cafe Lights */}
+      <div className="pointer-events-none absolute -top-24 left-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-primary/15 blur-3xl animate-pulse" />
+      <div className="pointer-events-none absolute bottom-0 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-primary-container/10 blur-3xl" />
 
-      {/* Top Hub Identifier */}
-      <div className="relative z-10 pt-2 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface-container-low shadow-sm">
-        <span className="w-2 h-2 rounded-full bg-tertiary shadow-[0_0_8px_#51e77b] animate-pulse" />
-        <span className="text-[11px] font-medium text-on-surface-variant tracking-wider uppercase">
-          CafeOS v2.4 · Active Hub
-        </span>
-      </div>
-
-      {/* Central Hero Branding */}
-      <div className="relative z-10 flex flex-col items-center max-w-sm w-full mx-auto my-auto py-8">
-        <div className="relative mb-8 flex items-center justify-center">
-          <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-primary-container/30 to-primary/20 blur-xl scale-125" />
-          <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-2xl bg-surface-container-lowest p-4 shadow-2xl flex items-center justify-center">
-            <CafeBrandEmblem className="w-full h-full drop-shadow-[0_0_12px_rgba(245,158,11,0.45)]" />
+      <section className="relative z-10 flex w-full max-w-sm flex-col items-center">
+        {/* Brand Header */}
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-8 h-8 rounded-lg bg-surface-container-high p-1 shadow-md border border-outline-variant/30 flex items-center justify-center">
+            <CafeBrandEmblem className="h-full w-full" />
           </div>
+          <span className="text-xs font-bold uppercase tracking-widest text-primary-fixed-dim">
+            Seth Sawariya Cafe
+          </span>
         </div>
 
-        <h1 className="text-[28px] sm:text-[32px] leading-tight text-primary tracking-tight font-bold mb-2">
-          Seth Sawariya Cafe
-        </h1>
-        <div className="flex items-center gap-2 mb-3">
-          <span className="w-1.5 h-1.5 rounded-full bg-secondary-container" />
-          <span className="text-xs font-semibold tracking-widest text-on-surface-variant uppercase">
-            Artisanal Roastery &amp; Kitchen
-          </span>
-          <span className="w-1.5 h-1.5 rounded-full bg-secondary-container" />
-        </div>
-        <p className="text-sm text-on-surface-variant max-w-xs leading-relaxed">
-          Complete Cafe Experience · Great Coffee · Cozy Vibes
+        <p className="text-[11px] font-medium text-on-surface-variant mb-5">
+          Artisanal Roastery &amp; Fast Kitchen
         </p>
 
-        {/* Warm Progress & Status Card */}
-        <div className="w-full max-w-xs mt-10 bg-surface-container-low/90 rounded-xl p-5 shadow-lg flex flex-col items-center">
-          <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden relative mb-4">
-            <div
-              className="h-full bg-gradient-to-r from-primary via-primary-container to-secondary rounded-full transition-all duration-700 ease-out shadow-[0_0_10px_rgba(245,158,11,0.6)]"
-              style={{ width: WIDTHS[index] }}
+        {errorMessage ? (
+          <div
+            className="w-full rounded-2xl border border-error/20 bg-surface-container-low p-6 shadow-xl"
+            role="alert"
+          >
+            <span className="material-symbols-outlined mb-2 text-3xl text-error">cloud_off</span>
+            <p className="text-sm font-bold text-on-surface">Connection Interrupted</p>
+            <p className="mt-1 text-xs text-on-surface-variant">{errorMessage}</p>
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-5 rounded-xl bg-primary px-5 py-2.5 text-xs font-bold text-on-primary shadow-lg hover:bg-primary-container transition-all active:scale-95 cursor-pointer"
+            >
+              Reconnect to Cafe
+            </button>
+          </div>
+        ) : (
+          /* The signature Coffee Brewing & Pouring Loader */
+          <div className="w-full rounded-2xl bg-surface-container-low/85 border border-outline-variant/20 p-5 shadow-2xl backdrop-blur-sm relative">
+            <CoffeeBrewLoader
+              size="md"
+              title="Brewing Your Experience"
+              progress={progress}
+              interactive={true}
             />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined icon-filled text-primary text-base animate-spin">
-              coffee
-            </span>
-            <span className="text-xs text-on-surface font-medium tracking-wide transition-opacity duration-200">
-              {PHRASES[index]}
-            </span>
-          </div>
-          <span className="mt-3 text-[11px] px-2.5 py-0.5 rounded-full bg-surface-container text-primary-fixed-dim">
-            Syncing live POS &amp; menu items
-          </span>
-        </div>
 
-        {/* Workspace Launch Actions */}
-        <div className="w-full max-w-xs mt-6 grid grid-cols-2 gap-2.5">
-          <button
-            type="button"
-            onClick={onEnterCustomer}
-            className="h-12 rounded-xl bg-primary-container hover:bg-primary text-on-primary font-bold text-sm flex items-center justify-center gap-1.5 shadow-[0_0_18px_rgba(245,158,11,0.3)] active:scale-[0.98] transition-all cursor-pointer"
-          >
-            <span className="material-symbols-outlined icon-filled text-[18px]">local_cafe</span>
-            <span>Enter Cafe</span>
-          </button>
-          <button
-            type="button"
-            onClick={onEnterStaff}
-            className="h-12 rounded-xl bg-surface-container-high hover:bg-surface-bright text-on-surface font-semibold text-sm flex items-center justify-center gap-1.5 shadow-md active:scale-[0.98] transition-all cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[18px] text-primary">point_of_sale</span>
-            <span>Staff POS</span>
-          </button>
-        </div>
-      </div>
+            {/* Quick Enter / Skip CTA */}
+            <div className="mt-4 pt-3 border-t border-outline-variant/15 flex items-center justify-center">
+              <button
+                type="button"
+                onClick={() => onFinish?.()}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-surface-container hover:bg-surface-container-high text-xs font-semibold text-primary transition-all active:scale-95 cursor-pointer shadow-sm"
+              >
+                <span>Enter Cafe</span>
+                <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
 
-      {/* Bottom Brand Credential */}
-      <div className="relative z-10 pb-2 flex flex-col items-center gap-1">
-        <div className="flex items-center gap-1.5">
-          <span className="material-symbols-outlined text-outline text-sm">local_cafe</span>
-          <p className="text-xs text-outline tracking-wider font-semibold">Powered by CafeOS</p>
+      <footer className="absolute bottom-6 z-10 flex flex-col items-center gap-0.5 text-center">
+        <div className="flex items-center gap-1.5 text-xs font-semibold tracking-wider text-outline">
+          <span className="material-symbols-outlined text-[14px] text-tertiary">check_circle</span>
+          <span>CafeOS 2.0 Real-time Mesh</span>
         </div>
-        <p className="text-[11px] text-outline-variant">High-Efficiency Hospitality Architecture</p>
-      </div>
-    </div>
+        <p className="text-[10px] text-outline-variant">
+          High-Efficiency Hospitality &amp; UPI Architecture
+        </p>
+      </footer>
+    </main>
   );
 };

@@ -141,7 +141,7 @@ const OrderInvoicePdf: React.FC<{ order: CafeOrder; settings: CafeSettings }> = 
             <Text>Rs. {sgst.toFixed(2)}</Text>
           </View>
           <View style={styles.grandRow}>
-            <Text>Grand Total ({order.paymentMode.toUpperCase()})</Text>
+            <Text>Order Total</Text>
             <Text>Rs. {order.total.toFixed(2)}</Text>
           </View>
         </View>
@@ -196,7 +196,6 @@ const SalesSummaryPdf: React.FC<{
         <Text style={{ flex: 1.2 }}>Order #</Text>
         <Text style={{ flex: 1.2 }}>Mode</Text>
         <Text style={{ flex: 1.2 }}>Status</Text>
-        <Text style={{ flex: 1 }}>Payment</Text>
         <Text style={{ flex: 1, textAlign: 'right' }}>Total</Text>
       </View>
       {orders.slice(0, 20).map((order) => (
@@ -204,7 +203,6 @@ const SalesSummaryPdf: React.FC<{
           <Text style={{ flex: 1.2 }}>{order.id}</Text>
           <Text style={{ flex: 1.2 }}>{order.serviceMode}</Text>
           <Text style={{ flex: 1.2 }}>{order.status.toUpperCase()}</Text>
-          <Text style={{ flex: 1 }}>{order.paymentMode.toUpperCase()}</Text>
           <Text style={{ flex: 1, textAlign: 'right' }}>Rs. {order.total}</Text>
         </View>
       ))}
@@ -358,7 +356,7 @@ const TableQrPdf: React.FC<{
 
       <Text style={tableQrStyles.ctaTitle}>Scan to Order from Your Seat</Text>
       <Text style={tableQrStyles.ctaSub}>
-        Browse the live menu, customize your brew, and pay instantly via UPI or Counter.
+        Browse the live menu and customize your brew before placing an order.
       </Text>
 
       <View style={tableQrStyles.qrFrame}>

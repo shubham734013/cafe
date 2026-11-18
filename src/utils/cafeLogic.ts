@@ -25,6 +25,8 @@ export interface CartTotals {
   subtotal: number;
   discount: number;
   discountLabel: string | null;
+  pointsDiscount?: number;
+  pointsRedeemed?: number;
   tax: number;
   roundOff: number;
   total: number;
@@ -37,7 +39,8 @@ export function calculateCartTotals(
   couponCode: string,
   serviceMode: ServiceMode,
   isPosTerminal = false,
-  campaigns?: PromoCampaign[]
+  campaigns?: PromoCampaign[],
+  redeemPoints = 0
 ): CartTotals {
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -107,16 +110,32 @@ export function calculateCartTotals(
     }
   }
 
+  // Loyalty Points Redemption (2 pts = ₹1 discount, capped at 50% subtotal)
+  let pointsDiscount = 0;
+  let pointsRedeemed = 0;
+  if (redeemPoints > 0) {
+    const maxRedemption = Math.floor((subtotal - discount) * 0.5);
+    const potentialDiscount = Math.floor(redeemPoints * 0.5);
+    pointsDiscount = Math.max(0, Math.min(maxRedemption, potentialDiscount));
+    pointsRedeemed = pointsDiscount * 2;
+    discount += pointsDiscount;
+  }
+
   const taxable = Math.max(0, subtotal - discount);
-  const tax = isPosTerminal ? 0 : Number((taxable * 0.05).toFixed(2));
-  const roundOff = isPosTerminal ? 0 : tax; // Matches the Round Off Relief design in Cart Checkout
-  const total = Math.max(0, Math.round(taxable + tax - roundOff));
+  // Menu prices are GST-inclusive (5% GST composition: 2.5% CGST + 2.5% SGST)
+  // Included tax = (taxable * 5) / 105
+  const tax = Number(((taxable * 5) / 105).toFixed(2));
+  const roundedTotal = Math.max(0, Math.round(taxable));
+  const roundOff = Number((roundedTotal - taxable).toFixed(2));
+  const total = Math.max(0, roundedTotal);
 
   return {
     itemCount,
     subtotal,
     discount,
     discountLabel,
+    pointsDiscount: pointsDiscount > 0 ? pointsDiscount : undefined,
+    pointsRedeemed: pointsRedeemed > 0 ? pointsRedeemed : undefined,
     tax,
     roundOff,
     total,
@@ -129,13 +148,39 @@ export function getNextKotStatus(status: OrderStatus): OrderStatus {
   switch (status) {
     case 'placed':
       return 'preparing';
+    case 'accepted':
+      return 'preparing';
     case 'preparing':
       return 'ready';
     case 'ready':
       return 'served';
     case 'served':
       return 'served';
+    case 'paid':
+      return 'paid';
+    case 'cancelled':
+      return 'cancelled';
+    default:
+      return 'served';
   }
+}
+
+/**
+ * Determines whether an order should be actively displayed and prepared in the kitchen.
+ * If an order was placed for online UPI payment, it is held in pending
+ * and NOT sent to the kitchen until payment is verified ('paid').
+ * Pay on Counter (cash) and POS terminal orders are active immediately.
+ */
+export function isKitchenActiveOrder(order: CafeOrder): boolean {
+  if (order.status === 'served') return false;
+  // If order is refunded or cancelled, do not display in kitchen
+  if (order.paymentStatus === 'refunded' || order.paymentStatus === 'cancelled') {
+    return false;
+  }
+  if (order.paymentMode === 'upi' && order.paymentStatus !== 'paid') {
+    return false;
+  }
+  return true;
 }
 
 export interface KotCardPhaseInfo {
@@ -177,9 +222,19 @@ export function filterMenuItems(
 ): MenuItem[] {
   const q = searchQuery.trim().toLowerCase();
   return items.filter((item) => {
-    const matchesCategory =
-      category === 'All' ||
-      (category === 'Best Sellers' ? Boolean(item.isBestSeller) : item.category === category);
+    let matchesCategory = false;
+    if (category === 'All') {
+      matchesCategory = true;
+    } else if (category === 'Best Sellers') {
+      matchesCategory = Boolean(item.isBestSeller);
+    } else if (category === 'Drink') {
+      matchesCategory = item.category === 'Drink' || item.category === 'Beverages';
+    } else if (category === 'Dessert') {
+      matchesCategory = item.category === 'Dessert' || item.category === 'Desserts';
+    } else {
+      matchesCategory = item.category === category;
+    }
+
     if (!matchesCategory) return false;
     if (!q) return true;
     return (
@@ -212,11 +267,19 @@ export function filterOrders(
 
 export function computeDashboardMetrics(orders: CafeOrder[], range: DateRangeKey) {
   const baseline = DAILY_SALES_BY_RANGE[range];
-  const liveOrdersCount = orders.length;
-  const liveRevenue = orders.reduce((acc, o) => acc + o.total, 0);
+  const activeOrders = orders.filter((o) => o.paymentStatus !== 'cancelled');
+  const refundedOrders = orders.filter((o) => o.paymentStatus === 'refunded');
+  const refundedAmount = refundedOrders.reduce(
+    (acc, o) => acc + (o.refundAmount || o.total),
+    0
+  );
+  const liveOrdersCount = activeOrders.filter((o) => o.paymentStatus !== 'refunded').length;
+  const liveRevenue = activeOrders
+    .filter((o) => o.paymentStatus !== 'refunded')
+    .reduce((acc, o) => acc + o.total, 0);
 
   const totalOrders = baseline.baseOrders + liveOrdersCount;
-  const totalRevenue = baseline.baseRevenue + liveRevenue;
+  const totalRevenue = Math.max(0, baseline.baseRevenue + liveRevenue);
   const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
   const customers = baseline.baseCustomers + liveOrdersCount;
 
@@ -225,6 +288,8 @@ export function computeDashboardMetrics(orders: CafeOrder[], range: DateRangeKey
     totalRevenue,
     avgOrderValue,
     customers,
+    refundedCount: refundedOrders.length,
+    refundedAmount,
     ordersDelta: baseline.ordersDelta,
     revDelta: baseline.revDelta,
     aovDelta: baseline.aovDelta,
@@ -239,7 +304,7 @@ export function formatINR(amount: number): string {
 }
 
 export function formatOrderCsv(orders: CafeOrder[]): string {
-  const header = ['Order ID', 'KOT', 'Mode', 'Table/Partner', 'Items', 'Status', 'Payment', 'Total (INR)', 'Time'];
+  const header = ['Order ID', 'KOT', 'Mode', 'Table/Partner', 'Items', 'Status', 'Total (INR)', 'Time'];
   const rows = orders.map((order) => {
     const location =
       order.serviceMode === 'dine-in'
@@ -253,7 +318,6 @@ export function formatOrderCsv(orders: CafeOrder[]): string {
       location,
       `"${itemsSummary.replace(/"/g, '""')}"`,
       order.status,
-      order.paymentMode.toUpperCase(),
       String(order.total),
       order.createdAtLabel,
     ].join(',');

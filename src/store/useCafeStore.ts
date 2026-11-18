@@ -1,29 +1,26 @@
 import { create } from 'zustand';
 import { MENU_ITEMS } from '../data/cafeSeedData';
-import type { UpiAppId } from '../payments/upiUri';
+import {
+  getPathForScreen,
+  isKitchenPath,
+  isManagerPath,
+  resolveCafeRoute,
+} from '../routing/routes';
 import { deriveWorkspaceMode } from '../state/cafeStateMachines';
 import type {
-  CardMethodType,
-  CardNetwork,
   CartItem,
   MenuCategory,
   MenuItem,
-  PaymentMode,
   ScreenId,
   ServiceMode,
   WorkspaceMode,
 } from '../types/cafe';
 
-export interface CardCheckoutDraft {
-  method: CardMethodType;
-  network: CardNetwork;
-  last4: string;
-  holderName: string;
-}
-
 const STAFF_SCREENS = new Set<ScreenId>([
   'pos-terminal',
+  'pos-orders',
   'kitchen-display-system',
+  'kitchen-tables',
   'admin-dashboard',
   'order-management',
   'reports-analytics',
@@ -40,63 +37,22 @@ function getInitialFromUrl(): {
   screen: ScreenId;
   mode: WorkspaceMode;
   table: string;
+  trackedOrderId: string;
 } {
   if (typeof window === 'undefined') {
-    return { screen: 'splash', mode: 'customer', table: 'T3' };
+    return { screen: 'splash', mode: 'customer', table: 'T3', trackedOrderId: 'SSCB421' };
   }
   const params = new URLSearchParams(window.location.search);
   const rawTable = params.get('table')?.trim().toUpperCase() || '';
   const table = rawTable || 'T3';
-  const screenParam = params.get('screen') as ScreenId | null;
-  if (screenParam) {
-    return {
-      screen: screenParam,
-      mode: deriveWorkspaceMode(screenParam, 'customer'),
-      table,
-    };
-  }
-  if (rawTable) {
-    return { screen: 'menu', mode: 'customer', table };
-  }
-  if (params.get('autostart') === '1') {
-    return { screen: 'home', mode: 'customer', table };
-  }
-  return { screen: 'splash', mode: 'customer', table };
-}
-
-function buildInitialCustomerCart(): CartItem[] {
-  const protein = MENU_ITEMS.find((m) => m.id === 'protein-shake')!;
-  const sandwich = MENU_ITEMS.find((m) => m.id === 'veg-sandwich')!;
-  const coldCoffee = MENU_ITEMS.find((m) => m.id === 'cold-coffee')!;
-  return [
-    {
-      menuItemId: protein.id,
-      name: protein.name,
-      price: protein.price,
-      quantity: 1,
-      note: 'Cold · 300ml · Rich Cocoa',
-      imageUrl: protein.imageUrl,
-      station: protein.station,
-    },
-    {
-      menuItemId: sandwich.id,
-      name: sandwich.name,
-      price: sandwich.price,
-      quantity: 1,
-      note: 'Toasted Jumbo · Spiced Herb',
-      imageUrl: sandwich.imageUrl,
-      station: sandwich.station,
-    },
-    {
-      menuItemId: coldCoffee.id,
-      name: coldCoffee.name,
-      price: coldCoffee.price,
-      quantity: 1,
-      note: 'Seth Sawariya Classic · Extra Froth',
-      imageUrl: coldCoffee.imageUrl,
-      station: coldCoffee.station,
-    },
-  ];
+  const orderFromUrl = params.get('orderId')?.trim() || '';
+  let storedOrder = '';
+  try {
+    storedOrder = window.localStorage.getItem('cafeos_tracked_order')?.trim() || '';
+  } catch {}
+  const trackedOrderId = orderFromUrl || storedOrder || 'SSCB421';
+  const route = resolveCafeRoute(window.location.pathname, window.location.search);
+  return { ...route, table, trackedOrderId };
 }
 
 function buildInitialPosCart(): CartItem[] {
@@ -124,11 +80,11 @@ function buildInitialPosCart(): CartItem[] {
   ];
 }
 
-function upsertItem(list: CartItem[], item: MenuItem): CartItem[] {
+function upsertItem(list: CartItem[], item: MenuItem, quantity = 1): CartItem[] {
   const existing = list.find((c) => c.menuItemId === item.id);
   if (existing) {
     return list.map((c) =>
-      c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c
+      c.menuItemId === item.id ? { ...c, quantity: c.quantity + quantity } : c
     );
   }
   return [
@@ -137,7 +93,7 @@ function upsertItem(list: CartItem[], item: MenuItem): CartItem[] {
       menuItemId: item.id,
       name: item.name,
       price: item.price,
-      quantity: 1,
+      quantity,
       note: item.defaultNote,
       imageUrl: item.imageUrl,
       station: item.station,
@@ -162,17 +118,12 @@ interface CafeClientState {
   posCart: CartItem[];
   couponCode: string;
   cookingNote: string;
-  customerPayment: PaymentMode;
-  customerUpiApp: UpiAppId;
-  customerCardDraft: CardCheckoutDraft;
-  posPayment: PaymentMode;
-  posUpiApp: UpiAppId;
   trackedOrderId: string;
-  navigate: (screen: ScreenId, mode?: WorkspaceMode) => void;
+  navigate: (screen: ScreenId, mode?: WorkspaceMode, options?: { replace?: boolean }) => void;
   setServiceMode: (mode: ServiceMode) => void;
   setSelectedTable: (table: string) => void;
   setMenuCategory: (cat: MenuCategory) => void;
-  addCustomerItem: (item: MenuItem) => void;
+  addCustomerItem: (item: MenuItem, quantity?: number) => void;
   updateCustomerQty: (menuItemId: string, delta: number) => void;
   removeCustomerItem: (menuItemId: string) => void;
   clearCustomerCart: () => void;
@@ -181,11 +132,6 @@ interface CafeClientState {
   clearPosCart: () => void;
   setCouponCode: (code: string) => void;
   setCookingNote: (note: string) => void;
-  setCustomerPayment: (mode: PaymentMode) => void;
-  setCustomerUpiApp: (app: UpiAppId) => void;
-  setCustomerCardDraft: (patch: Partial<CardCheckoutDraft>) => void;
-  setPosPayment: (mode: PaymentMode) => void;
-  setPosUpiApp: (app: UpiAppId) => void;
   setTrackedOrderId: (orderId: string) => void;
 }
 
@@ -197,33 +143,39 @@ export const useCafeStore = create<CafeClientState>((set) => ({
   serviceMode: 'dine-in',
   selectedTable: initialUrl.table,
   menuCategory: 'Beverages',
-  customerCart: buildInitialCustomerCart(),
+  customerCart: [],
   posCart: buildInitialPosCart(),
   couponCode: 'CAFE50',
   cookingNote: '',
-  customerPayment: 'upi',
-  customerUpiApp: 'paytm',
-  customerCardDraft: {
-    method: 'online_card',
-    network: 'Visa',
-    last4: '',
-    holderName: '',
-  },
-  posPayment: 'upi',
-  posUpiApp: 'any',
-  trackedOrderId: 'SSCB421',
+  trackedOrderId: initialUrl.trackedOrderId,
 
-  navigate: (screen, mode) =>
-    set((state) => ({
-      activeScreen: screen,
-      workspaceMode: deriveWorkspaceMode(screen, state.workspaceMode, mode),
-    })),
+  navigate: (screen, mode, options) =>
+    set((state) => {
+      const workspaceMode = deriveWorkspaceMode(screen, state.workspaceMode, mode);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.pathname = getPathForScreen(screen, {
+          kitchen: isKitchenPath(window.location.pathname),
+          manager: isManagerPath(window.location.pathname),
+        });
+        url.searchParams.delete('screen');
+        const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+        if (nextUrl !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+          if (options?.replace) {
+            window.history.replaceState({ screen }, '', nextUrl);
+          } else {
+            window.history.pushState({ screen }, '', nextUrl);
+          }
+        }
+      }
+      return { activeScreen: screen, workspaceMode };
+    }),
   setServiceMode: (serviceMode) => set({ serviceMode }),
   setSelectedTable: (selectedTable) => set({ selectedTable }),
   setMenuCategory: (menuCategory) => set({ menuCategory }),
 
-  addCustomerItem: (item) =>
-    set((state) => ({ customerCart: upsertItem(state.customerCart, item) })),
+  addCustomerItem: (item, quantity = 1) =>
+    set((state) => ({ customerCart: upsertItem(state.customerCart, item, quantity) })),
   updateCustomerQty: (menuItemId, delta) =>
     set((state) => ({ customerCart: adjustQty(state.customerCart, menuItemId, delta) })),
   removeCustomerItem: (menuItemId) =>
@@ -239,13 +191,22 @@ export const useCafeStore = create<CafeClientState>((set) => ({
 
   setCouponCode: (couponCode) => set({ couponCode }),
   setCookingNote: (cookingNote) => set({ cookingNote }),
-  setCustomerPayment: (customerPayment) => set({ customerPayment }),
-  setCustomerUpiApp: (customerUpiApp) => set({ customerUpiApp }),
-  setCustomerCardDraft: (patch) =>
-    set((state) => ({
-      customerCardDraft: { ...state.customerCardDraft, ...patch },
-    })),
-  setPosPayment: (posPayment) => set({ posPayment }),
-  setPosUpiApp: (posUpiApp) => set({ posUpiApp }),
-  setTrackedOrderId: (trackedOrderId) => set({ trackedOrderId }),
+  setTrackedOrderId: (trackedOrderId) => {
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem('cafeos_tracked_order', trackedOrderId);
+      } catch {}
+    }
+    set({ trackedOrderId });
+  },
 }));
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('popstate', () => {
+    const route = resolveCafeRoute(window.location.pathname, window.location.search);
+    useCafeStore.setState({
+      activeScreen: route.screen,
+      workspaceMode: route.mode,
+    });
+  });
+}

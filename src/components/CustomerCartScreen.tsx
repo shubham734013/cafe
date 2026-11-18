@@ -1,762 +1,565 @@
-import React, { useMemo, useState } from 'react';
-import {
-  DEMO_PLACEHOLDER_VPA,
-  UPI_APP_OPTIONS,
-  type UpiAppId,
-  buildAllUpiAppUris,
-  getUpiAppLabel,
-  getUpiAppOption,
-  isValidUpiVpa,
-} from '../payments/upiUri';
-import type { CardCheckoutDraft } from '../store/useCafeStore';
-import { CardNetwork, CartItem, PaymentMode, ServiceMode } from '../types/cafe';
-import { calculateCartTotals } from '../utils/cafeLogic';
+import React, { useState } from 'react';
+import type { CafeTable, CartItem, PaymentMode, PromoCampaign, ServiceMode } from '../types/cafe';
+import { calculateCartTotals, formatINR } from '../utils/cafeLogic';
 import { CafeImage } from './CafeImage';
-import { UpiAppIcon } from './UpiAppIcon';
+import { CoffeeBrewLoader } from './CoffeeBrewLoader';
 
 interface CustomerCartScreenProps {
   cart: CartItem[];
   serviceMode: ServiceMode;
   selectedTable: string;
+  tables?: CafeTable[];
+  campaigns?: PromoCampaign[];
+  availablePoints?: number;
   couponCode: string;
   cookingNote: string;
-  paymentMode: PaymentMode;
-  preferredUpiApp: UpiAppId;
-  cardDraft: CardCheckoutDraft;
-  payeeVpa?: string;
-  payeeName?: string;
+  onServiceModeChange?: (mode: ServiceMode) => void;
+  onTableChange?: (table: string) => void;
   onUpdateQty: (menuItemId: string, delta: number) => void;
   onRemoveItem: (menuItemId: string) => void;
   onCouponChange: (code: string) => void;
   onCookingNoteChange: (note: string) => void;
-  onPaymentModeChange: (mode: PaymentMode) => void;
-  onPreferredUpiAppChange: (app: UpiAppId) => void;
-  onCardDraftChange: (patch: Partial<CardCheckoutDraft>) => void;
-  onCheckout: (overrides?: {
-    paymentMode?: PaymentMode;
-    preferredUpiApp?: UpiAppId;
-    oneTap?: boolean;
-  }) => void | Promise<void>;
+  onCheckout: (paymentMode: PaymentMode) => void | Promise<void>;
   onBrowseMenu: () => void;
 }
 
-type CartCheckoutState =
-  | { status: 'idle' }
-  | { status: 'submitting'; app?: UpiAppId }
-  | { status: 'error'; message: string };
+type CheckoutState = 'idle' | 'submitting' | 'error';
 
 export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
   cart,
   serviceMode,
   selectedTable,
+  tables: _tables = [],
+  campaigns = [],
+  availablePoints = 0,
   couponCode,
   cookingNote,
-  paymentMode,
-  preferredUpiApp,
-  cardDraft,
-  payeeVpa,
-  payeeName,
+  onServiceModeChange,
+  onTableChange: _onTableChange,
   onUpdateQty,
   onRemoveItem,
   onCouponChange,
   onCookingNoteChange,
-  onPaymentModeChange,
-  onPreferredUpiAppChange,
-  onCardDraftChange,
   onCheckout,
   onBrowseMenu,
 }) => {
   const [couponDraft, setCouponDraft] = useState(couponCode);
-  const [checkoutState, setCheckoutState] = useState<CartCheckoutState>({ status: 'idle' });
-  const isSubmitting = checkoutState.status === 'submitting';
-  const checkoutError = checkoutState.status === 'error' ? checkoutState.message : null;
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>('upi');
+  const [redeemPointsActive, setRedeemPointsActive] = useState(false);
+  const [checkoutState, setCheckoutState] = useState<CheckoutState>('idle');
+  const [checkoutError, setCheckoutError] = useState('');
+  const isSubmitting = checkoutState === 'submitting';
 
-  const totals = calculateCartTotals(cart, couponCode, serviceMode, false);
-  const effectiveVpa = payeeVpa && isValidUpiVpa(payeeVpa) ? payeeVpa.trim() : DEMO_PLACEHOLDER_VPA;
+  const pointsToRedeem = redeemPointsActive ? Math.min(availablePoints, 200) : 0;
+  const totals = calculateCartTotals(
+    cart,
+    couponCode,
+    serviceMode,
+    false,
+    campaigns,
+    pointsToRedeem
+  );
 
-  const dynamicAppUris = useMemo(() => {
-    if (totals.total <= 0) return null;
-    try {
-      return buildAllUpiAppUris({
-        payeeVpa: effectiveVpa,
-        payeeName: payeeName || 'Seth Sawariya Cafe',
-        amountInr: totals.total,
-        note: serviceMode === 'dine-in' ? `Table ${selectedTable} Order` : 'Cafe Order',
-      });
-    } catch {
-      return null;
-    }
-  }, [effectiveVpa, payeeName, selectedTable, serviceMode, totals.total]);
+  const formatBillingAmount = (amount: number) =>
+    `₹${amount.toLocaleString('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
 
-  const handleApplyCoupon = () => {
-    onCouponChange(couponDraft.trim().toUpperCase());
-  };
+  const taxableAmount = Number(
+    Math.max(0, totals.subtotal - totals.discount - totals.tax).toFixed(2)
+  );
+  const cgst = Number((totals.tax / 2).toFixed(2));
+  const sgst = Number((totals.tax - cgst).toFixed(2));
 
-  const handleCheckout = async (appOverride?: UpiAppId) => {
+  const handleCheckout = async () => {
     if (cart.length === 0 || isSubmitting) return;
-    const isOneTapUpi = Boolean(appOverride) || paymentMode === 'upi';
-    if (
-      !appOverride &&
-      paymentMode === 'card' &&
-      cardDraft.last4.trim() &&
-      !/^\d{4}$/.test(cardDraft.last4.trim())
-    ) {
-      setCheckoutState({
-        status: 'error',
-        message: 'Enter only the last 4 digits of your card (or leave blank).',
-      });
-      return;
-    }
-    setCheckoutState({ status: 'submitting', app: appOverride });
+    setCheckoutState('submitting');
+    setCheckoutError('');
     try {
-      await onCheckout(
-        isOneTapUpi
-          ? {
-              paymentMode: 'upi',
-              preferredUpiApp: appOverride ?? preferredUpiApp,
-              oneTap: true,
-            }
-          : undefined
-      );
-      setCheckoutState({ status: 'idle' });
-    } catch (err) {
-      setCheckoutState({
-        status: 'error',
-        message: err instanceof Error ? err.message : 'Unable to initiate checkout',
-      });
+      await onCheckout(paymentMode);
+      setCheckoutState('idle');
+    } catch (error) {
+      setCheckoutState('error');
+      setCheckoutError(error instanceof Error ? error.message : 'Unable to place order');
     }
   };
 
+  // Empty Cart State styled matching the app's clean UI
   if (cart.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 px-4 text-center max-w-md mx-auto">
-        <div className="w-20 h-20 rounded-2xl bg-surface-container-high flex items-center justify-center text-primary mb-4 shadow-lg">
-          <span className="material-symbols-outlined text-[40px]">shopping_basket</span>
+      <div className="flex flex-col items-center justify-center py-20 px-4 text-center max-w-sm mx-auto">
+        <div className="w-24 h-24 rounded-full bg-surface-container flex items-center justify-center text-[#FF6422] mb-5 shadow-lg border border-outline-variant/15">
+          <span className="material-symbols-outlined text-[48px]">shopping_bag</span>
         </div>
-        <h2 className="text-xl font-bold text-on-surface">Your cart is empty</h2>
-        <p className="text-sm text-on-surface-variant mt-1.5">
-          Explore our artisanal brews, protein shakes, and grilled cafe classics.
+        <h2 className="text-xl sm:text-2xl font-black text-on-surface tracking-tight">
+          Your Cart is Empty
+        </h2>
+        <p className="text-xs sm:text-sm text-on-surface-variant mt-2 leading-relaxed">
+          Looks like you haven&apos;t added any food yet. Discover our delicious pizzas, burgers, pasta, and drinks!
         </p>
         <button
           type="button"
           onClick={onBrowseMenu}
-          className="mt-6 h-12 px-6 rounded-xl bg-primary-container text-on-primary-container font-bold text-sm flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
+          className="mt-6 px-8 py-3.5 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white font-black text-xs sm:text-sm shadow-[0_8px_24px_rgba(255,100,34,0.35)] active:scale-95 transition-all cursor-pointer inline-flex items-center gap-2"
         >
           <span className="material-symbols-outlined text-[18px]">restaurant_menu</span>
-          <span>Browse Cafe Menu</span>
+          <span>Explore Menu</span>
         </button>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col w-full pb-8 gap-4">
-      {/* Top Order Meta & Table Selector */}
-      <div className="flex items-center justify-between pt-1">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-primary">
-            <span className="material-symbols-outlined icon-filled text-[20px]">local_cafe</span>
-          </div>
-          <div className="flex flex-col">
-            <h1 className="text-xl text-on-surface font-bold tracking-tight">Your Cart</h1>
-            <span className="text-[11px] text-on-surface-variant flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-tertiary animate-pulse" />
-              Ordering for{' '}
-              {serviceMode === 'dine-in'
-                ? 'Dine-In'
-                : serviceMode === 'takeaway'
-                  ? 'Takeaway'
-                  : 'Delivery'}
-            </span>
-          </div>
-        </div>
+    <div className="flex flex-col w-full pb-28 pt-1 space-y-4">
+      {/* Header Bar */}
+      <div className="flex items-center justify-between pb-2">
+        <button
+          type="button"
+          onClick={onBrowseMenu}
+          aria-label="Back to Menu"
+          className="w-10 h-10 rounded-full bg-surface-container hover:bg-surface-container-high flex items-center justify-center text-on-surface transition-colors cursor-pointer shrink-0"
+        >
+          <span className="material-symbols-outlined text-[22px]">arrow_back</span>
+        </button>
 
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-highest shadow-sm">
-          <span className="material-symbols-outlined icon-filled text-[16px] text-primary">
-            table_restaurant
-          </span>
-          <span className="text-xs text-primary font-bold">
-            {serviceMode === 'dine-in' ? `Table ${selectedTable}` : serviceMode.toUpperCase()}
+        <h1 className="text-lg font-black text-on-surface tracking-tight">My Cart</h1>
+
+        {/* Dining Mode Pill */}
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container text-xs font-bold text-on-surface border border-outline-variant/15 shrink-0">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-[#FF6422]">
+            {serviceMode === 'dine-in' ? `Table ${selectedTable.replace('T', '')}` : serviceMode}
           </span>
         </div>
       </div>
 
-      {/* Desktop 2-Col Split / Mobile Stacked */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-        <div className="lg:col-span-7 flex flex-col gap-3">
-          {/* Cart Count Notification Ribbon */}
-          <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-surface-container-low shadow-sm">
-            <div className="flex items-center gap-1.5 text-on-surface-variant">
-              <span className="material-symbols-outlined text-[18px] text-secondary">
-                shopping_basket
-              </span>
-              <span className="text-xs font-semibold text-on-surface tabular-nums">
-                {totals.itemCount} Handcrafted {totals.itemCount === 1 ? 'Item' : 'Items'}
-              </span>
-            </div>
-            <span className="text-[11px] text-primary uppercase tracking-wider font-semibold">
-              Kitchen Ready
-            </span>
-          </div>
+      {/* Service Mode Selector Switch (Dine-In / Takeaway) */}
+      <div className="flex items-center justify-between p-1.5 rounded-2xl bg-surface-container border border-outline-variant/15">
+        <button
+          type="button"
+          onClick={() => onServiceModeChange?.('dine-in')}
+          className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+            serviceMode === 'dine-in'
+              ? 'bg-[#FF6422] text-white shadow-md'
+              : 'text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[16px]">table_restaurant</span>
+          <span>Dine-In</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onServiceModeChange?.('takeaway')}
+          className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+            serviceMode === 'takeaway'
+              ? 'bg-[#FF6422] text-white shadow-md'
+              : 'text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[16px]">takeout_dining</span>
+          <span>Takeaway</span>
+        </button>
+      </div>
 
-          {/* Cart Items List */}
-          <div className="flex flex-col gap-2.5">
-            {cart.map((item) => (
-              <div
-                key={item.menuItemId}
-                className="flex items-center gap-3 p-3 rounded-xl bg-surface-container shadow-md"
-              >
-                <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 bg-surface-container-lowest">
-                  <CafeImage src={item.imageUrl} alt={item.name} />
-                </div>
-
-                <div className="flex flex-col flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-1">
-                    <h3 className="text-base font-semibold text-on-surface truncate">
-                      {item.name}
-                    </h3>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${item.name}`}
-                      onClick={() => onRemoveItem(item.menuItemId)}
-                      className="text-on-surface-variant hover:text-error transition-colors p-1 -mr-1 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">delete_outline</span>
-                    </button>
-                  </div>
-                  <span className="text-[11px] text-on-surface-variant mb-1 truncate">
-                    {item.note}
-                  </span>
-
-                  <div className="flex items-center justify-between mt-auto">
-                    <span className="text-base text-primary font-bold tabular-nums">
-                      ₹{item.price * item.quantity}
-                    </span>
-                    <div className="flex items-center gap-2 px-2 py-1 rounded-full bg-surface-container-lowest shadow-inner">
-                      <button
-                        type="button"
-                        aria-label={`Decrease quantity for ${item.name}`}
-                        onClick={() => onUpdateQty(item.menuItemId, -1)}
-                        className="w-7 h-7 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary active:scale-95 transition-transform cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">remove</span>
-                      </button>
-                      <span className="text-xs text-on-surface font-semibold w-4 text-center tabular-nums">
-                        {item.quantity}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={`Increase quantity for ${item.name}`}
-                        onClick={() => onUpdateQty(item.menuItemId, 1)}
-                        className="w-7 h-7 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary active:scale-95 transition-transform cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">add</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Cooking Instructions Note */}
-          <div className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-container-low shadow-sm">
-            <span className="material-symbols-outlined icon-filled text-[20px] text-primary">
-              restaurant
-            </span>
-            <input
-              type="text"
-              value={cookingNote}
-              onChange={(e) => onCookingNoteChange(e.target.value)}
-              aria-label="Special cooking instructions"
-              placeholder="Any special cooking note? (e.g. less ice, extra crispy)"
-              className="bg-transparent text-xs sm:text-sm text-on-surface placeholder:text-on-surface-variant/60 w-full focus:outline-none"
-            />
-          </div>
-        </div>
-
-        {/* Right Summary Column */}
-        <div className="lg:col-span-5 flex flex-col gap-3">
-          {/* Coupon / Promo Section */}
-          <div className="flex flex-col gap-2 p-3.5 rounded-xl bg-surface-container shadow-md">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-on-surface flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[18px] text-primary">sell</span>
-                Have a Coupon?
-              </span>
-              {totals.couponApplied && (
-                <span className="text-[11px] text-tertiary font-semibold flex items-center gap-0.5">
-                  <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                  {couponCode} Applied
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 mt-0.5">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  value={couponDraft}
-                  onChange={(e) => setCouponDraft(e.target.value)}
-                  aria-label="Coupon code"
-                  placeholder="Enter code (CAFE50)"
-                  className="w-full bg-surface-container-lowest px-3 py-2.5 pr-8 rounded-lg text-xs font-semibold text-on-surface uppercase tracking-wider focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                {couponDraft && (
-                  <button
-                    type="button"
-                    aria-label="Clear coupon"
-                    onClick={() => {
-                      setCouponDraft('');
-                      onCouponChange('');
-                    }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">close</span>
-                  </button>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={handleApplyCoupon}
-                className="h-10 px-4 rounded-lg bg-primary-container text-on-primary-container text-sm font-bold active:scale-95 transition-all shadow-sm cursor-pointer"
-              >
-                {totals.couponApplied && couponDraft.toUpperCase() === couponCode ? 'Applied' : 'Apply'}
-              </button>
-            </div>
-
-            {totals.couponError && (
-              <p className="text-[11px] text-error font-medium">{totals.couponError}</p>
-            )}
-          </div>
-
-          {/* Bill Breakdown Summary Card */}
-          <div className="flex flex-col gap-2.5 p-4 rounded-xl bg-surface-container shadow-md">
-            <div className="flex items-center justify-between pb-1">
-              <span className="text-base text-on-surface font-semibold">Bill Details</span>
-              <span className="text-[11px] text-on-surface-variant">Table {selectedTable}</span>
-            </div>
-
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-on-surface-variant">Item Subtotal</span>
-              <span className="text-on-surface font-medium tabular-nums">
-                ₹{totals.subtotal.toFixed(2)}
-              </span>
-            </div>
-
-            {totals.discount > 0 && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-tertiary flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[16px]">local_offer</span>
-                  {totals.discountLabel}
-                </span>
-                <span className="text-tertiary font-semibold tabular-nums">
-                  -₹{totals.discount.toFixed(2)}
-                </span>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-on-surface-variant flex items-center gap-1">
-                Taxes &amp; GST (5%)
-                <span className="material-symbols-outlined text-[14px] text-on-surface-variant/80">
-                  info
-                </span>
-              </span>
-              <span className="text-on-surface font-medium tabular-nums">
-                ₹{totals.tax.toFixed(2)}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-on-surface-variant">Round Off Relief</span>
-              <span className="text-on-surface font-medium tabular-nums">
-                -₹{totals.roundOff.toFixed(2)}
-              </span>
-            </div>
-
-            <div className="h-px w-full bg-surface-variant my-1" />
-
-            <div className="flex items-center justify-between pt-0.5">
-              <div className="flex flex-col">
-                <span className="text-base text-on-surface font-bold">To Pay</span>
-                {totals.discount > 0 && (
-                  <span className="text-[11px] text-tertiary tabular-nums">
-                    Saved ₹{totals.discount} on this order
-                  </span>
-                )}
-              </div>
-              <span className="text-[26px] text-primary font-bold tabular-nums">
-                ₹{totals.total}
-              </span>
-            </div>
-          </div>
-
-          {/* Swiggy-Style Payment Options Sheet */}
-          <div className="flex flex-col gap-3 p-3.5 rounded-2xl bg-surface-container-low shadow-md border border-outline-variant/25">
-            <div className="flex items-center justify-between gap-2 pb-1 border-b border-outline-variant/15">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-primary/15 text-primary flex items-center justify-center">
-                  <span className="material-symbols-outlined text-[17px]">verified_user</span>
-                </div>
-                <div>
-                  <span className="text-xs text-on-surface font-bold uppercase tracking-wider block leading-tight">
-                    Payment Options
-                  </span>
-                  <span className="text-[10px] text-on-surface-variant block">
-                    Pay ₹{totals.total} securely via YouPI-PG
-                  </span>
-                </div>
-              </div>
-              <span className="text-[10px] px-2 py-0.5 rounded-md bg-tertiary/15 text-tertiary font-bold flex items-center gap-1 shrink-0">
-                <span className="material-symbols-outlined text-[12px]">lock</span>
-                100% Safe
-              </span>
-            </div>
-
-            {/* Section 1: Swiggy-Style Preferred UPI Apps List */}
-            <div className="rounded-xl bg-surface-container p-2.5 space-y-2 border border-outline-variant/15">
-              <div className="flex items-center justify-between px-0.5">
-                <span className="text-[11px] font-bold text-on-surface flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[15px] text-primary">
-                    qr_code_scanner
-                  </span>
-                  Pay by any UPI App
-                </span>
-                <span className="text-[10px] text-tertiary font-semibold">Zero Convenience Fee</span>
-              </div>
-
-              <div className="flex flex-col divide-y divide-outline-variant/15 rounded-xl overflow-hidden border border-outline-variant/15 bg-surface-container-lowest/70">
-                {UPI_APP_OPTIONS.map((app) => {
-                  const selected = paymentMode === 'upi' && preferredUpiApp === app.id;
-                  const tag =
-                    app.id === 'gpay'
-                      ? 'Fastest'
-                      : app.id === 'paytm'
-                        ? 'Popular'
-                        : app.id === 'amazonpay'
-                          ? 'Rewards'
-                          : null;
-                  return (
-                    <div
-                      key={app.id}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 transition-all ${
-                        selected
-                          ? 'bg-primary-container/15'
-                          : 'hover:bg-surface-container-high/70'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        data-testid={`payment-option-upi-${app.id}`}
-                        onClick={() => {
-                          onPaymentModeChange('upi');
-                          onPreferredUpiAppChange(app.id);
-                          setCheckoutState({ status: 'idle' });
-                        }}
-                        className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer"
-                      >
-                        <UpiAppIcon appId={app.id} className="w-9 h-9" />
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs font-bold text-on-surface">{app.label}</span>
-                            {tag && (
-                              <span
-                                className={`text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded border ${app.accentClass}`}
-                              >
-                                {tag}
-                              </span>
-                            )}
-                          </div>
-                          <span className="block text-[10px] text-on-surface-variant truncate mt-0.5">
-                            {selected
-                              ? `One-Tap ready · ${app.schemePrefix}`
-                              : app.tagline}
-                          </span>
-                        </div>
-                      </button>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        {selected ? (
-                          <button
-                            type="button"
-                            disabled={isSubmitting}
-                            data-testid={`one-tap-pay-${app.id}`}
-                            onClick={() => void handleCheckout(app.id)}
-                            className="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-[11px] font-bold shadow-sm hover:brightness-105 active:scale-95 transition-all cursor-pointer tabular-nums disabled:opacity-60"
-                          >
-                            {isSubmitting ? 'Starting...' : `Pay ₹${totals.total}`}
-                          </button>
-                        ) : (
-                          <span
-                            aria-hidden="true"
-                            className="w-4 h-4 rounded-full border-2 border-outline flex items-center justify-center"
-                          />
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {paymentMode === 'upi' && (
-                <div className="space-y-1 px-1 pt-0.5 text-[10px] text-on-surface-variant">
-                  <div className="flex items-center justify-between gap-2">
-                    <span>
-                      App Handler:{' '}
-                      <span className="font-mono text-primary font-semibold">
-                        {getUpiAppOption(preferredUpiApp).schemePrefix}
-                      </span>
-                    </span>
-                    {getUpiAppOption(preferredUpiApp).androidPackage && (
-                      <span className="font-mono truncate max-w-[190px]">
-                        {getUpiAppOption(preferredUpiApp).androidPackage}
-                      </span>
-                    )}
-                  </div>
-                  {dynamicAppUris?.[preferredUpiApp] && (
-                    <div
-                      data-testid="dynamic-upi-uri-preview"
-                      data-uri={dynamicAppUris[preferredUpiApp].oneTapUri}
-                      title={dynamicAppUris[preferredUpiApp].oneTapUri}
-                      className="font-mono text-[9px] text-outline truncate bg-surface-container-lowest/70 px-2 py-1 rounded border border-outline-variant/15"
-                    >
-                      URI: {dynamicAppUris[preferredUpiApp].oneTapUri}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Section 2: Credit / Debit Cards (Swiggy & Zomato Style) */}
-            <div
-              className={`rounded-xl p-2.5 border transition-all ${
-                paymentMode === 'card'
-                  ? 'bg-surface-container border-primary shadow-sm'
-                  : 'bg-surface-container border-outline-variant/15'
-              }`}
-            >
-              <button
-                type="button"
-                data-testid="payment-option-card"
-                onClick={() => {
-                  onPaymentModeChange('card');
-                  setCheckoutState({ status: 'idle' });
-                }}
-                className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                      paymentMode === 'card'
-                        ? 'bg-primary text-on-primary'
-                        : 'bg-surface-container-high text-primary'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[19px]">credit_card</span>
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-on-surface block">
-                      Credit &amp; Debit Cards
-                    </span>
-                    <span className="text-[10px] text-on-surface-variant block">
-                      Visa, Mastercard, RuPay, Amex · Online or Table EDC
-                    </span>
-                  </div>
-                </div>
-                <span
-                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                    paymentMode === 'card' ? 'border-primary' : 'border-outline'
-                  }`}
-                >
-                  {paymentMode === 'card' && <span className="w-2 h-2 rounded-full bg-primary" />}
-                </span>
-              </button>
-
-              {paymentMode === 'card' && (
-                <div className="mt-3 pt-2.5 border-t border-outline-variant/20 space-y-2.5">
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {[
-                      {
-                        id: 'online_card' as const,
-                        label: 'Pay Card Online',
-                        sub: 'Tokenized instant approval',
-                      },
-                      {
-                        id: 'edc_table' as const,
-                        label: 'Card Machine (EDC)',
-                        sub: 'Tap / Swipe at table',
-                      },
-                    ].map((opt) => (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => onCardDraftChange({ method: opt.id })}
-                        className={`p-2 rounded-lg text-left border cursor-pointer transition-all ${
-                          cardDraft.method === opt.id
-                            ? 'bg-primary/15 border-primary text-on-surface'
-                            : 'bg-surface-container-lowest border-transparent text-on-surface-variant'
-                        }`}
-                      >
-                        <span className="block text-[11px] font-bold">{opt.label}</span>
-                        <span className="block text-[9px] opacity-80">{opt.sub}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div>
-                    <span className="block text-[10px] font-semibold text-on-surface-variant mb-1">
-                      Card Network
-                    </span>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {(['Visa', 'Mastercard', 'RuPay', 'Amex'] as CardNetwork[]).map((net) => (
-                        <button
-                          key={net}
-                          type="button"
-                          onClick={() => onCardDraftChange({ network: net })}
-                          className={`py-1.5 rounded-lg text-[11px] font-bold cursor-pointer ${
-                            cardDraft.network === net
-                              ? 'bg-primary text-on-primary'
-                              : 'bg-surface-container-lowest text-on-surface-variant hover:text-on-surface'
-                          }`}
-                        >
-                          {net}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[10px] font-semibold text-on-surface-variant mb-1">
-                        Name on Card (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={cardDraft.holderName}
-                        onChange={(e) => onCardDraftChange({ holderName: e.target.value })}
-                        placeholder="e.g. Aarav Sharma"
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-surface-container-lowest text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-semibold text-on-surface-variant mb-1">
-                        Last 4 Digits Only (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={4}
-                        value={cardDraft.last4}
-                        onChange={(e) => {
-                          setCheckoutState({ status: 'idle' });
-                          onCardDraftChange({ last4: e.target.value.replace(/\D/g, '').slice(0, 4) });
-                        }}
-                        placeholder="e.g. 4242"
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-surface-container-lowest text-xs font-mono text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
-                  </div>
-
-                  {checkoutError && <p className="text-[11px] text-error font-medium">{checkoutError}</p>}
-
-                  <p className="text-[10px] text-tertiary flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[13px]">lock</span>
-                    <span>
-                      PCI-Safe: Full 16-digit card numbers &amp; CVVs are never collected or stored.
-                    </span>
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Section 3: Cash at Counter */}
-            <button
-              type="button"
-              data-testid="payment-option-cash"
-              onClick={() => {
-                onPaymentModeChange('cash');
-                setCheckoutState({ status: 'idle' });
-              }}
-              className={`w-full rounded-xl p-2.5 border flex items-center justify-between gap-2 text-left transition-all cursor-pointer ${
-                paymentMode === 'cash'
-                  ? 'bg-surface-container border-primary shadow-sm'
-                  : 'bg-surface-container border-outline-variant/15 hover:bg-surface-container-high'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                    paymentMode === 'cash'
-                      ? 'bg-primary text-on-primary'
-                      : 'bg-surface-container-high text-primary'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[19px]">payments</span>
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-on-surface block">Cash at Counter</span>
-                  <span className="text-[10px] text-on-surface-variant block">
-                    Pay cash to server or billing desk
-                  </span>
-                </div>
-              </div>
-              <span
-                className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                  paymentMode === 'cash' ? 'border-primary' : 'border-outline'
-                }`}
-              >
-                {paymentMode === 'cash' && <span className="w-2 h-2 rounded-full bg-primary" />}
-              </span>
-            </button>
-          </div>
-
-          {checkoutError && paymentMode !== 'card' && (
-            <p className="text-xs text-error font-medium px-1">{checkoutError}</p>
-          )}
-
-          {/* Primary Checkout Action */}
+      {/* Cart Items List */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <h2 className="text-sm font-extrabold text-on-surface tracking-tight">
+            Order Items ({totals.itemCount})
+          </h2>
           <button
             type="button"
-            disabled={isSubmitting}
-            onClick={() => void handleCheckout()}
-            className="w-full h-12 flex items-center justify-between px-5 rounded-xl bg-primary-container hover:bg-primary text-on-primary-container text-base font-bold tracking-tight shadow-[0_4px_16px_rgba(245,158,11,0.25)] active:scale-[0.99] transition-all cursor-pointer"
+            onClick={onBrowseMenu}
+            className="text-xs font-bold text-[#FF6422] hover:underline cursor-pointer"
           >
-            {isSubmitting ? (
-              <div className="flex items-center justify-center w-full gap-2">
-                <span className="material-symbols-outlined animate-spin text-[20px]">sync</span>
-                <span>Initiating Payment...</span>
+            + Add More
+          </button>
+        </div>
+
+        {cart.map((item) => (
+          <div
+            key={item.menuItemId}
+            className="group flex items-center justify-between gap-3.5 p-3.5 rounded-3xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 shadow-sm transition-all"
+          >
+            {/* Circular Dish Image */}
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden shrink-0 shadow-md ring-2 ring-outline-variant/10">
+              <CafeImage
+                src={item.imageUrl}
+                alt={item.name}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                fallbackIcon="restaurant"
+              />
+            </div>
+
+            {/* Middle Item Info */}
+            <div className="flex-1 min-w-0">
+              <h3 className="text-xs sm:text-sm font-extrabold text-on-surface truncate">
+                {item.name}
+              </h3>
+              {item.note && (
+                <span className="inline-block text-[10px] text-on-surface-variant mt-0.5 truncate bg-surface-container-high px-2 py-0.5 rounded-full">
+                  {item.note}
+                </span>
+              )}
+              <div className="mt-1">
+                <span className="text-sm sm:text-base font-black text-[#FF6422] tabular-nums">
+                  ₹{item.price * item.quantity}
+                </span>
+                {item.quantity > 1 && (
+                  <span className="text-[10px] text-on-surface-variant ml-1.5 tabular-nums">
+                    (₹{item.price} each)
+                  </span>
+                )}
               </div>
-            ) : (
-              <>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[22px]">
-                    {paymentMode === 'upi'
-                      ? 'bolt'
-                      : paymentMode === 'card'
-                        ? 'credit_card'
-                        : 'payments'}
-                  </span>
-                  <span>
-                    {paymentMode === 'upi'
-                      ? `One-Tap Pay · ${getUpiAppLabel(preferredUpiApp)}`
-                      : paymentMode === 'card'
-                        ? cardDraft.method === 'online_card'
-                          ? `Pay with ${cardDraft.network}`
-                          : 'Place Order · Card at Table'
-                        : 'Place Order · Pay Cash'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1 text-sm font-bold tabular-nums">
-                  <span>₹{totals.total}</span>
-                  <span className="material-symbols-outlined text-[20px]">arrow_forward</span>
-                </div>
-              </>
-            )}
+            </div>
+
+            {/* Right Quantity Counter & Remove */}
+            <div className="flex flex-col items-end gap-2 shrink-0">
+              <button
+                type="button"
+                aria-label={`Remove ${item.name}`}
+                onClick={() => onRemoveItem(item.menuItemId)}
+                className="text-outline hover:text-red-500 transition-colors p-1 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">close</span>
+              </button>
+
+              <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-surface border border-outline-variant/20 shadow-inner">
+                <button
+                  type="button"
+                  aria-label={`Decrease quantity for ${item.name}`}
+                  onClick={() => onUpdateQty(item.menuItemId, -1)}
+                  className="w-6 h-6 rounded-full bg-surface-container hover:bg-surface-container-high flex items-center justify-center text-on-surface font-bold text-xs cursor-pointer transition-colors"
+                >
+                  –
+                </button>
+                <span className="text-xs font-black text-on-surface w-4 text-center tabular-nums">
+                  {item.quantity}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Increase quantity for ${item.name}`}
+                  onClick={() => onUpdateQty(item.menuItemId, 1)}
+                  className="w-6 h-6 rounded-full bg-surface-container hover:bg-surface-container-high flex items-center justify-center text-on-surface font-bold text-xs cursor-pointer transition-colors"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Special Cooking Instructions Input */}
+      <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-surface-container border border-outline-variant/15 shadow-sm">
+        <span className="material-symbols-outlined text-[20px] text-[#FF6422] shrink-0">
+          edit_note
+        </span>
+        <input
+          type="text"
+          value={cookingNote}
+          onChange={(event) => onCookingNoteChange(event.target.value)}
+          placeholder="Any special cooking note for chef?"
+          className="bg-transparent text-xs text-on-surface placeholder:text-outline w-full focus:outline-none"
+        />
+      </div>
+
+      {/* Promo Code Card */}
+      <div className="p-4 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-2.5">
+        <div className="flex items-center justify-between">
+          <label
+            htmlFor="cart-coupon"
+            className="text-xs font-extrabold text-on-surface flex items-center gap-1.5"
+          >
+            <span className="material-symbols-outlined text-[16px] text-[#FF6422]">
+              local_offer
+            </span>
+            <span>Have a Coupon Code?</span>
+          </label>
+          {totals.couponApplied && (
+            <button
+              type="button"
+              onClick={() => {
+                onCouponChange('');
+                setCouponDraft('');
+              }}
+              className="text-[11px] text-red-500 hover:underline font-bold"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <input
+            id="cart-coupon"
+            type="text"
+            value={couponDraft}
+            onChange={(event) => setCouponDraft(event.target.value)}
+            placeholder="Enter promo code (e.g. CAFE50)"
+            className="w-full bg-surface px-3.5 py-2.5 rounded-full text-xs font-extrabold text-on-surface uppercase tracking-wider focus:outline-none focus:ring-1 focus:ring-[#FF6422] font-mono border border-outline-variant/20"
+          />
+          <button
+            type="button"
+            onClick={() => onCouponChange(couponDraft.trim().toUpperCase())}
+            className="h-10 px-5 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white text-xs font-black cursor-pointer transition-all active:scale-95 shadow-md shrink-0"
+          >
+            Apply
+          </button>
+        </div>
+
+        {/* Quick-Apply Promo Chips */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
+          {[
+            { code: 'CAFE50', label: 'CAFE50 (₹50 Off)' },
+            { code: 'SAW10', label: 'SAW10 (10% Off)' },
+            { code: 'CAMPUS15', label: 'CAMPUS15 (15% Off)' },
+            { code: 'BOGO2025', label: 'BOGO2025 (20% Off)' },
+          ].map((chip) => {
+            const isCurrent = couponCode.toUpperCase() === chip.code;
+            return (
+              <button
+                key={chip.code}
+                type="button"
+                onClick={() => {
+                  setCouponDraft(chip.code);
+                  onCouponChange(chip.code);
+                }}
+                className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+                  isCurrent
+                    ? 'bg-emerald-500 text-neutral-950 shadow-sm'
+                    : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                {isCurrent ? `✓ ${chip.code}` : `+ ${chip.label}`}
+              </button>
+            );
+          })}
+        </div>
+
+        {totals.couponApplied && (
+          <span className="text-[11px] font-bold text-emerald-500 flex items-center gap-1 pt-0.5">
+            <span className="material-symbols-outlined text-[14px]">check_circle</span>
+            {totals.discountLabel || `${couponCode} applied successfully!`}
+          </span>
+        )}
+        {totals.couponError && (
+          <p className="text-[11px] text-red-400 font-medium">{totals.couponError}</p>
+        )}
+      </div>
+
+      {/* Loyalty Points Redemption (if available) */}
+      {availablePoints > 0 && (
+        <div className="flex items-center justify-between p-3.5 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-amber-400 text-[22px]">stars</span>
+            <div>
+              <span className="text-xs font-extrabold text-on-surface block">
+                Redeem Loyalty Points
+              </span>
+              <span className="text-[11px] text-on-surface-variant">
+                {availablePoints} pts available · Save up to ₹
+                {Math.floor(Math.min(availablePoints, 200) * 0.5)}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setRedeemPointsActive(!redeemPointsActive)}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer active:scale-95 ${
+              redeemPointsActive
+                ? 'bg-[#FF6422] text-white shadow-sm'
+                : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+            }`}
+          >
+            {redeemPointsActive ? 'Applied ✓' : 'Redeem'}
+          </button>
+        </div>
+      )}
+
+      {/* Bill Summary Card */}
+      <div className="p-4 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-2.5">
+        <div className="flex items-center justify-between pb-2 border-b border-outline-variant/15">
+          <span className="text-xs font-extrabold text-on-surface tracking-tight uppercase">
+            Bill Summary
+          </span>
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FF6422]/15 text-[#FF6422]">
+            GST INCLUSIVE
+          </span>
+        </div>
+
+        <div className="flex justify-between text-xs text-on-surface-variant">
+          <span>Item Subtotal</span>
+          <span className="font-bold text-on-surface tabular-nums">
+            {formatBillingAmount(totals.subtotal)}
+          </span>
+        </div>
+
+        {totals.discount > 0 && (
+          <div className="flex justify-between text-xs text-emerald-500 font-bold">
+            <span>{totals.discountLabel || 'Promotional Discount'}</span>
+            <span className="tabular-nums">-{formatBillingAmount(totals.discount)}</span>
+          </div>
+        )}
+
+        {totals.pointsDiscount ? (
+          <div className="flex justify-between text-xs text-amber-400 font-bold">
+            <span>Loyalty Discount ({totals.pointsRedeemed} pts)</span>
+            <span className="tabular-nums">-{formatBillingAmount(totals.pointsDiscount)}</span>
+          </div>
+        ) : null}
+
+        <div className="h-px bg-outline-variant/15 my-1" />
+
+        <div className="flex justify-between text-[11px] text-on-surface-variant">
+          <span>Taxable Value</span>
+          <span className="tabular-nums">{formatBillingAmount(taxableAmount)}</span>
+        </div>
+        <div className="flex justify-between text-[11px] text-on-surface-variant">
+          <span>CGST @ 2.5%</span>
+          <span className="tabular-nums">{formatBillingAmount(cgst)}</span>
+        </div>
+        <div className="flex justify-between text-[11px] text-on-surface-variant">
+          <span>SGST @ 2.5%</span>
+          <span className="tabular-nums">{formatBillingAmount(sgst)}</span>
+        </div>
+
+        {totals.roundOff !== 0 && (
+          <div className="flex justify-between text-[11px] text-on-surface-variant">
+            <span>Round Off</span>
+            <span className="tabular-nums">
+              {totals.roundOff > 0 ? '+' : '-'}
+              {formatBillingAmount(Math.abs(totals.roundOff))}
+            </span>
+          </div>
+        )}
+
+        <div className="h-px bg-outline-variant/15 my-1" />
+
+        <div className="flex justify-between items-center pt-1">
+          <div>
+            <span className="text-sm font-black text-on-surface block">Amount Payable</span>
+            <span className="text-[10px] text-on-surface-variant font-medium">
+              Inclusive of all taxes
+            </span>
+          </div>
+          <span className="text-2xl font-black text-[#FF6422] tabular-nums">
+            {formatINR(totals.total)}
+          </span>
+        </div>
+      </div>
+
+      {/* Payment Options Card */}
+      <div className="p-4 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-2.5">
+        <span className="text-xs font-extrabold text-on-surface tracking-tight uppercase block">
+          Payment Method
+        </span>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {/* Online UPI */}
+          <button
+            type="button"
+            onClick={() => setPaymentMode('upi')}
+            className={`p-3 rounded-2xl border text-left transition-all flex items-center justify-between cursor-pointer ${
+              paymentMode === 'upi'
+                ? 'bg-[#FF6422]/10 border-[#FF6422] ring-1 ring-[#FF6422]'
+                : 'bg-surface border-outline-variant/20 hover:border-outline-variant/50'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-[#FF6422]/15 text-[#FF6422] flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
+              </div>
+              <div>
+                <span className="text-xs font-extrabold text-on-surface block">Pay Online (UPI)</span>
+                <span className="text-[10px] text-on-surface-variant">GPay, PhonePe, Paytm</span>
+              </div>
+            </div>
+            <div
+              className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                paymentMode === 'upi' ? 'border-[#FF6422]' : 'border-outline-variant'
+              }`}
+            >
+              {paymentMode === 'upi' && <div className="w-2 h-2 bg-[#FF6422] rounded-full" />}
+            </div>
+          </button>
+
+          {/* Pay on Counter */}
+          <button
+            type="button"
+            onClick={() => setPaymentMode('cash')}
+            className={`p-3 rounded-2xl border text-left transition-all flex items-center justify-between cursor-pointer ${
+              paymentMode === 'cash'
+                ? 'bg-[#FF6422]/10 border-[#FF6422] ring-1 ring-[#FF6422]'
+                : 'bg-surface border-outline-variant/20 hover:border-outline-variant/50'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-amber-500/15 text-amber-500 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[18px]">storefront</span>
+              </div>
+              <div>
+                <span className="text-xs font-extrabold text-on-surface block">Pay at Counter</span>
+                <span className="text-[10px] text-on-surface-variant">Cash / Card / EDC</span>
+              </div>
+            </div>
+            <div
+              className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                paymentMode === 'cash' ? 'border-[#FF6422]' : 'border-outline-variant'
+              }`}
+            >
+              {paymentMode === 'cash' && <div className="w-2 h-2 bg-[#FF6422] rounded-full" />}
+            </div>
           </button>
         </div>
       </div>
+
+      {checkoutError && (
+        <p className="text-xs text-red-400 bg-red-950/40 p-3 rounded-2xl">{checkoutError}</p>
+      )}
+
+      {/* Place Order CTA Button */}
+      <div className="pt-1">
+        <button
+          type="button"
+          disabled={isSubmitting}
+          onClick={() => void handleCheckout()}
+          className="w-full py-4 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white text-sm sm:text-base font-black tracking-wide shadow-[0_8px_24px_rgba(255,100,34,0.35)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {isSubmitting ? (
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[20px] animate-spin">
+                progress_activity
+              </span>
+              <span>Placing your order...</span>
+            </div>
+          ) : paymentMode === 'upi' ? (
+            <>
+              <span className="material-symbols-outlined text-[20px]">bolt</span>
+              <span>Proceed to Pay • ₹{totals.total}</span>
+            </>
+          ) : (
+            <>
+              <span className="material-symbols-outlined text-[20px]">check_circle</span>
+              <span>Place Order • ₹{totals.total} (Pay on Counter)</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Brewing Order Full-Screen Overlay while Submitting */}
+      {isSubmitting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
+          <div className="w-full max-w-sm rounded-3xl bg-surface-container border border-outline-variant/20 p-6 shadow-2xl">
+            <CoffeeBrewLoader
+              size="md"
+              title="Sending to Kitchen"
+              subtitle="Firing KOT & reserving ingredients..."
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

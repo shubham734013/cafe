@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  CUSTOMER_REVIEWS,
   INITIAL_CAMPAIGNS,
   INITIAL_CUSTOMERS,
   INITIAL_INVENTORY,
@@ -25,6 +26,7 @@ import {
   getIngredientThresholdDeficit,
   getLowInventoryItems,
   getNextKotStatus,
+  isKitchenActiveOrder,
   isIngredientBelowThreshold,
   restockIngredientItem,
 } from './cafeLogic';
@@ -64,11 +66,12 @@ test('calculateCartTotals computes customer cart with CAFE50 coupon accurately',
   assert.equal(totals.itemCount, 3);
   assert.equal(totals.subtotal, 377);
   assert.equal(totals.discount, 50);
+  assert.equal(totals.tax, 15.57);
+  assert.equal(totals.roundOff, 0);
   assert.equal(totals.total, 327);
   assert.equal(totals.couponApplied, true);
   assert.equal(totals.couponError, null);
 });
-
 test('calculateCartTotals validates minimum order for CAFE50 and handles POS dine-in discount', () => {
   const smallOrder = [
     {
@@ -126,6 +129,17 @@ test('filterMenuItems filters by category and search query', () => {
   const latteSearch = filterMenuItems(MENU_ITEMS, 'All', 'latte');
   assert.equal(latteSearch.length, 1);
   assert.equal(latteSearch[0].id, 'iced-latte');
+
+  const burgerSearch = filterMenuItems(MENU_ITEMS, 'All', 'burger');
+  assert.ok(burgerSearch.length > 0);
+  assert.ok(
+    burgerSearch.every(
+      (item) =>
+        item.name.toLowerCase().includes('burger') ||
+        item.description.toLowerCase().includes('burger') ||
+        item.category.toLowerCase().includes('burger')
+    )
+  );
 });
 
 test('filterOrders filters by service channel and query text', () => {
@@ -186,7 +200,7 @@ test('filterCampaigns and filterStaffRoster filter correctly', () => {
   assert.equal(scheduled[0].code, 'CAMPUS15');
 
   const onDuty = filterStaffRoster(INITIAL_STAFF_ROSTER, 'active');
-  assert.equal(onDuty.length, 4);
+  assert.equal(onDuty.length, 3);
   const morning = filterStaffRoster(INITIAL_STAFF_ROSTER, 'morning');
   assert.equal(morning.length, 2);
 });
@@ -279,4 +293,110 @@ test('deriveKotCardPhase distinguishes pending and prepared order states with it
   const readyPhase = deriveKotCardPhase({ ...placedOrder, status: 'ready' });
   assert.equal(readyPhase.phase, 'prepared');
   assert.equal(readyPhase.completionPct, 100);
+});
+
+test('isKitchenActiveOrder holds unpaid online UPI orders and allows paid or counter orders', () => {
+  const baseOrder = INITIAL_ORDERS[0];
+
+  // 1. Online UPI order that is unpaid/pending must NOT be sent to kitchen
+  const pendingUpiOrder = {
+    ...baseOrder,
+    status: 'placed' as const,
+    paymentMode: 'upi' as const,
+    paymentStatus: 'pending' as const,
+  };
+  assert.equal(isKitchenActiveOrder(pendingUpiOrder), false);
+
+  // 2. Online UPI order once paid IS sent to kitchen
+  const paidUpiOrder = {
+    ...baseOrder,
+    status: 'placed' as const,
+    paymentMode: 'upi' as const,
+    paymentStatus: 'paid' as const,
+  };
+  assert.equal(isKitchenActiveOrder(paidUpiOrder), true);
+
+  // 3. Pay on Counter (cash) orders are sent to kitchen immediately
+  const counterOrder = {
+    ...baseOrder,
+    status: 'placed' as const,
+    paymentMode: 'cash' as const,
+    paymentStatus: 'unpaid' as const,
+  };
+  assert.equal(isKitchenActiveOrder(counterOrder), true);
+
+  // 4. Served orders are no longer active in kitchen
+  const servedOrder = {
+    ...baseOrder,
+    status: 'served' as const,
+    paymentMode: 'cash' as const,
+    paymentStatus: 'paid' as const,
+  };
+  assert.equal(isKitchenActiveOrder(servedOrder), false);
+
+  // 5. Refunded or cancelled orders must NEVER show in kitchen
+  const refundedOrder = {
+    ...baseOrder,
+    status: 'placed' as const,
+    paymentMode: 'upi' as const,
+    paymentStatus: 'refunded' as const,
+  };
+  assert.equal(isKitchenActiveOrder(refundedOrder), false);
+
+  const cancelledOrder = {
+    ...baseOrder,
+    status: 'placed' as const,
+    paymentMode: 'cash' as const,
+    paymentStatus: 'cancelled' as const,
+  };
+  assert.equal(isKitchenActiveOrder(cancelledOrder), false);
+});
+
+test('calculateCartTotals supports loyalty points redemption and accurate GST breakdown', () => {
+  const items = [
+    {
+      menuItemId: 'cold-coffee',
+      name: 'Cold Coffee',
+      price: 129,
+      quantity: 2,
+      note: '',
+      imageUrl: '',
+      station: 'Barista' as const,
+    },
+  ];
+  // Subtotal = 258. Redeem 100 points (= ₹50 discount at 2 pts = ₹1)
+  const totals = calculateCartTotals(items, '', 'dine-in', false, undefined, 100);
+  assert.equal(totals.subtotal, 258);
+  assert.equal(totals.pointsDiscount, 50);
+  assert.equal(totals.pointsRedeemed, 100);
+  assert.equal(totals.discount, 50);
+  assert.equal(totals.total, 208);
+  // 5% GST included in taxable (208 * 5 / 105) = 9.90
+  assert.equal(totals.tax, 9.9);
+});
+
+test('computeDashboardMetrics correctly accounts for refunded orders and live revenue', () => {
+  const refundedOrder = {
+    ...INITIAL_ORDERS[0],
+    id: 'REF-ORDER-001',
+    total: 350,
+    paymentStatus: 'refunded' as const,
+    refundAmount: 350,
+  };
+  const metrics = computeDashboardMetrics([refundedOrder], 'Today');
+  assert.equal(metrics.refundedCount, 1);
+  assert.equal(metrics.refundedAmount, 350);
+});
+
+test('CUSTOMER_REVIEWS contains verified real diner reviews with valid ratings and dishes', () => {
+  assert.ok(CUSTOMER_REVIEWS.length >= 6);
+  for (const review of CUSTOMER_REVIEWS) {
+    assert.ok(review.customerName.length > 0);
+    assert.ok(review.rating >= 1 && review.rating <= 5);
+    assert.ok(review.comment.length > 10);
+    assert.ok(review.dishName && review.dishName.length > 0);
+    assert.ok(review.isVerified === true);
+    assert.ok(review.diningMode?.includes('Verified'));
+    assert.ok(Array.isArray(review.tags) && review.tags.length > 0);
+  }
 });

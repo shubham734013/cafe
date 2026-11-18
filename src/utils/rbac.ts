@@ -1,56 +1,55 @@
 import type { StaffRole, StaffScreenId } from '../types/cafe';
 
+const MANAGER_OWNER_SCREENS: ReadonlySet<StaffScreenId> = new Set([
+  'staff-home',
+  'pos-terminal',
+  'pos-orders',
+  'kitchen-display-system',
+  'kitchen-tables',
+  'admin-dashboard',
+  'order-management',
+  'reports-analytics',
+  'table-layout',
+  'inventory-stock',
+  'crm-customers',
+  'loyalty-rewards',
+  'offers-campaigns',
+  'staff-roles',
+  'settings-cafe-profile',
+]);
+
+const KITCHEN_SCREENS: ReadonlySet<StaffScreenId> = new Set([
+  'pos-orders',
+  'kitchen-display-system',
+  'kitchen-tables',
+  'inventory-stock',
+  'order-management',
+  'table-layout',
+]);
+
+const SERVER_SCREENS: ReadonlySet<StaffScreenId> = new Set([
+  'pos-terminal',
+  'order-management',
+  'table-layout',
+  'inventory-stock',
+]);
+
 const ROLE_SCREEN_MAP: Record<StaffRole, ReadonlySet<StaffScreenId>> = {
-  owner: new Set<StaffScreenId>([
-    'pos-terminal',
-    'kitchen-display-system',
-    'admin-dashboard',
-    'order-management',
-    'reports-analytics',
-    'table-layout',
-    'inventory-stock',
-    'crm-customers',
-    'loyalty-rewards',
-    'offers-campaigns',
-    'staff-roles',
-    'settings-cafe-profile',
-  ]),
-  manager: new Set<StaffScreenId>([
-    'pos-terminal',
-    'kitchen-display-system',
-    'admin-dashboard',
-    'order-management',
-    'reports-analytics',
-    'table-layout',
-    'inventory-stock',
-    'crm-customers',
-    'loyalty-rewards',
-    'offers-campaigns',
-    'staff-roles',
-    'settings-cafe-profile',
-  ]),
+  'super-admin': MANAGER_OWNER_SCREENS,
+  owner: MANAGER_OWNER_SCREENS,
+  manager: MANAGER_OWNER_SCREENS,
   cashier: new Set<StaffScreenId>([
     'pos-terminal',
     'kitchen-display-system',
-    'admin-dashboard',
     'order-management',
     'table-layout',
     'inventory-stock',
     'crm-customers',
-    'staff-roles',
   ]),
-  barista: new Set<StaffScreenId>([
-    'kitchen-display-system',
-    'order-management',
-    'inventory-stock',
-    'staff-roles',
-  ]),
-  server: new Set<StaffScreenId>([
-    'pos-terminal',
-    'order-management',
-    'table-layout',
-    'staff-roles',
-  ]),
+  barista: KITCHEN_SCREENS,
+  kitchen: KITCHEN_SCREENS,
+  server: SERVER_SCREENS,
+  waiter: SERVER_SCREENS,
 };
 
 export function canStaffRoleAccessScreen(
@@ -63,13 +62,17 @@ export function canStaffRoleAccessScreen(
 
 export function getDefaultStaffScreenForRole(role: StaffRole | undefined | null): StaffScreenId {
   switch (role) {
+    case 'super-admin':
+    case 'owner':
+    case 'manager':
+      return 'admin-dashboard';
     case 'barista':
+    case 'kitchen':
       return 'kitchen-display-system';
     case 'server':
+    case 'waiter':
       return 'table-layout';
     case 'cashier':
-    case 'manager':
-    case 'owner':
     default:
       return 'pos-terminal';
   }
@@ -77,15 +80,18 @@ export function getDefaultStaffScreenForRole(role: StaffRole | undefined | null)
 
 export function formatStaffRoleLabel(role: StaffRole | undefined | null): string {
   switch (role) {
+    case 'super-admin':
+      return 'Super Admin';
     case 'owner':
-      return 'Owner';
     case 'manager':
-      return 'Manager';
+      return 'Manager / Owner';
     case 'cashier':
       return 'Cashier';
     case 'barista':
-      return 'Barista / KOT';
+    case 'kitchen':
+      return 'Kitchen / Barista';
     case 'server':
+    case 'waiter':
       return 'Server / Floor';
     default:
       return 'Locked';

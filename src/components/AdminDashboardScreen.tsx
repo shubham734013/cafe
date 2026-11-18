@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import { MENU_ITEMS } from '../data/cafeSeedData';
 import {
+  CafeActivityLogItem,
   CafeOrder,
   CafeTable,
   DailyRevenuePoint,
@@ -28,6 +29,7 @@ interface AdminDashboardScreenProps {
   orders: CafeOrder[];
   inventory: InventoryIngredient[];
   tables?: CafeTable[];
+  activityLog?: CafeActivityLogItem[];
   onRestockItem?: (id: string) => void;
   onNavigateStaff: (screen: StaffScreenId) => void;
   onExportCsv: () => void;
@@ -56,14 +58,30 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
   orders,
   inventory,
   tables = [],
+  activityLog = [],
   onRestockItem,
   onNavigateStaff,
   onExportCsv,
 }) => {
   const [dateRange, setDateRange] = useState<DateRangeKey>('Last 7 Days');
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [activityFilter, setActivityFilter] = useState<'all' | 'orders' | 'refunds' | 'stock'>('all');
 
   const metrics = useMemo(() => computeDashboardMetrics(orders, dateRange), [orders, dateRange]);
+  const filteredActivities = useMemo(() => {
+    return activityLog.filter((act) => {
+      if (activityFilter === 'all') return true;
+      if (activityFilter === 'orders')
+        return (
+          act.type === 'order_created' ||
+          act.type === 'order_paid' ||
+          act.type === 'order_advanced'
+        );
+      if (activityFilter === 'refunds') return act.type === 'order_refunded';
+      if (activityFilter === 'stock') return act.type === 'stock_updated';
+      return true;
+    });
+  }, [activityLog, activityFilter]);
   const topItems = useMemo(
     () => [...MENU_ITEMS].sort((a, b) => b.unitsSold - a.unitsSold).slice(0, 4),
     []
@@ -105,22 +123,29 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
   return (
     <div className="flex flex-col w-full pb-6 space-y-4">
       {/* Top Bar: Title & Date Filter */}
-      <div className="flex items-center justify-between pt-1">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
         <div>
-          <h1 className="text-xl text-on-surface font-bold tracking-tight">Dashboard</h1>
-          <p className="text-xs text-on-surface-variant flex items-center gap-1.5 mt-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-tertiary" />
-            Store Overview · Live Updates
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-xl sm:text-2xl font-black text-on-surface tracking-tight">Dashboard</h1>
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-black inline-flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Live Sync Active</span>
+            </span>
+          </div>
+          <p className="text-xs text-on-surface-variant flex items-center gap-2 mt-1">
+            <span className="text-[#FF6422] font-bold">{liveKotCount} KOTs cooking in kitchen</span>
+            <span>·</span>
+            <span>{floorSyncSummary}</span>
           </p>
         </div>
 
-        <div className="relative inline-block text-left">
+        <div className="relative inline-block text-left shrink-0">
           <button
             type="button"
             onClick={() => setDropdownOpen((o) => !o)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-container-high text-on-surface hover:bg-surface-bright active:scale-95 transition-all text-xs font-semibold shadow-sm cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 text-on-surface hover:text-[#FF6422] active:scale-95 transition-all text-xs font-bold shadow-sm cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[16px] text-primary-container">
+            <span className="material-symbols-outlined text-[16px] text-[#FF6422]">
               calendar_month
             </span>
             <span>{dateRange}</span>
@@ -130,7 +155,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
           </button>
 
           {dropdownOpen && (
-            <div className="absolute right-0 mt-2 w-44 rounded-xl bg-surface-container-highest shadow-xl z-30 p-1 space-y-0.5">
+            <div className="absolute right-0 mt-2 w-48 rounded-2xl bg-surface-container border border-outline-variant/20 shadow-2xl z-30 p-1.5 space-y-0.5">
               {DATE_RANGES.map((range) => (
                 <button
                   key={range}
@@ -139,9 +164,9 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
                     setDateRange(range);
                     setDropdownOpen(false);
                   }}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer ${
+                  className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
                     dateRange === range
-                      ? 'text-primary font-semibold bg-surface-container-high/80'
+                      ? 'text-[#FF6422] font-bold bg-[#FF6422]/15'
                       : 'text-on-surface hover:bg-surface-container-high'
                   }`}
                 >
@@ -154,81 +179,86 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
       </div>
 
       {/* KPI Grid (2x2 on mobile, 4 cols on desktop) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        <div className="flex flex-col justify-between p-3.5 rounded-xl bg-surface-container-low shadow-sm min-w-0">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="flex flex-col justify-between p-4 sm:p-5 rounded-3xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 shadow-sm transition-all min-w-0">
           <div className="flex items-center justify-between gap-1">
-            <span className="text-[11px] text-on-surface-variant font-medium truncate">
+            <span className="text-xs text-on-surface-variant font-bold truncate">
               Total Orders
             </span>
-            <span className="w-6 h-6 rounded-lg bg-primary-container/15 flex items-center justify-center text-primary-container shrink-0">
-              <span className="material-symbols-outlined text-[15px]">shopping_bag</span>
+            <span className="w-8 h-8 rounded-full bg-[#FF6422]/15 flex items-center justify-center text-[#FF6422] shrink-0">
+              <span className="material-symbols-outlined text-[18px]">shopping_bag</span>
             </span>
           </div>
-          <div className="mt-2 flex items-baseline justify-between gap-1">
-            <span className="text-lg sm:text-xl text-on-surface font-bold tracking-tight tabular-nums">
+          <div className="mt-3 flex items-baseline justify-between gap-1">
+            <span className="text-lg sm:text-2xl text-on-surface font-black tracking-tight tabular-nums">
               {metrics.totalOrders.toLocaleString('en-IN')}
             </span>
-            <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-tertiary/15 text-tertiary text-[11px] font-semibold shrink-0">
+            <span className="flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-black shrink-0">
               <span className="material-symbols-outlined text-[12px]">north</span>{' '}
               {metrics.ordersDelta}
             </span>
           </div>
         </div>
 
-        <div className="flex flex-col justify-between p-3.5 rounded-xl bg-surface-container-low shadow-sm min-w-0">
+        <div className="flex flex-col justify-between p-4 sm:p-5 rounded-3xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 shadow-sm transition-all min-w-0">
           <div className="flex items-center justify-between gap-1">
-            <span className="text-[11px] text-on-surface-variant font-medium truncate">
-              Revenue
+            <span className="text-xs text-on-surface-variant font-bold truncate">
+              Order Value
             </span>
-            <span className="w-6 h-6 rounded-lg bg-tertiary/15 flex items-center justify-center text-tertiary shrink-0">
-              <span className="material-symbols-outlined text-[15px]">payments</span>
+            <span className="w-8 h-8 rounded-full bg-emerald-500/15 flex items-center justify-center text-emerald-400 shrink-0">
+              <span className="material-symbols-outlined text-[18px]">payments</span>
             </span>
           </div>
-          <div className="mt-2 flex items-baseline justify-between gap-1">
-            <span className="text-base sm:text-xl text-on-surface font-bold tracking-tight tabular-nums truncate">
+          <div className="mt-3 flex items-baseline justify-between gap-1">
+            <span className="text-base sm:text-2xl text-on-surface font-black tracking-tight tabular-nums truncate">
               {formatINR(metrics.totalRevenue)}
             </span>
-            <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-tertiary/15 text-tertiary text-[11px] font-semibold shrink-0">
+            <span className="flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-black shrink-0">
               <span className="material-symbols-outlined text-[12px]">north</span>{' '}
               {metrics.revDelta}
             </span>
           </div>
+          {metrics.refundedCount > 0 && (
+            <p className="text-[10px] text-red-400 font-semibold mt-1 truncate">
+              {metrics.refundedCount} refund ({formatINR(metrics.refundedAmount)}) deducted
+            </p>
+          )}
         </div>
 
-        <div className="flex flex-col justify-between p-3.5 rounded-xl bg-surface-container-low shadow-sm min-w-0">
+        <div className="flex flex-col justify-between p-4 sm:p-5 rounded-3xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 shadow-sm transition-all min-w-0">
           <div className="flex items-center justify-between gap-1">
-            <span className="text-[11px] text-on-surface-variant font-medium truncate">
+            <span className="text-xs text-on-surface-variant font-bold truncate">
               Avg. Order Value
             </span>
-            <span className="w-6 h-6 rounded-lg bg-secondary-container/20 flex items-center justify-center text-secondary shrink-0">
-              <span className="material-symbols-outlined text-[15px]">receipt</span>
+            <span className="w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center text-amber-400 shrink-0">
+              <span className="material-symbols-outlined text-[18px]">receipt</span>
             </span>
           </div>
-          <div className="mt-2 flex items-baseline justify-between gap-1">
-            <span className="text-lg sm:text-xl text-on-surface font-bold tracking-tight tabular-nums">
+          <div className="mt-3 flex items-baseline justify-between gap-1">
+            <span className="text-lg sm:text-2xl text-on-surface font-black tracking-tight tabular-nums">
               {formatINR(metrics.avgOrderValue)}
             </span>
-            <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-tertiary/15 text-tertiary text-[11px] font-semibold shrink-0">
+            <span className="flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-black shrink-0">
               <span className="material-symbols-outlined text-[12px]">north</span>{' '}
               {metrics.aovDelta}
             </span>
           </div>
         </div>
 
-        <div className="flex flex-col justify-between p-3.5 rounded-xl bg-surface-container-low shadow-sm min-w-0">
+        <div className="flex flex-col justify-between p-4 sm:p-5 rounded-3xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 shadow-sm transition-all min-w-0">
           <div className="flex items-center justify-between gap-1">
-            <span className="text-[11px] text-on-surface-variant font-medium truncate">
+            <span className="text-xs text-on-surface-variant font-bold truncate">
               Customers
             </span>
-            <span className="w-6 h-6 rounded-lg bg-primary-fixed-dim/20 flex items-center justify-center text-primary-fixed-dim shrink-0">
-              <span className="material-symbols-outlined text-[15px]">group</span>
+            <span className="w-8 h-8 rounded-full bg-blue-500/15 flex items-center justify-center text-blue-400 shrink-0">
+              <span className="material-symbols-outlined text-[18px]">group</span>
             </span>
           </div>
-          <div className="mt-2 flex items-baseline justify-between gap-1">
-            <span className="text-lg sm:text-xl text-on-surface font-bold tracking-tight tabular-nums">
+          <div className="mt-3 flex items-baseline justify-between gap-1">
+            <span className="text-lg sm:text-2xl text-on-surface font-black tracking-tight tabular-nums">
               {metrics.customers.toLocaleString('en-IN')}
             </span>
-            <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-tertiary/15 text-tertiary text-[11px] font-semibold shrink-0">
+            <span className="flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-black shrink-0">
               <span className="material-symbols-outlined text-[12px]">north</span>{' '}
               {metrics.custDelta}
             </span>
@@ -239,14 +269,14 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
       {/* Desktop 2-col Chart + Top Items */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Sales Overview Chart Card */}
-        <div className="lg:col-span-7 p-4 rounded-xl bg-surface-container-low shadow-md space-y-3">
+        <div className="lg:col-span-7 p-5 rounded-3xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-tertiary animate-pulse shadow-[0_0_8px_rgba(81,231,123,0.8)]" />
-              <h2 className="text-base text-on-surface font-semibold">Sales Overview</h2>
+              <div className="w-2.5 h-2.5 rounded-full bg-[#FF6422] animate-pulse shadow-[0_0_8px_rgba(255,100,34,0.8)]" />
+              <h2 className="text-base text-on-surface font-black">Sales Overview</h2>
             </div>
-            <div className="flex items-center gap-1.5 bg-surface-container-high px-2.5 py-0.5 rounded-full">
-              <span className="text-[11px] text-tertiary font-bold tabular-nums">
+            <div className="flex items-center gap-1.5 bg-[#FF6422]/15 px-3 py-1 rounded-full border border-[#FF6422]/20">
+              <span className="text-[11px] text-[#FF6422] font-black tabular-nums">
                 {metrics.peakLabel}
               </span>
             </div>
@@ -260,9 +290,9 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
             >
               <defs>
                 <linearGradient id="cafeGreenGlow" x1="0%" x2="0%" y1="0%" y2="100%">
-                  <stop offset="0%" stopColor="#51e77b" stopOpacity="0.32" />
-                  <stop offset="60%" stopColor="#51e77b" stopOpacity="0.08" />
-                  <stop offset="100%" stopColor="#51e77b" stopOpacity="0.0" />
+                  <stop offset="0%" stopColor="#FF6422" stopOpacity="0.35" />
+                  <stop offset="60%" stopColor="#FF6422" stopOpacity="0.08" />
+                  <stop offset="100%" stopColor="#FF6422" stopOpacity="0.0" />
                 </linearGradient>
               </defs>
               <g stroke="#3a3430" strokeDasharray="2 3" strokeWidth="0.75">
@@ -319,7 +349,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
               <polyline
                 fill="none"
                 points={polylineStr}
-                stroke="#51e77b"
+                stroke="#FF6422"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth="2.5"
@@ -330,9 +360,9 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
                   key={pt.shortLabel}
                   cx={pt.x}
                   cy={pt.y}
-                  fill={i === chartPoints.length - 1 ? '#51e77b' : '#17120f'}
+                  fill={i === chartPoints.length - 1 ? '#FF6422' : '#17120f'}
                   r={i === chartPoints.length - 1 ? 4.5 : 3}
-                  stroke="#51e77b"
+                  stroke="#FF6422"
                   strokeWidth="2"
                 />
               ))}
@@ -405,9 +435,9 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
         </div>
       </div>
 
-      {/* Daily Revenue Trend (Recharts — Past 7 Days Order Totals) */}
+      {/* Daily Order Value Trend */}
       <section
-        aria-label="Daily Revenue Trend"
+        aria-label="Daily Order Value Trend"
         className="p-4 rounded-xl bg-surface-container-low shadow-md space-y-3"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -417,7 +447,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
             </div>
             <div>
               <h2 className="text-base text-on-surface font-semibold leading-tight">
-                Daily Revenue Trend
+                Daily Order Value Trend
               </h2>
               <p className="text-[11px] text-on-surface-variant">
                 Past 7 Days · Daily Order Totals (INR)
@@ -576,9 +606,15 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
                           >
                             {item.status}
                           </span>
+                          {item.reorderRequested && (
+                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[12px]">notification_important</span>
+                              Kitchen Alert
+                            </span>
+                          )}
                         </div>
                         <p className="text-[11px] text-on-surface-variant truncate">
-                          Supplier: {item.supplier}
+                          {item.reorderNote ? `Note: ${item.reorderNote}` : `Supplier: ${item.supplier}`}
                         </p>
                       </div>
                     </div>
@@ -680,89 +716,135 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
         </div>
       </div>
 
-      {/* CafeOS Management Modules */}
-      <div className="space-y-2">
-        <span className="text-base text-on-surface font-semibold block px-0.5">
-          CafeOS Management Modules
-        </span>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
-          {[
-            {
-              id: 'table-layout' as StaffScreenId,
-              label: 'Table Management',
-              sub: '3 floors · Live status',
-              icon: 'table_restaurant',
-              tone: 'text-primary',
-            },
-            {
-              id: 'inventory-stock' as StaffScreenId,
-              label: 'Inventory & Stock',
-              sub: 'Stock levels & vendors',
-              icon: 'inventory_2',
-              tone: 'text-error',
-            },
-            {
-              id: 'crm-customers' as StaffScreenId,
-              label: 'CRM & Customers',
-              sub: 'VIP segments & notes',
-              icon: 'groups',
-              tone: 'text-tertiary',
-            },
-            {
-              id: 'loyalty-rewards' as StaffScreenId,
-              label: 'Loyalty & Rewards',
-              sub: 'Points, tiers & ledger',
-              icon: 'stars',
-              tone: 'text-primary',
-            },
-            {
-              id: 'offers-campaigns' as StaffScreenId,
-              label: 'Offers & Campaigns',
-              sub: 'Promos & broadcasts',
-              icon: 'local_offer',
-              tone: 'text-secondary',
-            },
-            {
-              id: 'staff-roles' as StaffScreenId,
-              label: 'Staff & Roles',
-              sub: 'Shifts & access PINs',
-              icon: 'badge',
-              tone: 'text-tertiary',
-            },
-            {
-              id: 'reports-analytics' as StaffScreenId,
-              label: 'Reports & Analytics',
-              sub: 'Revenue & staff metrics',
-              icon: 'insights',
-              tone: 'text-primary',
-            },
-            {
-              id: 'settings-cafe-profile' as StaffScreenId,
-              label: 'Settings & Profile',
-              sub: 'GSTIN, hours & printers',
-              icon: 'settings',
-              tone: 'text-secondary',
-            },
-          ].map((mod) => (
-            <button
-              key={mod.id}
-              type="button"
-              onClick={() => onNavigateStaff(mod.id)}
-              className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-container-low hover:bg-surface-container-high text-left transition-all active:scale-[0.98] cursor-pointer"
-            >
-              <div
-                className={`w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center shrink-0 ${mod.tone}`}
+      {/* Live Activity & Audit Trail */}
+      <section
+        aria-label="Live Activity & Audit Trail"
+        className="p-4 rounded-xl bg-surface-container-low shadow-md space-y-3"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-tertiary/15 text-tertiary flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[18px]">history</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
+                <h2 className="text-base text-on-surface font-semibold leading-tight">
+                  Live Activity &amp; Audit Trail
+                </h2>
+              </div>
+              <p className="text-[11px] text-on-surface-variant">
+                Real-time cafe operations, order progression, refunds &amp; stock events
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {(
+              [
+                { id: 'all', label: 'All Events' },
+                { id: 'orders', label: 'Orders' },
+                { id: 'refunds', label: 'Refunds' },
+                { id: 'stock', label: 'Stock' },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActivityFilter(tab.id)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  activityFilter === tab.id
+                    ? 'bg-primary text-on-primary shadow-sm'
+                    : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
+                }`}
               >
-                <span className="material-symbols-outlined text-[19px]">{mod.icon}</span>
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-on-surface truncate">{mod.label}</p>
-                <p className="text-[11px] text-on-surface-variant truncate">{mod.sub}</p>
-              </div>
-            </button>
-          ))}
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+
+        {filteredActivities.length === 0 ? (
+          <div className="p-8 text-center rounded-xl bg-surface-container/50 border border-outline-variant/10 text-on-surface-variant text-xs">
+            <span className="material-symbols-outlined text-[28px] opacity-40 mb-1 block">
+              notifications_off
+            </span>
+            No recent {activityFilter === 'all' ? '' : activityFilter} activities recorded.
+          </div>
+        ) : (
+          <div className="divide-y divide-outline-variant/15 max-h-80 overflow-y-auto pr-1">
+            {filteredActivities.map((act) => {
+              const iconMap: Record<string, string> = {
+                order_created: 'add_shopping_cart',
+                order_paid: 'payments',
+                order_refunded: 'currency_exchange',
+                order_advanced: 'sync_alt',
+                stock_updated: 'inventory_2',
+                feedback_received: 'star',
+              };
+              const colorMap: Record<string, string> = {
+                order_created: 'text-primary bg-primary/10',
+                order_paid: 'text-tertiary bg-tertiary/10',
+                order_refunded: 'text-error bg-error/10',
+                order_advanced: 'text-secondary bg-secondary/10',
+                stock_updated: 'text-primary-container bg-primary-container/10',
+                feedback_received: 'text-amber-400 bg-amber-400/10',
+              };
+              return (
+                <div
+                  key={act.id}
+                  className="py-2.5 flex items-start justify-between gap-3 first:pt-1 last:pb-1"
+                >
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                        colorMap[act.type] || 'text-on-surface bg-surface-container'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">
+                        {iconMap[act.type] || 'info'}
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-semibold text-on-surface truncate">
+                          {act.title}
+                        </span>
+                        {(act.actorName || (act as { staffName?: string }).staffName) && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface-container-high text-on-surface-variant">
+                            {act.actorName || (act as { staffName?: string }).staffName}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant truncate">
+                        {act.description}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    {act.amount !== undefined && (
+                      <span
+                        className={`text-xs font-bold block tabular-nums ${
+                          act.type === 'order_refunded' ? 'text-error' : 'text-tertiary'
+                        }`}
+                      >
+                        {act.type === 'order_refunded' ? '-' : ''}
+                        {formatINR(act.amount)}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-on-surface-variant/80">
+                      {new Date(act.timestamp).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {/* Live Pulse Barista Operational Banner */}
       <div className="p-3.5 rounded-xl bg-surface-container-low flex items-center justify-between gap-2">

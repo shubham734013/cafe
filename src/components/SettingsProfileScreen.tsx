@@ -4,14 +4,11 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { CAFE_ASSETS } from '../data/cafeSeedData';
 import { cafeSettingsSchema } from '../shared/schemas';
-import type { YoupiGatewayConfigInfo } from '../hooks/useCafeApi';
-import { isDemoPlaceholderVpa, isValidUpiVpa } from '../payments/upiUri';
 import { CafeSettings } from '../types/cafe';
 import { CafeImage } from './CafeImage';
 
 export type SettingsTab =
   | 'Cafe Profile'
-  | 'Payments'
   | 'Taxes & Charges'
   | 'Roles'
   | 'Alerts'
@@ -19,7 +16,6 @@ export type SettingsTab =
 
 interface SettingsProfileScreenProps {
   settings: CafeSettings;
-  youpiConfig?: YoupiGatewayConfigInfo;
   initialTab?: SettingsTab;
   onSaveSettings: (next: CafeSettings) => Promise<boolean> | boolean | void;
   onResetDefaults: () => Promise<boolean> | boolean | void;
@@ -28,7 +24,6 @@ interface SettingsProfileScreenProps {
 
 const TABS: { id: SettingsTab; icon: string }[] = [
   { id: 'Cafe Profile', icon: 'storefront' },
-  { id: 'Payments', icon: 'payments' },
   { id: 'Taxes & Charges', icon: 'percent' },
   { id: 'Roles', icon: 'badge' },
   { id: 'Alerts', icon: 'notifications' },
@@ -45,7 +40,6 @@ type SavePhase =
 
 export const SettingsProfileScreen: React.FC<SettingsProfileScreenProps> = ({
   settings,
-  youpiConfig,
   initialTab = 'Cafe Profile',
   onSaveSettings,
   onResetDefaults,
@@ -68,9 +62,6 @@ export const SettingsProfileScreen: React.FC<SettingsProfileScreenProps> = ({
   }, [form, settings]);
 
   const draft = form.watch();
-  const effectiveVpa = (draft.upiVpa || '').trim() || youpiConfig?.payeeVpa || 'sethsawariya@okhdfcbank';
-  const vpaIsDemo = isDemoPlaceholderVpa(effectiveVpa);
-  const vpaLooksValid = !draft.upiVpa?.trim() || isValidUpiVpa(draft.upiVpa.trim());
 
   const handleSave = form.handleSubmit(async (values) => {
     if (savePhase.status === 'saving') return;
@@ -332,99 +323,6 @@ export const SettingsProfileScreen: React.FC<SettingsProfileScreenProps> = ({
 
         {/* Right Column: Operations, Tax, Hardware & Save Actions */}
         <div className="lg:col-span-5 space-y-4">
-          {/* UPI & YouPI-PG Receiving VPA Configuration */}
-          <div
-            className={`rounded-xl bg-surface-container-low p-4 shadow-md space-y-3 border ${
-              activeTab === 'Payments' ? 'border-primary/50 ring-1 ring-primary/20' : 'border-transparent'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-[20px]">
-                  qr_code_2
-                </span>
-                <h3 className="text-sm font-bold text-on-surface">UPI &amp; YouPI-PG Gateway</h3>
-              </div>
-              <span
-                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                  vpaIsDemo
-                    ? 'bg-primary-container/25 text-primary'
-                    : 'bg-tertiary-container/20 text-tertiary'
-                }`}
-              >
-                {vpaIsDemo ? 'Demo VPA' : 'Live UPI VPA'}
-              </span>
-            </div>
-
-            {vpaIsDemo && (
-              <div className="rounded-lg bg-primary-container/15 border border-primary/30 p-2.5 text-[11px] text-on-surface">
-                <span className="font-bold text-primary">Important:</span> Enter your real bank/merchant UPI ID below before scanning QR codes with GPay, PhonePe, or Paytm — the placeholder VPA will fail NPCI verification.
-              </div>
-            )}
-
-            <div>
-              <label className="block text-[11px] text-on-surface-variant mb-1 font-medium">
-                Receiving UPI ID (VPA)
-              </label>
-              <div className="flex items-center px-3 py-2.5 rounded-lg bg-surface-container-high focus-within:bg-surface-container-highest transition-colors">
-                <span className="material-symbols-outlined text-primary text-[18px] mr-2">
-                  alternate_email
-                </span>
-                <input
-                  type="text"
-                  aria-label="Receiving UPI ID (VPA)"
-                  placeholder="yourname@okhdfcbank or shop@paytm"
-                  {...form.register('upiVpa')}
-                  className="bg-transparent border-0 outline-none text-on-surface text-sm font-mono w-full"
-                />
-              </div>
-              {form.formState.errors.upiVpa ? (
-                <p className="text-[11px] text-error mt-1">
-                  {form.formState.errors.upiVpa.message}
-                </p>
-              ) : !vpaLooksValid ? (
-                <p className="text-[11px] text-error mt-1">
-                  Enter a valid UPI ID (e.g., merchant@okicici or 9876543210@ybl)
-                </p>
-              ) : (
-                <p className="text-[11px] text-outline mt-1">
-                  Active QR VPA: <span className="font-mono text-on-surface-variant">{effectiveVpa}</span>
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-[11px] text-on-surface-variant mb-1 font-medium">
-                UPI Payee Display Name
-              </label>
-              <div className="flex items-center px-3 py-2.5 rounded-lg bg-surface-container-high focus-within:bg-surface-container-highest transition-colors">
-                <span className="material-symbols-outlined text-outline text-[18px] mr-2">
-                  badge
-                </span>
-                <input
-                  type="text"
-                  aria-label="UPI Payee Display Name"
-                  placeholder="Seth Sawariya Cafe"
-                  {...form.register('upiPayeeName')}
-                  className="bg-transparent border-0 outline-none text-on-surface text-sm w-full"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-0.5 text-[11px]">
-              <div className="p-2.5 rounded-lg bg-surface-container-high">
-                <span className="text-outline block">Engine Mode</span>
-                <span className="font-mono font-semibold text-on-surface">
-                  {youpiConfig?.mode === 'youpi-live' ? 'YouPI-PG Live' : 'Local Sandbox'}
-                </span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-surface-container-high">
-                <span className="text-outline block">Webhook Path</span>
-                <span className="font-mono font-semibold text-on-surface">/api/webhooks/youpi</span>
-              </div>
-            </div>
-          </div>
-
           <div className="rounded-xl bg-surface-container-low p-4 shadow-md space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
