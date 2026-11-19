@@ -461,10 +461,18 @@ export default function App() {
   );
 
   const handlePosCheckout = useCallback(
-    async (selectedPaymentMode: PaymentMode = 'cash', customerId?: string) => {
+    async (
+      selectedPaymentMode: PaymentMode | 'pay_later' = 'cash',
+      customerId?: string,
+      cookingNote = ''
+    ) => {
       if (posCart.length === 0 || checkoutInFlightRef.current) return;
       checkoutInFlightRef.current = true;
       try {
+        const isPaid = selectedPaymentMode !== 'pay_later';
+        const effectivePaymentMode: PaymentMode =
+          selectedPaymentMode === 'pay_later' ? 'cash' : selectedPaymentMode;
+
         const signature = JSON.stringify({
           serviceMode,
           selectedTable,
@@ -480,18 +488,21 @@ export default function App() {
           deliveryPartner: serviceMode === 'delivery' ? 'Direct Delivery' : undefined,
           items: posCart,
           couponCode: '',
-          cookingNote: '',
-          isPosTerminal: true,
-          paymentMode: selectedPaymentMode,
+          cookingNote: cookingNote.trim(),
+          isPosTerminal: isPaid,
+          paymentMode: effectivePaymentMode,
           customerId,
           idempotencyKey,
         });
         posAttemptKeyRef.current = null;
         setLastCompletedPosOrder(res.order);
         clearPosCart();
-        showToast(`POS Order #${res.order.id} dispatched to KOT (${res.order.kotNumber}).`);
+        const payStatusLabel = isPaid
+          ? `Paid via ${effectivePaymentMode.toUpperCase()}`
+          : 'Unpaid (Pay Later)';
+        showToast(`Counter order #${res.order.id} placed · ${payStatusLabel} (₹${res.order.total})`);
       } catch (err) {
-        showErrorToast(err, 'Failed to punch POS order');
+        showErrorToast(err, 'Failed to punch counter order');
       } finally {
         checkoutInFlightRef.current = false;
       }

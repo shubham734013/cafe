@@ -26,7 +26,11 @@ interface PosTerminalScreenProps {
   onAddPosItem: (item: MenuItem) => void;
   onUpdatePosQty: (menuItemId: string, delta: number) => void;
   onClearPosCart: () => void;
-  onCompletePosOrder: (paymentMode?: PaymentMode, customerId?: string) => void;
+  onCompletePosOrder: (
+    paymentMode?: PaymentMode | 'pay_later',
+    customerId?: string,
+    cookingNote?: string
+  ) => void;
   onToggleItemAvailability?: (menuItemId: string) => void;
   onQuickAddCustomer?: (name: string, phone: string) => Promise<void>;
   onPrintReceipt?: (order: CafeOrder) => void;
@@ -62,7 +66,8 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<MenuCategory>('All');
-  const [tenderType, setTenderType] = useState<PaymentMode>('cash');
+  const [tenderType, setTenderType] = useState<PaymentMode | 'pay_later'>('cash');
+  const [cookingNote, setCookingNote] = useState('');
   const [manageStockMode, setManageStockMode] = useState(false);
 
   // Customer Loyalty lookup state
@@ -99,7 +104,8 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
       } else if (event.key === 'F9') {
         event.preventDefault();
         if (posCart.length > 0 && !isSubmitting) {
-          onCompletePosOrder(tenderType, matchedCustomer?.id);
+          onCompletePosOrder(tenderType, matchedCustomer?.id, cookingNote);
+          setCookingNote('');
         }
       } else if (event.key === 'F8') {
         event.preventDefault();
@@ -111,6 +117,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
+    cookingNote,
     isSubmitting,
     lastCompletedOrder,
     matchedCustomer?.id,
@@ -472,24 +479,36 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
             </div>
           </div>
 
-          {/* Payment Method Selector */}
+          {/* Cooking Instructions */}
+          <div className="pt-1">
+            <input
+              type="text"
+              value={cookingNote}
+              onChange={(e) => setCookingNote(e.target.value)}
+              placeholder="Cooking note (e.g. Less spicy, extra hot)..."
+              className="w-full bg-surface-container-high rounded-lg px-2.5 py-1.5 text-xs text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+
+          {/* Payment Method Selector (Paid By) */}
           <div className="flex flex-col gap-1.5 pt-1">
             <span className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
-              Payment Mode:
+              Paid By (Payment Mode):
             </span>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
               {(
                 [
                   ['cash', '💵 Cash'],
-                  ['card', '💳 Card Swipe'],
                   ['upi', '⚡ UPI QR'],
+                  ['card', '💳 Card Swipe'],
+                  ['pay_later', '⏳ Pay Later'],
                 ] as const
               ).map(([mode, label]) => (
                 <button
                   key={mode}
                   type="button"
                   onClick={() => setTenderType(mode)}
-                  className={`rounded-lg py-2 text-xs font-bold transition-all cursor-pointer ${
+                  className={`rounded-lg py-2 px-1 text-center text-xs font-bold transition-all cursor-pointer ${
                     tenderType === mode
                       ? 'bg-primary text-on-primary shadow-sm ring-1 ring-primary'
                       : 'bg-surface-container-high text-on-surface hover:bg-surface-bright'
@@ -506,7 +525,10 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
             type="button"
             data-testid="pos-complete-order-btn"
             disabled={posCart.length === 0 || isSubmitting}
-            onClick={() => onCompletePosOrder(tenderType, matchedCustomer?.id)}
+            onClick={() => {
+              onCompletePosOrder(tenderType, matchedCustomer?.id, cookingNote);
+              setCookingNote('');
+            }}
             className="h-12 w-full mt-1 rounded-xl bg-primary hover:brightness-110 text-xs font-black text-on-primary disabled:opacity-40 flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all"
           >
             {isSubmitting ? (
@@ -515,7 +537,11 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
               <span className="flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[18px]">local_shipping</span>
                 <span>
-                  Send Order to Kitchen · {tenderType.toUpperCase()} (F9)
+                  Punch Order ·{' '}
+                  {tenderType === 'pay_later'
+                    ? 'UNPAID (PAY LATER)'
+                    : `PAID (${tenderType.toUpperCase()})`}{' '}
+                  (F9)
                 </span>
               </span>
             )}
