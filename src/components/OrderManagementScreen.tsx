@@ -87,9 +87,6 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
       <header className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-on-surface">Order Management</h1>
-          <p className="text-xs text-on-surface-variant">
-            Track order progress and kitchen status.
-          </p>
         </div>
         <div className="flex gap-2">
           {onRefresh && (

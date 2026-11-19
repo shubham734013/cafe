@@ -18,6 +18,7 @@ import type {
   LoyaltyRule,
   MenuItem,
   OrderStatus,
+  PaymentMode,
   PointLedgerEntry,
   PromoCampaign,
   StaffMember,
@@ -641,6 +642,10 @@ export class CafeStore {
       orders: [],
       tables: [],
       inventory: [],
+      stockMovements: [],
+      inventoryBatches: [],
+      purchaseOrders: [],
+      stockCounts: [],
       customers: [],
       loyaltyRules: [],
       pointLedger: [],
@@ -656,10 +661,6 @@ export class CafeStore {
       recipes: clone(INITIAL_RECIPES),
       stockDeductedOrderIds: [],
       processedPaymentEvents: [],
-      stockMovements: [],
-      inventoryBatches: [],
-      purchaseOrders: [],
-      stockCounts: [],
     };
   }
 
@@ -1160,15 +1161,21 @@ export class CafeStore {
     });
   }
 
-  public markOrderPaidAtCounter(orderId: string, staffName?: string): CafeOrder | null {
+  public markOrderPaidAtCounter(
+    orderId: string,
+    staffName?: string,
+    paymentMode: PaymentMode = 'cash'
+  ): CafeOrder | null {
     const order = this.ordersById.get(orderId);
     if (!order) return null;
     order.paymentStatus = 'paid';
-    order.paymentRef = `Counter Settlement · Received by ${staffName || 'Staff'}`;
+    order.paymentMode = paymentMode;
+    const modeLabel = paymentMode === 'cash' ? 'Cash' : paymentMode === 'card' ? 'Card Swipe' : 'UPI';
+    order.paymentRef = `Counter Settlement (${modeLabel}) · Received by ${staffName || 'Staff'}`;
     this.recordActivity({
       type: 'order_paid',
       title: `Order #${order.id} Paid`,
-      description: `KOT ${order.kotNumber} settled at counter (₹${order.total})`,
+      description: `Order ${order.kotNumber} settled at counter via ${modeLabel} (₹${order.total})`,
       actorName: staffName || 'Staff',
       actorRole: 'cashier',
       severity: 'success',

@@ -278,6 +278,11 @@ export const orderRefundSchema = z.object({
   reason: z.string().trim().min(2, 'Enter refund reason').max(200).default('Customer requested refund'),
 });
 
+export const orderPayCounterSchema = z.object({
+  paymentMode: z.enum(['cash', 'card', 'upi']).optional().default('cash'),
+  note: z.string().trim().max(160).optional(),
+});
+
 export const requestReorderSchema = z.object({
   id: z.string().trim().min(1, 'Ingredient ID is required'),
   note: z.string().trim().max(200).optional(),

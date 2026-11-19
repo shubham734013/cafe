@@ -11,12 +11,16 @@ import {
 import {
   AlertTriangle,
   ArrowUpRight,
+  Banknote,
   Calendar,
+  Check,
   CheckCircle2,
   ChefHat,
   ChevronDown,
   Clock,
   Coffee,
+  Coins,
+  CreditCard,
   DollarSign,
   Download,
   Eye,
@@ -24,16 +28,20 @@ import {
   Filter,
   Flame,
   LayoutDashboard,
+  Minus,
   Package,
   Plus,
+  QrCode,
   Receipt,
   RotateCcw,
   Search,
   ShoppingBag,
   Sparkles,
+  Trash2,
   TrendingUp,
   Users,
   UtensilsCrossed,
+  Wallet,
   X,
 } from 'lucide-react';
 import {
@@ -44,15 +52,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { z } from 'zod';
-import type { addMenuItemSchema } from '../shared/schemas';
+import type { addMenuItemSchema, createOrderSchema } from '../shared/schemas';
 import {
   CafeActivityLogItem,
   CafeOrder,
   CafeTable,
+  CartItem,
   CustomerProfile,
   DateRangeKey,
   InventoryIngredient,
   MenuItem,
+  ServiceMode,
   StaffMember,
   StaffScreenId,
 } from '../types/cafe';
@@ -77,6 +87,11 @@ interface AdminDashboardScreenProps {
   onExportCsv: () => void;
   onAddMenuItem?: (input: z.infer<typeof addMenuItemSchema>) => Promise<void>;
   onToggleMenuAvailability?: (id: string) => Promise<void>;
+  onCreateCounterOrder?: (
+    input: z.infer<typeof createOrderSchema>,
+    paidBy?: 'cash' | 'card' | 'upi' | 'pay_later'
+  ) => Promise<CafeOrder>;
+  onPayCounterOrder?: (orderId: string, paymentMode?: 'cash' | 'card' | 'upi') => Promise<void>;
 }
 
 const DATE_RANGES: DateRangeKey[] = ['Today', 'Last 7 Days', 'This Month', 'Quarter to Date'];
@@ -114,6 +129,8 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
   onExportCsv,
   onAddMenuItem,
   onToggleMenuAvailability,
+  onCreateCounterOrder,
+  onPayCounterOrder,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'menu'>('overview');
   const [dateRange, setDateRange] = useState<DateRangeKey>('Last 7 Days');
@@ -136,6 +153,129 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
   const [newProductStation, setNewProductStation] = useState<'Barista' | 'Grill' | 'Fryer' | 'Cold Bar' | 'Kitchen'>('Kitchen');
   const [newProductDescription, setNewProductDescription] = useState('');
   const [newProductImageUrl, setNewProductImageUrl] = useState(PRESET_IMAGES[0].url);
+
+  // Order on Counter Modal State
+  const [counterModalOpen, setCounterModalOpen] = useState(false);
+  const [counterServiceMode, setCounterServiceMode] = useState<ServiceMode>('dine-in');
+  const [counterTableNumber, setCounterTableNumber] = useState<string>('T1');
+  const [counterCustomerName, setCounterCustomerName] = useState('');
+  const [counterCustomerPhone, setCounterCustomerPhone] = useState('');
+  const [counterCookingNote, setCounterCookingNote] = useState('');
+  const [counterPaidBy, setCounterPaidBy] = useState<'cash' | 'upi' | 'card' | 'pay_later'>('cash');
+  const [counterSearch, setCounterSearch] = useState('');
+  const [counterCategory, setCounterCategory] = useState<string>('All');
+  const [counterCart, setCounterCart] = useState<Array<{ item: MenuItem; quantity: number }>>([]);
+  const [submittingCounterOrder, setSubmittingCounterOrder] = useState(false);
+
+  // Settle Payment Modal State (for unpaid counter orders)
+  const [settleOrder, setSettleOrder] = useState<CafeOrder | null>(null);
+  const [settlePaidBy, setSettlePaidBy] = useState<'cash' | 'upi' | 'card'>('cash');
+  const [submittingSettle, setSubmittingSettle] = useState(false);
+
+  const unpaidCounterOrders = useMemo(() => {
+    return orders.filter((o) => o.paymentStatus === 'unpaid' && o.status !== 'cancelled');
+  }, [orders]);
+
+  const counterFilteredMenu = useMemo(() => {
+    return menuItems.filter((item) => {
+      const q = counterSearch.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        item.name.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q);
+      const matchesCat = counterCategory === 'All' || item.category === counterCategory;
+      return matchesSearch && matchesCat && item.isAvailable !== false;
+    });
+  }, [menuItems, counterSearch, counterCategory]);
+
+  const handleAddToCounterCart = (item: MenuItem) => {
+    setCounterCart((prev) => {
+      const idx = prev.findIndex((p) => p.item.id === item.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], quantity: next[idx].quantity + 1 };
+        return next;
+      }
+      return [...prev, { item, quantity: 1 }];
+    });
+  };
+
+  const handleUpdateCounterQty = (itemId: string, delta: number) => {
+    setCounterCart((prev) => {
+      return prev
+        .map((p) => {
+          if (p.item.id === itemId) {
+            return { ...p, quantity: p.quantity + delta };
+          }
+          return p;
+        })
+        .filter((p) => p.quantity > 0);
+    });
+  };
+
+  const counterSubtotal = useMemo(() => {
+    return counterCart.reduce((sum, line) => sum + line.item.price * line.quantity, 0);
+  }, [counterCart]);
+
+  const counterTax = useMemo(() => {
+    return Math.round(counterSubtotal * 0.05);
+  }, [counterSubtotal]);
+
+  const counterTotal = counterSubtotal + counterTax;
+
+  const handleCreateCounterOrderSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (counterCart.length === 0 || !onCreateCounterOrder) return;
+    setSubmittingCounterOrder(true);
+    try {
+      const items: CartItem[] = counterCart.map((c) => ({
+        menuItemId: c.item.id,
+        name: c.item.name,
+        price: c.item.price,
+        quantity: c.quantity,
+        station: c.item.station,
+        imageUrl: c.item.imageUrl,
+        note: '',
+      }));
+
+      await onCreateCounterOrder(
+        {
+          outletId: 'seth-sawariya-main',
+          serviceMode: counterServiceMode,
+          tableNumber: counterServiceMode === 'dine-in' ? counterTableNumber : undefined,
+          items,
+          couponCode: '',
+          cookingNote: counterCookingNote.trim(),
+          paymentMode: counterPaidBy === 'pay_later' ? 'cash' : counterPaidBy,
+          isPosTerminal: counterPaidBy !== 'pay_later',
+        },
+        counterPaidBy
+      );
+
+      setCounterCart([]);
+      setCounterCustomerName('');
+      setCounterCustomerPhone('');
+      setCounterCookingNote('');
+      setCounterModalOpen(false);
+    } catch {
+      // Handled by toast
+    } finally {
+      setSubmittingCounterOrder(false);
+    }
+  };
+
+  const handleSettleSubmit = async () => {
+    if (!settleOrder || !onPayCounterOrder) return;
+    setSubmittingSettle(true);
+    try {
+      await onPayCounterOrder(settleOrder.id, settlePaidBy);
+      setSettleOrder(null);
+    } catch {
+      // Handled by toast
+    } finally {
+      setSubmittingSettle(false);
+    }
+  };
 
   // Computed metrics
   const metrics = useMemo(() => computeDashboardMetrics(orders, dateRange), [orders, dateRange]);
@@ -264,6 +404,18 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
               <span>Menu &amp; Products</span>
             </button>
           </div>
+
+          {/* Order on Counter Button */}
+          {onCreateCounterOrder && (
+            <button
+              type="button"
+              onClick={() => setCounterModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer"
+            >
+              <ShoppingBag className="w-4 h-4" />
+              <span>Order on Counter</span>
+            </button>
+          )}
 
           {/* Add Product Button */}
           <button
@@ -589,43 +741,104 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
                 </div>
               </div>
 
+              {/* Unsettled Counter Bills Banner */}
+              {unpaidCounterOrders.length > 0 && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2">
+                    <Coins className="w-4 h-4 text-amber-400 shrink-0" />
+                    <div>
+                      <p className="text-xs font-bold text-amber-200">
+                        {unpaidCounterOrders.length} Pending Counter {unpaidCounterOrders.length === 1 ? 'Bill' : 'Bills'}
+                      </p>
+                      <p className="text-[11px] text-amber-400/80">
+                        Total: {formatINR(unpaidCounterOrders.reduce((s, o) => s + o.total, 0))}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                    {unpaidCounterOrders.slice(0, 3).map((unpaid) => (
+                      <div
+                        key={unpaid.id}
+                        className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900 border border-amber-500/30 text-xs shrink-0"
+                      >
+                        <span className="font-bold text-slate-200">{unpaid.kotNumber}</span>
+                        <span className="text-amber-400 font-semibold">{formatINR(unpaid.total)}</span>
+                        {onPayCounterOrder && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSettleOrder(unpaid);
+                              setSettlePaidBy('cash');
+                            }}
+                            className="px-2 py-0.5 rounded bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-bold transition-all cursor-pointer shadow-sm"
+                          >
+                            Paid by...
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {filteredActivities.length === 0 ? (
                 <div className="py-12 text-center text-xs text-slate-500">
                   No {activityFilter} recorded for this timeframe.
                 </div>
               ) : (
                 <div className="divide-y divide-slate-800/60 max-h-72 overflow-y-auto pr-1">
-                  {filteredActivities.slice(0, 15).map((act) => (
-                    <div key={act.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div
-                          className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                            act.type === 'order_paid'
-                              ? 'bg-emerald-500/10 text-emerald-400'
-                              : act.type === 'order_refunded'
-                              ? 'bg-rose-500/10 text-rose-400'
-                              : act.type === 'stock_updated'
-                              ? 'bg-amber-500/10 text-amber-400'
-                              : 'bg-sky-500/10 text-sky-400'
-                          }`}
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
+                  {filteredActivities.slice(0, 15).map((act) => {
+                    const matchedUnpaid = act.orderId
+                      ? unpaidCounterOrders.find((u) => u.id === act.orderId)
+                      : undefined;
+                    return (
+                      <div key={act.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                              act.type === 'order_paid'
+                                ? 'bg-emerald-500/10 text-emerald-400'
+                                : act.type === 'order_refunded'
+                                ? 'bg-rose-500/10 text-rose-400'
+                                : act.type === 'stock_updated'
+                                ? 'bg-amber-500/10 text-amber-400'
+                                : 'bg-sky-500/10 text-sky-400'
+                            }`}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-200 truncate">{act.title}</p>
+                            <p className="text-[11px] text-slate-400 truncate">{act.description}</p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-semibold text-slate-200 truncate">{act.title}</p>
-                          <p className="text-[11px] text-slate-400 truncate">{act.description}</p>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {matchedUnpaid && onPayCounterOrder && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSettleOrder(matchedUnpaid);
+                                setSettlePaidBy('cash');
+                              }}
+                              className="px-2 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold transition-colors cursor-pointer"
+                            >
+                              Paid by...
+                            </button>
+                          )}
+                          <span className="text-[11px] text-slate-500 font-medium">
+                            {act.timestamp
+                              ? new Date(act.timestamp).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : 'Just now'}
+                          </span>
                         </div>
                       </div>
-                      <span className="text-[11px] text-slate-500 shrink-0 font-medium">
-                        {act.timestamp
-                          ? new Date(act.timestamp).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : 'Just now'}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -954,6 +1167,457 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
               </button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Order on Counter Dialog */}
+      <Dialog open={counterModalOpen} onOpenChange={setCounterModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[92vh] overflow-hidden flex flex-col rounded-3xl bg-slate-900 border border-slate-800 p-0 shadow-2xl text-slate-100">
+          <DialogHeader className="p-5 pb-3 border-b border-slate-800 shrink-0">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-base sm:text-lg font-bold text-slate-100 flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
+                  <ShoppingBag className="w-4 h-4" />
+                </div>
+                <span>Order on Counter</span>
+              </DialogTitle>
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-800 text-slate-300">
+                Direct Walk-in Order
+              </span>
+            </div>
+            <DialogDescription className="text-xs text-slate-400 mt-1">
+              Select items from the menu, choose service mode, and record payment mode manually.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateCounterOrderSubmit} className="flex-1 flex flex-col md:grid md:grid-cols-12 overflow-hidden min-h-0">
+            {/* Left Column: Menu & Items Selector (7 cols) */}
+            <div className="md:col-span-7 p-4 border-b md:border-b-0 md:border-r border-slate-800 overflow-y-auto space-y-3 max-h-[48vh] md:max-h-[72vh]">
+              {/* Service Mode & Table / Customer Inputs */}
+              <div className="grid grid-cols-2 gap-2 bg-slate-950 p-2.5 rounded-2xl border border-slate-800/80">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                    Service Type
+                  </label>
+                  <div className="grid grid-cols-2 gap-1 p-0.5 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setCounterServiceMode('dine-in')}
+                      className={`py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                        counterServiceMode === 'dine-in'
+                          ? 'bg-[#FF6422] text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Dine-In
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCounterServiceMode('takeaway')}
+                      className={`py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                        counterServiceMode === 'takeaway'
+                          ? 'bg-[#FF6422] text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Takeaway
+                    </button>
+                  </div>
+                </div>
+
+                {counterServiceMode === 'dine-in' ? (
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                      Table Number
+                    </label>
+                    <select
+                      value={counterTableNumber}
+                      onChange={(e) => setCounterTableNumber(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-100 font-semibold focus:outline-none focus:border-[#FF6422]"
+                    >
+                      {['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'Patio 1', 'Patio 2'].map(
+                        (t) => (
+                          <option key={t} value={t}>
+                            Table {t}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                      Customer Name (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={counterCustomerName}
+                      onChange={(e) => setCounterCustomerName(e.target.value)}
+                      placeholder="e.g. Rahul"
+                      className="w-full px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-100 focus:outline-none focus:border-[#FF6422]"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Menu Search & Category Filter */}
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={counterSearch}
+                    onChange={(e) => setCounterSearch(e.target.value)}
+                    placeholder="Search coffee, burger, pizza..."
+                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-[#FF6422]"
+                  />
+                </div>
+
+                <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                  {['All', ...CATEGORIES].map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setCounterCategory(cat)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-medium shrink-0 transition-colors cursor-pointer ${
+                        counterCategory === cat
+                          ? 'bg-[#FF6422] text-white font-bold'
+                          : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Menu Items Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {counterFilteredMenu.slice(0, 18).map((item) => {
+                  const inCartLine = counterCart.find((p) => p.item.id === item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => handleAddToCounterCart(item)}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between select-none ${
+                        inCartLine
+                          ? 'bg-slate-900 border-emerald-500/50 ring-1 ring-emerald-500/30'
+                          : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              item.isVeg ? 'bg-emerald-400' : 'bg-rose-400'
+                            }`}
+                          />
+                          {inCartLine && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                              {inCartLine.quantity} in order
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs font-bold text-slate-200 line-clamp-1">{item.name}</p>
+                        <p className="text-[10px] text-slate-500">{item.category}</p>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-900">
+                        <span className="text-xs font-bold text-slate-100 tabular-nums">
+                          ₹{item.price}
+                        </span>
+                        <div className="w-5 h-5 rounded-md bg-slate-800 text-slate-200 hover:bg-[#FF6422] hover:text-white flex items-center justify-center transition-colors">
+                          <Plus className="w-3 h-3" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Right Column: Order Bill & Payment (5 cols) */}
+            <div className="md:col-span-5 p-4 flex flex-col justify-between overflow-y-auto max-h-[48vh] md:max-h-[72vh] bg-slate-950/70 space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <Receipt className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Order Bill ({counterCart.reduce((s, p) => s + p.quantity, 0)})</span>
+                  </h3>
+                  {counterCart.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setCounterCart([])}
+                      className="text-[11px] text-rose-400 hover:underline cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {/* Selected Items List */}
+                {counterCart.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
+                    <ShoppingBag className="w-6 h-6 mx-auto mb-1 text-slate-600" />
+                    No items selected yet.
+                    <br />
+                    Click dishes from the menu to add.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1 divide-y divide-slate-800/60">
+                    {counterCart.map(({ item, quantity }) => (
+                      <div key={item.id} className="pt-1.5 first:pt-0 flex items-center justify-between gap-2 text-xs">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-200 truncate">{item.name}</p>
+                          <p className="text-[10px] text-slate-500">₹{item.price} each</p>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateCounterQty(item.id, -1)}
+                              className="w-5 h-5 rounded flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-slate-800 cursor-pointer"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <span className="w-5 text-center font-bold text-slate-100 text-xs tabular-nums">
+                              {quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateCounterQty(item.id, 1)}
+                              className="w-5 h-5 rounded flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-slate-800 cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                          <span className="w-12 text-right font-bold text-slate-100 tabular-nums">
+                            ₹{item.price * quantity}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Cooking Note Input */}
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                    Cooking Instructions (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={counterCookingNote}
+                    onChange={(e) => setCounterCookingNote(e.target.value)}
+                    placeholder="e.g. Less ice, extra hot"
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-100 focus:outline-none focus:border-[#FF6422]"
+                  />
+                </div>
+
+                {/* Paid By Selector */}
+                <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
+                  <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                    Paid By (Payment Mode):
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setCounterPaidBy('cash')}
+                      className={`p-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                        counterPaidBy === 'cash'
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/40'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <Banknote className="w-4 h-4 text-emerald-400" />
+                      <span>💵 Cash</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCounterPaidBy('upi')}
+                      className={`p-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                        counterPaidBy === 'upi'
+                          ? 'bg-sky-500/20 border-sky-500 text-sky-300 ring-1 ring-sky-500/40'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <QrCode className="w-4 h-4 text-sky-400" />
+                      <span>⚡ UPI QR</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCounterPaidBy('card')}
+                      className={`p-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                        counterPaidBy === 'card'
+                          ? 'bg-purple-500/20 border-purple-500 text-purple-300 ring-1 ring-purple-500/40'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <CreditCard className="w-4 h-4 text-purple-400" />
+                      <span>💳 Card Swipe</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCounterPaidBy('pay_later')}
+                      className={`p-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                        counterPaidBy === 'pay_later'
+                          ? 'bg-amber-500/20 border-amber-500 text-amber-300 ring-1 ring-amber-500/40'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <Clock className="w-4 h-4 text-amber-400" />
+                      <span>⏳ Pay Later</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bill Breakdown */}
+                <div className="p-3 rounded-2xl bg-slate-900 border border-slate-800 space-y-1 text-xs">
+                  <div className="flex justify-between text-slate-400">
+                    <span>Subtotal</span>
+                    <span className="tabular-nums">₹{counterSubtotal}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>GST (5%)</span>
+                    <span className="tabular-nums">₹{counterTax}</span>
+                  </div>
+                  <div className="flex justify-between pt-1 border-t border-slate-800 text-sm font-bold text-slate-100">
+                    <span>Total Amount</span>
+                    <span className="text-[#FF6422] tabular-nums">₹{counterTotal}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={counterCart.length === 0 || submittingCounterOrder}
+                  className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs sm:text-sm shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {submittingCounterOrder ? (
+                    <span>Punching Order to Kitchen...</span>
+                  ) : (
+                    <>
+                      <ShoppingBag className="w-4 h-4" />
+                      <span>
+                        Punch Order · ₹{counterTotal}{' '}
+                        {counterPaidBy === 'pay_later'
+                          ? '(Unpaid)'
+                          : `(Paid via ${counterPaidBy.toUpperCase()})`}
+                      </span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Settle Payment Modal for Unpaid Counter Orders */}
+      <Dialog open={Boolean(settleOrder)} onOpenChange={(open) => !open && setSettleOrder(null)}>
+        <DialogContent className="max-w-sm rounded-3xl bg-slate-900 border border-slate-800 p-6 shadow-2xl text-slate-100 space-y-4">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-100 flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
+                <Banknote className="w-4 h-4" />
+              </div>
+              <span>Record Counter Payment</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Select how the customer paid for Order #{settleOrder?.kotNumber}.
+            </DialogDescription>
+          </DialogHeader>
+
+          {settleOrder && (
+            <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Order Slip:</span>
+                <span className="font-bold text-slate-200">{settleOrder.kotNumber}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Service:</span>
+                <span className="font-semibold text-slate-300">
+                  {settleOrder.tableNumber ? `Table ${settleOrder.tableNumber}` : 'Takeaway'}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm font-bold pt-1 border-t border-slate-800">
+                <span className="text-slate-200">Amount Due:</span>
+                <span className="text-emerald-400 tabular-nums">
+                  {formatINR(settleOrder.total)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+              Paid By:
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setSettlePaidBy('cash')}
+                className={`py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                  settlePaidBy === 'cash'
+                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/40'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Banknote className="w-4 h-4 text-emerald-400" />
+                <span>Cash</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSettlePaidBy('upi')}
+                className={`py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                  settlePaidBy === 'upi'
+                    ? 'bg-sky-500/20 border-sky-500 text-sky-300 ring-1 ring-sky-500/40'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <QrCode className="w-4 h-4 text-sky-400" />
+                <span>UPI QR</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSettlePaidBy('card')}
+                className={`py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                  settlePaidBy === 'card'
+                    ? 'bg-purple-500/20 border-purple-500 text-purple-300 ring-1 ring-purple-500/40'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <CreditCard className="w-4 h-4 text-purple-400" />
+                <span>Card</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setSettleOrder(null)}
+              className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={submittingSettle}
+              onClick={handleSettleSubmit}
+              className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+            >
+              {submittingSettle ? 'Saving...' : 'Mark Paid'}
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

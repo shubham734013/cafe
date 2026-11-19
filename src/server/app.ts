@@ -22,6 +22,7 @@ import {
   toggleKotItemSchema,
   orderFeedbackSchema,
   orderRefundSchema,
+  orderPayCounterSchema,
   requestReorderSchema,
   stockReceiptSchema,
   stockWasteSchema,
@@ -1144,8 +1145,13 @@ export function createCafeServer(
     async (req, res, next) => {
       try {
         const orderId = String(req.params.id);
+        const input = parseBody(orderPayCounterSchema, req.body || {});
         const staffSession = getStaffSession(req);
-        const order = store.markOrderPaidAtCounter(orderId, staffSession?.staffName);
+        const order = store.markOrderPaidAtCounter(
+          orderId,
+          staffSession?.staffName,
+          input.paymentMode
+        );
         if (!order) {
           res.status(404).json({ error: 'Order not found' });
           return;

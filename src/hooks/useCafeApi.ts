@@ -21,7 +21,7 @@ import type {
   reserveTableSchema,
   orderFeedbackSchema,
 } from '../shared/schemas';
-import type { AuthSessionState, CafeOrder, CafeTable, MenuItem } from '../types/cafe';
+import type { AuthSessionState, CafeOrder, CafeTable, MenuItem, PaymentMode } from '../types/cafe';
 
 export const BOOTSTRAP_QUERY_KEY = ['cafeos', 'route-data'] as const;
 export const AUTH_SESSION_QUERY_KEY = ['cafeos', 'auth-session'] as const;
@@ -214,11 +214,18 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
   });
 
   const payCounterOrderMutation = useMutation({
-    mutationFn: (orderId: string) =>
-      apiJson<{ ok: boolean; order: CafeOrder }>(
+    mutationFn: (args: string | { orderId: string; paymentMode?: PaymentMode; note?: string }) => {
+      const orderId = typeof args === 'string' ? args : args.orderId;
+      const paymentMode = typeof args === 'string' ? 'cash' : (args.paymentMode || 'cash');
+      return apiJson<{ ok: boolean; order: CafeOrder }>(
         `/api/orders/${encodeURIComponent(orderId)}/pay-counter`,
-        { method: 'POST' }
-      ),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentMode }),
+        }
+      );
+    },
     onSuccess: invalidate,
   });
 
@@ -529,6 +536,13 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
     transferTableMutation,
     mergeTablesMutation,
     restockItemMutation,
+    receiveStockMutation,
+    recordWasteMutation,
+    transferStockMutation,
+    createStockCountMutation,
+    approveStockCountMutation,
+    createPurchaseOrderMutation,
+    receivePurchaseOrderMutation,
     requestReorderMutation,
     addIngredientMutation,
     addCustomerMutation,

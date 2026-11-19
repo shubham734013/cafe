@@ -787,6 +787,59 @@ test('order refund requires staff auth, updates paymentStatus to refunded, and r
   assert.equal(refundAct.orderId, targetOrder.id);
 });
 
+test('professional inventory operations record receipts, waste, counts, and purchase orders', () => {
+  const store = new CafeStore(null);
+  const milk = store.addIngredient({
+    name: 'Test Milk',
+    quantity: 10,
+    unit: 'L',
+    minThreshold: 2,
+    supplier: 'Test Supplier',
+    unitCost: 60,
+  });
+
+  store.receiveStock({
+    ingredientId: milk.id,
+    quantity: 5,
+    unitCost: 58,
+    supplier: 'Test Supplier',
+    batchNumber: 'MILK-001',
+    expiryDate: '2027-01-31',
+    note: '',
+  });
+  assert.equal(store.getInventory().find((item) => item.id === milk.id)?.quantity, 15);
+
+  store.recordWaste({
+    ingredientId: milk.id,
+    quantity: 2,
+    reason: 'Spoilage',
+  });
+  assert.equal(store.getInventory().find((item) => item.id === milk.id)?.quantity, 13);
+
+  const count = store.createStockCount({
+    physicalCounts: [{ ingredientId: milk.id, physicalQuantity: 12 }],
+    note: '',
+  });
+  assert.equal(count.lines[0].variance, -1);
+  store.approveStockCount(count.id);
+  assert.equal(store.getInventory().find((item) => item.id === milk.id)?.quantity, 12);
+
+  const purchaseOrder = store.createPurchaseOrder({
+    supplier: 'Test Supplier',
+    note: '',
+    lines: [{ ingredientId: milk.id, quantity: 20, unitCost: 58 }],
+  });
+  assert.equal(purchaseOrder.status, 'ordered');
+  const received = store.receivePurchaseOrder({
+    purchaseOrderId: purchaseOrder.id,
+    receivedLines: [{ ingredientId: milk.id, quantity: 20, batchNumber: 'MILK-002' }],
+  });
+  assert.equal(received?.status, 'received');
+  assert.equal(store.getInventory().find((item) => item.id === milk.id)?.quantity, 32);
+  assert.ok(store.getStockMovements().some((movement) => movement.type === 'stock_count'));
+  assert.ok(store.getInventoryBatches().some((batch) => batch.batchNumber === 'MILK-002'));
+});
+
 test('kitchen staff can raise stock alert and request reorder for low ingredients', async (t) => {
   const gateway = new TestUpiGateway();
   const { baseUrl, store, close } = await startTestServer(gateway);

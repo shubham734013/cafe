@@ -11,7 +11,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { addIngredientSchema } from '../shared/schemas';
-import { InventoryIngredient, InventoryTab } from '../types/cafe';
+import type {
+  InventoryIngredient,
+  InventoryTab,
+  StockMovement,
+  InventoryBatch,
+  PurchaseOrder,
+  StockCount,
+} from '../types/cafe';
 import {
   filterInventoryItems,
   getIngredientThresholdDeficit,
@@ -21,8 +28,53 @@ import { CafeDataTable } from './CafeDataTable';
 
 interface InventoryStockScreenProps {
   items: InventoryIngredient[];
+  stockMovements?: StockMovement[];
+  inventoryBatches?: InventoryBatch[];
+  purchaseOrders?: PurchaseOrder[];
+  stockCounts?: StockCount[];
   onRestockItem: (id: string) => void | Promise<void>;
   onAddIngredient: (ingredient: Omit<InventoryIngredient, 'id' | 'status' | 'fillPct'>) => void;
+  onReceiveStock: (payload: {
+    ingredientId: string;
+    quantity: number;
+    unitCost?: number;
+    supplier?: string;
+    batchNumber?: string;
+    expiryDate?: string;
+    note?: string;
+  }) => Promise<void>;
+  onRecordWaste: (payload: {
+    ingredientId: string;
+    quantity: number;
+    reason: string;
+    batchId?: string;
+  }) => Promise<void>;
+  onTransferStock: (payload: {
+    ingredientId: string;
+    quantity: number;
+    fromLocation: string;
+    toLocation: string;
+    note?: string;
+  }) => Promise<void>;
+  onCreateStockCount: (payload: {
+    physicalCounts: Array<{ ingredientId: string; physicalQuantity: number; note?: string }>;
+    note?: string;
+  }) => Promise<void>;
+  onApproveStockCount: (countId: string) => Promise<void>;
+  onCreatePurchaseOrder: (payload: {
+    supplier: string;
+    note?: string;
+    lines: Array<{ ingredientId: string; quantity: number; unitCost: number }>;
+  }) => Promise<void>;
+  onReceivePurchaseOrder: (payload: {
+    purchaseOrderId: string;
+    receivedLines: Array<{
+      ingredientId: string;
+      quantity: number;
+      batchNumber?: string;
+      expiryDate?: string;
+    }>;
+  }) => Promise<void>;
   onExportExcel?: () => void;
   onNotify: (msg: string) => void;
 }
@@ -34,21 +86,36 @@ const INVENTORY_TABS: InventoryTab[] = [
   'Stock In',
   'Stock Out',
   'Suppliers',
+  'Movements',
+  'Purchase Orders',
+  'Batches',
+  'Waste',
+  'Stock Counts',
 ];
 
 type AddIngredientValues = z.input<typeof addIngredientSchema>;
 
 export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
   items,
+  stockMovements = [],
+  inventoryBatches = [],
+  purchaseOrders = [],
+  stockCounts = [],
   onRestockItem,
   onAddIngredient,
+  onReceiveStock,
+  onRecordWaste,
+  onTransferStock,
+  onCreateStockCount,
+  onApproveStockCount,
+  onCreatePurchaseOrder,
+  onReceivePurchaseOrder,
   onExportExcel,
   onNotify,
 }) => {
   const [activeTab, setActiveTab] = useState<InventoryTab>('Inventory');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortByLowFirst, setSortByLowFirst] = useState(false);
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [restockingIds, setRestockingIds] = useState<Set<string>>(() => new Set());
 
@@ -246,6 +313,55 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
     setAddModalOpen(false);
   });
 
+  const promptFirstInventoryAction = async (kind: 'receive' | 'waste' | 'transfer' | 'count') => {
+    if (items.length === 0) {
+      onNotify('Add an ingredient before recording inventory activity.');
+      return;
+    }
+    const item = items[0];
+    if (kind === 'receive') {
+      const quantityText = window.prompt(`Receive quantity for ${item.name}`, '1');
+      if (!quantityText) return;
+      const quantity = Number(quantityText);
+      if (!Number.isFinite(quantity) || quantity <= 0) return;
+      const supplier = window.prompt('Supplier', item.supplier) || item.supplier;
+      await onReceiveStock({ ingredientId: item.id, quantity, supplier });
+    } else if (kind === 'waste') {
+      const quantityText = window.prompt(`Waste quantity for ${item.name}`, '0.1');
+      if (!quantityText) return;
+      const quantity = Number(quantityText);
+      if (!Number.isFinite(quantity) || quantity <= 0) return;
+      const reason = window.prompt('Waste reason', 'Kitchen spoilage');
+      if (!reason?.trim()) return;
+      await onRecordWaste({ ingredientId: item.id, quantity, reason: reason.trim() });
+    } else if (kind === 'transfer') {
+      const quantityText = window.prompt(`Transfer quantity for ${item.name}`, '1');
+      if (!quantityText) return;
+      const quantity = Number(quantityText);
+      if (!Number.isFinite(quantity) || quantity <= 0) return;
+      const toLocation = window.prompt('Transfer to location', 'Kitchen') || 'Kitchen';
+      await onTransferStock({
+        ingredientId: item.id,
+        quantity,
+        fromLocation: 'Central Store',
+        toLocation,
+      });
+    } else {
+      const counts = items.map((entry) => {
+        const quantityText = window.prompt(
+          `Physical quantity for ${entry.name} (system: ${entry.quantity} ${entry.unit})`,
+          String(entry.quantity)
+        );
+        const physicalQuantity = quantityText === null ? entry.quantity : Number(quantityText);
+        return {
+          ingredientId: entry.id,
+          physicalQuantity: Number.isFinite(physicalQuantity) ? physicalQuantity : entry.quantity,
+        };
+      });
+      await onCreateStockCount({ physicalCounts: counts, note: 'Physical stock count' });
+    }
+  };
+
   return (
     <div className="flex flex-col w-full pb-8 space-y-4">
       {/* Header & Add Action */}
@@ -259,9 +375,6 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
               {lowStockCount} Low
             </span>
           </div>
-          <p className="text-xs text-on-surface-variant truncate">
-            {items.length} Items • Auto Stock Deduction Active
-          </p>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
@@ -325,6 +438,21 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
             </button>
           );
         })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => void promptFirstInventoryAction('receive')} className="px-3 py-2 rounded-lg bg-surface-container-high text-primary text-xs font-bold">
+          Receive Stock
+        </button>
+        <button type="button" onClick={() => void promptFirstInventoryAction('waste')} className="px-3 py-2 rounded-lg bg-surface-container-high text-error text-xs font-bold">
+          Record Waste
+        </button>
+        <button type="button" onClick={() => void promptFirstInventoryAction('transfer')} className="px-3 py-2 rounded-lg bg-surface-container-high text-secondary text-xs font-bold">
+          Transfer Stock
+        </button>
+        <button type="button" onClick={() => void promptFirstInventoryAction('count')} className="px-3 py-2 rounded-lg bg-surface-container-high text-on-surface text-xs font-bold">
+          Start Stock Count
+        </button>
       </div>
 
       {/* Search + Barcode + KPI Grid */}
@@ -423,32 +551,6 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          {activeTab !== 'Suppliers' && (
-            <div className="inline-flex rounded-lg bg-surface-container-low p-0.5">
-              <button
-                type="button"
-                onClick={() => setViewMode('cards')}
-                className={`px-2 py-1 rounded-md text-[11px] font-semibold cursor-pointer ${
-                  viewMode === 'cards'
-                    ? 'bg-primary-container text-on-primary font-bold'
-                    : 'text-on-surface-variant'
-                }`}
-              >
-                Cards
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('table')}
-                className={`px-2 py-1 rounded-md text-[11px] font-semibold cursor-pointer ${
-                  viewMode === 'table'
-                    ? 'bg-primary-container text-on-primary font-bold'
-                    : 'text-on-surface-variant'
-                }`}
-              >
-                Table
-              </button>
-            </div>
-          )}
           <button
             type="button"
             aria-label="Sort Stock"
@@ -476,7 +578,150 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
       </div>
 
       {/* Suppliers Tab View vs Ingredient Rows */}
-      {activeTab === 'Suppliers' ? (
+      {activeTab === 'Movements' ? (
+        <div className="space-y-2">
+          {stockMovements.length === 0 ? (
+            <p className="p-6 rounded-xl bg-surface-container-low text-sm text-on-surface-variant text-center">
+              No stock movements recorded yet.
+            </p>
+          ) : stockMovements.map((movement) => (
+            <div key={movement.id} className="p-3 rounded-xl bg-surface-container-low flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-on-surface">{movement.ingredientName}</p>
+                <p className="text-xs text-on-surface-variant">
+                  {movement.type} · {movement.note || 'Inventory adjustment'}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className={`text-sm font-bold ${movement.quantityDelta >= 0 ? 'text-tertiary' : 'text-error'}`}>
+                  {movement.quantityDelta >= 0 ? '+' : ''}{movement.quantityDelta} {movement.unit}
+                </p>
+                <p className="text-[10px] text-on-surface-variant">{movement.afterQuantity} {movement.unit} remaining</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : activeTab === 'Purchase Orders' ? (
+        <div className="space-y-2">
+          {purchaseOrders.length === 0 ? (
+            <p className="p-6 rounded-xl bg-surface-container-low text-sm text-on-surface-variant text-center">
+              No purchase orders yet.
+            </p>
+          ) : purchaseOrders.map((purchaseOrder) => (
+            <div key={purchaseOrder.id} className="p-3.5 rounded-xl bg-surface-container-low space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-bold text-on-surface">{purchaseOrder.id}</p>
+                  <p className="text-xs text-on-surface-variant">{purchaseOrder.supplier}</p>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-surface-container-high text-xs text-on-surface">
+                  {purchaseOrder.status}
+                </span>
+              </div>
+              {purchaseOrder.lines.map((line) => (
+                <p key={line.ingredientId} className="text-xs text-on-surface-variant">
+                  {line.ingredientName}: {line.receivedQuantity}/{line.orderedQuantity} {line.unit}
+                </p>
+              ))}
+              {purchaseOrder.status !== 'received' && purchaseOrder.status !== 'cancelled' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const line = purchaseOrder.lines.find((entry) => entry.receivedQuantity < entry.orderedQuantity);
+                    if (!line) return;
+                    const quantityText = window.prompt(`Receive ${line.ingredientName}`, String(line.orderedQuantity - line.receivedQuantity));
+                    const quantity = Number(quantityText);
+                    if (!Number.isFinite(quantity) || quantity <= 0) return;
+                    void onReceivePurchaseOrder({
+                      purchaseOrderId: purchaseOrder.id,
+                      receivedLines: [{ ingredientId: line.ingredientId, quantity }],
+                    });
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-primary-container text-on-primary text-xs font-bold"
+                >
+                  Receive
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              if (items.length === 0) {
+                onNotify('Add an ingredient before creating a purchase order.');
+                return;
+              }
+              const supplier = window.prompt('Supplier name', items[0].supplier);
+              if (!supplier?.trim()) return;
+              const item = items[0];
+              const quantityText = window.prompt(`Order quantity for ${item.name}`, '10');
+              const quantity = Number(quantityText);
+              if (!Number.isFinite(quantity) || quantity <= 0) return;
+              void onCreatePurchaseOrder({
+                supplier: supplier.trim(),
+                lines: [{ ingredientId: item.id, quantity, unitCost: item.unitCost }],
+              });
+            }}
+            className="w-full py-2.5 rounded-xl bg-primary text-on-primary text-sm font-bold"
+          >
+            Create Purchase Order
+          </button>
+        </div>
+      ) : activeTab === 'Batches' ? (
+        <div className="space-y-2">
+          {inventoryBatches.length === 0 ? (
+            <p className="p-6 rounded-xl bg-surface-container-low text-sm text-on-surface-variant text-center">No inventory batches recorded.</p>
+          ) : inventoryBatches.map((batch) => (
+            <div key={batch.id} className="p-3 rounded-xl bg-surface-container-low flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold text-on-surface">{batch.ingredientName}</p>
+                <p className="text-xs text-on-surface-variant">Batch {batch.batchNumber}{batch.expiryDate ? ` · Expires ${batch.expiryDate}` : ''}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-bold text-on-surface">{batch.quantity} {batch.unit}</p>
+                <p className="text-xs text-on-surface-variant">{batch.status}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : activeTab === 'Waste' ? (
+        <div className="space-y-2">
+          {stockMovements.filter((movement) => movement.type === 'waste').length === 0 ? (
+            <p className="p-6 rounded-xl bg-surface-container-low text-sm text-on-surface-variant text-center">No waste recorded.</p>
+          ) : stockMovements.filter((movement) => movement.type === 'waste').map((movement) => (
+            <div key={movement.id} className="p-3 rounded-xl bg-surface-container-low flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold text-on-surface">{movement.ingredientName}</p>
+                <p className="text-xs text-on-surface-variant">{movement.note}</p>
+              </div>
+              <p className="text-sm font-bold text-error">{movement.quantityDelta} {movement.unit}</p>
+            </div>
+          ))}
+        </div>
+      ) : activeTab === 'Stock Counts' ? (
+        <div className="space-y-2">
+          {stockCounts.length === 0 ? (
+            <p className="p-6 rounded-xl bg-surface-container-low text-sm text-on-surface-variant text-center">No stock counts recorded.</p>
+          ) : stockCounts.map((count) => (
+            <div key={count.id} className="p-3.5 rounded-xl bg-surface-container-low space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-bold text-on-surface">{count.id}</p>
+                <span className="text-xs text-on-surface-variant">{count.status}</span>
+              </div>
+              {count.lines.map((line) => (
+                <p key={line.ingredientId} className="text-xs text-on-surface-variant">
+                  {line.ingredientName}: system {line.systemQuantity}, physical {line.physicalQuantity}, variance {line.variance} {line.unit}
+                </p>
+              ))}
+              {count.status === 'draft' && (
+                <button type="button" onClick={() => void onApproveStockCount(count.id)} className="px-3 py-1.5 rounded-lg bg-primary-container text-on-primary text-xs font-bold">
+                  Approve Variance
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : activeTab === 'Suppliers' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
           {supplierGroups.map(([supplier, vendorItems]) => (
             <div
@@ -502,7 +747,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
             </div>
           ))}
         </div>
-      ) : viewMode === 'table' ? (
+      ) : (
         <CafeDataTable
           data={filteredItems}
           columns={columns}
@@ -518,217 +763,8 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
               : ''
           }
         />
-      ) : filteredItems.length === 0 ? (
-        <div className="p-8 rounded-xl bg-surface-container-low text-center space-y-2.5">
-          <span className="material-symbols-outlined text-[28px] text-outline">
-            {activeTab === 'Low Stock' ? 'check_circle' : 'inventory_2'}
-          </span>
-          <p className="text-sm font-semibold text-on-surface">
-            {activeTab === 'Low Stock'
-              ? 'No ingredients below minimum threshold'
-              : 'No matching ingredients'}
-          </p>
-          <p className="text-xs text-on-surface-variant">
-            {activeTab === 'Low Stock'
-              ? 'All stocked ingredients meet or exceed their configured minimum levels.'
-              : 'Clear your search or switch inventory tabs.'}
-          </p>
-          {activeTab === 'Low Stock' && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('Inventory')}
-              className="px-3.5 py-1.5 rounded-lg bg-surface-container-high text-primary text-xs font-semibold hover:bg-surface-bright cursor-pointer"
-            >
-              Show All Inventory
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-          {filteredItems.map((item) => {
-            const isCritical = item.status === 'Critical';
-            const isReorder = item.status === 'Reorder Soon';
-            const belowMin = isIngredientBelowThreshold(item);
-            const deficit = getIngredientThresholdDeficit(item);
-            return (
-              <div
-                key={item.id}
-                data-testid={`inventory-card-${item.id}`}
-                data-below-threshold={belowMin ? 'true' : 'false'}
-                className={`flex flex-col p-3.5 rounded-lg shadow-sm justify-between transition-colors ${
-                  belowMin
-                    ? 'bg-error-container/12 border border-error/50'
-                    : 'bg-surface-container-low'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div
-                      className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                        belowMin || isCritical
-                          ? 'bg-error-container/40 text-error'
-                          : 'bg-surface-container-high text-primary'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[22px]">{item.icon}</span>
-                    </div>
-                    <div className="flex flex-col min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-sm font-bold text-on-surface truncate">
-                          {item.name}
-                        </span>
-                        {belowMin && (
-                          <span
-                            data-testid={`below-min-card-badge-${item.id}`}
-                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-error text-on-error text-[10px] font-bold"
-                          >
-                            <span className="material-symbols-outlined text-[11px]">warning</span>
-                            Below Min
-                          </span>
-                        )}
-                        {item.status === 'Good' && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-tertiary-container text-on-tertiary-container text-[10px] font-semibold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-on-tertiary-container" />
-                            Good
-                          </span>
-                        )}
-                        {isReorder && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-secondary-container text-on-secondary-fixed text-[10px] font-semibold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-on-secondary-fixed" />
-                            Reorder Soon
-                          </span>
-                        )}
-                        {isCritical && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-error-container text-on-error-container text-[10px] font-semibold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-error animate-pulse" />
-                            Critical
-                          </span>
-                        )}
-                      </div>
-                      <span
-                        className={`text-xs truncate ${
-                          belowMin || isCritical ? 'text-error/90' : 'text-on-surface-variant'
-                        }`}
-                      >
-                        {belowMin
-                          ? `Short by ${deficit} ${item.unit} (Min: ${item.minThreshold} ${item.unit})`
-                          : item.subtitle}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <div
-                      className={`text-lg font-bold tabular-nums ${
-                        isCritical
-                          ? 'text-error'
-                          : isReorder
-                            ? 'text-primary'
-                            : 'text-on-surface'
-                      }`}
-                    >
-                      {item.quantity}{' '}
-                      <span className="text-xs font-normal text-outline">{item.unit}</span>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={restockingIds.has(item.id)}
-                      onClick={() => void handleRestock(item.id)}
-                      className={`text-[11px] font-semibold flex items-center justify-end gap-0.5 mt-0.5 ml-auto cursor-pointer disabled:opacity-50 ${
-                        isCritical
-                          ? 'px-2 py-0.5 rounded bg-error-container text-on-error-container font-bold shadow-sm hover:opacity-90'
-                          : 'text-primary hover:underline'
-                      }`}
-                    >
-                      {!isCritical && (
-                        <span className="material-symbols-outlined text-[14px]">
-                          {restockingIds.has(item.id)
-                            ? 'progress_activity'
-                            : isReorder
-                              ? 'local_shipping'
-                              : 'add_circle'}
-                        </span>
-                      )}
-                      <span>
-                        {restockingIds.has(item.id)
-                          ? 'Restocking...'
-                          : isReorder
-                            ? 'Order'
-                            : 'Restock'}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Depletion Progress Bar */}
-                <div className="w-full bg-surface-container-highest rounded-full h-1.5 mt-2.5 overflow-hidden">
-                  <div
-                    className={`h-1.5 rounded-full transition-all duration-300 ${
-                      isCritical
-                        ? 'bg-error'
-                        : isReorder
-                          ? 'bg-secondary-container'
-                          : 'bg-tertiary'
-                    }`}
-                    style={{ width: `${item.fillPct}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
       )}
 
-      {/* Operational Quick Helpers */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
-        <button
-          type="button"
-          onClick={() => onNotify('Stock audit worksheet opened for evening shift')}
-          className="w-full flex items-center justify-between p-3.5 rounded-lg bg-surface-container hover:bg-surface-container-high transition-colors text-left group cursor-pointer"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-primary-container/20 text-primary flex items-center justify-center">
-              <span className="material-symbols-outlined text-[20px]">tune</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-sm font-bold text-on-surface group-hover:text-primary transition-colors">
-                Quick Stock Adjustment
-              </span>
-              <span className="text-xs text-on-surface-variant">
-                Audit counts, wastage &amp; batch intake
-              </span>
-            </div>
-          </div>
-          <span className="material-symbols-outlined text-outline text-[20px] group-hover:translate-x-0.5 transition-transform">
-            chevron_right
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() =>
-            onNotify(`Bundled ${lowStockCount} low-stock SKU(s) into supplier PO #PO-842`)
-          }
-          className="w-full flex items-center justify-between p-3.5 rounded-lg bg-surface-container hover:bg-surface-container-high transition-colors text-left group cursor-pointer"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-secondary-container/20 text-secondary flex items-center justify-center">
-              <span className="material-symbols-outlined text-[20px]">receipt_long</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-sm font-bold text-on-surface group-hover:text-secondary transition-colors">
-                Generate Supplier PO
-              </span>
-              <span className="text-xs text-on-surface-variant">
-                Auto-bundle items below minimum stock
-              </span>
-            </div>
-          </div>
-          <span className="material-symbols-outlined text-outline text-[20px] group-hover:translate-x-0.5 transition-transform">
-            chevron_right
-          </span>
-        </button>
-      </div>
 
       {/* Add Raw Ingredient Dialog */}
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>

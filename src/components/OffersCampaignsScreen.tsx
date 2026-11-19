@@ -111,7 +111,6 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
               <span className="w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse" />
               {counts.active} Active Promos
             </span>
-            <span className="text-on-surface-variant text-[11px]">• Live on POS &amp; QR</span>
           </div>
         </div>
 
@@ -356,61 +355,6 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
         </div>
       )}
 
-      {/* Marketing Channels */}
-      <div className="space-y-2.5 pt-1">
-        <div className="flex items-center justify-between">
-          <span className="text-base text-on-surface font-bold">Marketing Channels</span>
-          <span className="text-xs text-on-surface-variant">Instant Blast</span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-          <div className="flex items-center justify-between p-3.5 rounded-xl bg-surface-container hover:bg-surface-container-high transition-colors">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-lg bg-tertiary-container/20 text-tertiary flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[22px]">chat</span>
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-bold text-on-surface truncate">
-                  Send WhatsApp Broadcast
-                </span>
-                <span className="text-xs text-on-surface-variant truncate">
-                  Reach 1,240 opt-in cafe patrons
-                </span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNotify('WhatsApp campaign queued for 1,240 patrons')}
-              className="shrink-0 px-3.5 py-2 rounded-lg bg-tertiary-container/30 text-tertiary text-xs font-bold hover:bg-tertiary-container/50 active:scale-95 transition-all cursor-pointer"
-            >
-              Send
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between p-3.5 rounded-xl bg-surface-container hover:bg-surface-container-high transition-colors">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-lg bg-primary-container/20 text-primary-container flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[22px]">aspect_ratio</span>
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-bold text-on-surface truncate">
-                  Banner Promotion Preview
-                </span>
-                <span className="text-xs text-on-surface-variant truncate">
-                  Customer App &amp; Table QR Header
-                </span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNotify('Banner promo active on Customer Home & Table QR header')}
-              className="shrink-0 px-3.5 py-2 rounded-lg bg-surface-container-highest text-on-surface text-xs font-semibold hover:bg-surface-bright active:scale-95 transition-all cursor-pointer"
-            >
-              Preview
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* Create Campaign Dialog */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>

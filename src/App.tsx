@@ -27,7 +27,7 @@ import type {
   WorkspaceMode,
 } from './types/cafe';
 import type { z } from 'zod';
-import type { addMenuItemSchema, CustomerFeedbackInput } from './shared/schemas';
+import type { addMenuItemSchema, createOrderSchema, CustomerFeedbackInput } from './shared/schemas';
 import { calculateCartTotals, formatOrderCsv, isKitchenActiveOrder } from './utils/cafeLogic';
 import { triggerBlobDownload } from './utils/download';
 import {
@@ -191,6 +191,13 @@ export default function App() {
     transferTableMutation,
     mergeTablesMutation,
     restockItemMutation,
+    receiveStockMutation,
+    recordWasteMutation,
+    transferStockMutation,
+    createStockCountMutation,
+    approveStockCountMutation,
+    createPurchaseOrderMutation,
+    receivePurchaseOrderMutation,
     requestReorderMutation,
     addIngredientMutation,
     addCustomerMutation,
@@ -224,6 +231,10 @@ export default function App() {
     rewardPoints,
     menuItems,
     activityLog,
+    stockMovements,
+    inventoryBatches,
+    purchaseOrders,
+    stockCounts,
   } = data;
 
   // Thermal Receipt Modal & Feedback State
@@ -524,6 +535,51 @@ export default function App() {
     [addMenuItemMutation, showErrorToast, showToast]
   );
 
+  const handleCreateCounterOrder = useCallback(
+    async (
+      payload: z.infer<typeof createOrderSchema>,
+      paidBy: 'cash' | 'card' | 'upi' | 'pay_later' = 'cash'
+    ): Promise<CafeOrder> => {
+      try {
+        const isPaid = paidBy !== 'pay_later';
+        const effectivePaymentMode = paidBy === 'pay_later' ? 'cash' : paidBy;
+        const res = await createOrderMutation.mutateAsync({
+          ...payload,
+          isPosTerminal: isPaid,
+          paymentMode: effectivePaymentMode,
+        });
+        const paymentLabel =
+          paidBy === 'cash'
+            ? 'Paid by Cash'
+            : paidBy === 'upi'
+              ? 'Paid by UPI'
+              : paidBy === 'card'
+                ? 'Paid by Card'
+                : 'Unpaid (Settle at Counter)';
+        showToast(`Counter order #${res.order.id} placed · ${paymentLabel} (₹${res.order.total})`);
+        return res.order;
+      } catch (err) {
+        showErrorToast(err, 'Could not place counter order');
+        throw err;
+      }
+    },
+    [createOrderMutation, showErrorToast, showToast]
+  );
+
+  const handlePayCounterOrder = useCallback(
+    async (orderId: string, paymentMode: 'cash' | 'card' | 'upi' = 'cash'): Promise<void> => {
+      try {
+        const res = await payCounterOrderMutation.mutateAsync({ orderId, paymentMode });
+        const modeLabel = paymentMode === 'cash' ? 'Cash' : paymentMode === 'card' ? 'Card Swipe' : 'UPI';
+        showToast(`Order #${res.order.id} settled as Paid via ${modeLabel} (₹${res.order.total})`);
+      } catch (err) {
+        showErrorToast(err, 'Could not record counter payment');
+        throw err;
+      }
+    },
+    [payCounterOrderMutation, showErrorToast, showToast]
+  );
+
   const handleQuickAddCustomer = useCallback(
     async (name: string, phone: string) => {
       try {
@@ -751,6 +807,119 @@ export default function App() {
       }
     },
     [addIngredientMutation, showErrorToast, showToast]
+  );
+
+  const handleReceiveStock = useCallback(
+    async (payload: {
+      ingredientId: string;
+      quantity: number;
+      unitCost?: number;
+      supplier?: string;
+      batchNumber?: string;
+      expiryDate?: string;
+      note?: string;
+    }) => {
+      try {
+        await receiveStockMutation.mutateAsync(payload);
+        showToast('Stock receipt recorded');
+      } catch (err) {
+        showErrorToast(err, 'Failed to record stock receipt');
+      }
+    },
+    [receiveStockMutation, showErrorToast, showToast]
+  );
+
+  const handleRecordWaste = useCallback(
+    async (payload: { ingredientId: string; quantity: number; reason: string; batchId?: string }) => {
+      try {
+        await recordWasteMutation.mutateAsync(payload);
+        showToast('Waste recorded and stock adjusted');
+      } catch (err) {
+        showErrorToast(err, 'Failed to record waste');
+      }
+    },
+    [recordWasteMutation, showErrorToast, showToast]
+  );
+
+  const handleTransferStock = useCallback(
+    async (payload: {
+      ingredientId: string;
+      quantity: number;
+      fromLocation: string;
+      toLocation: string;
+      note?: string;
+    }) => {
+      try {
+        await transferStockMutation.mutateAsync(payload);
+        showToast('Stock transfer recorded');
+      } catch (err) {
+        showErrorToast(err, 'Failed to record stock transfer');
+      }
+    },
+    [transferStockMutation, showErrorToast, showToast]
+  );
+
+  const handleCreateStockCount = useCallback(
+    async (payload: {
+      physicalCounts: Array<{ ingredientId: string; physicalQuantity: number; note?: string }>;
+      note?: string;
+    }) => {
+      try {
+        await createStockCountMutation.mutateAsync(payload);
+        showToast('Physical stock count saved as draft');
+      } catch (err) {
+        showErrorToast(err, 'Failed to create stock count');
+      }
+    },
+    [createStockCountMutation, showErrorToast, showToast]
+  );
+
+  const handleApproveStockCount = useCallback(
+    async (countId: string) => {
+      try {
+        await approveStockCountMutation.mutateAsync(countId);
+        showToast('Stock count approved and variance adjusted');
+      } catch (err) {
+        showErrorToast(err, 'Failed to approve stock count');
+      }
+    },
+    [approveStockCountMutation, showErrorToast, showToast]
+  );
+
+  const handleCreatePurchaseOrder = useCallback(
+    async (payload: {
+      supplier: string;
+      note?: string;
+      lines: Array<{ ingredientId: string; quantity: number; unitCost: number }>;
+    }) => {
+      try {
+        await createPurchaseOrderMutation.mutateAsync(payload);
+        showToast('Purchase order created');
+      } catch (err) {
+        showErrorToast(err, 'Failed to create purchase order');
+      }
+    },
+    [createPurchaseOrderMutation, showErrorToast, showToast]
+  );
+
+  const handleReceivePurchaseOrder = useCallback(
+    async (payload: {
+      purchaseOrderId: string;
+      receivedLines: Array<{
+        ingredientId: string;
+        quantity: number;
+        batchNumber?: string;
+        expiryDate?: string;
+      }>;
+    }) => {
+      try {
+        await receivePurchaseOrderMutation.mutateAsync(payload);
+        showToast('Purchase order receipt recorded');
+      } catch (err) {
+        showErrorToast(err, 'Failed to receive purchase order');
+      }
+    },
+    [receivePurchaseOrderMutation, showErrorToast, showToast]
   );
 
   const handleCheckInTable = useCallback(
@@ -1228,6 +1397,8 @@ export default function App() {
             onExportCsv={handleExportOrdersExcel}
             onAddMenuItem={handleAddMenuItem}
             onToggleMenuAvailability={handleToggleMenuAvailability}
+            onCreateCounterOrder={handleCreateCounterOrder}
+            onPayCounterOrder={handlePayCounterOrder}
           />
         )}
 
@@ -1245,7 +1416,7 @@ export default function App() {
           <OrderManagementScreen
             orders={orders}
             onAdvanceOrderStatus={handleAdvanceOrderStatus}
-            onPayCounterOrder={(orderId) => payCounterOrderMutation.mutateAsync(orderId).then(() => {})}
+            onPayCounterOrder={handlePayCounterOrder}
             onRefundOrder={handleRefundOrder}
             onDownloadInvoicePdf={handleDownloadInvoicePdf}
             onPrintThermalReceipt={handleOpenThermalReceipt}
@@ -1305,8 +1476,19 @@ export default function App() {
         {activeScreen === 'inventory-stock' && (
           <InventoryStockScreen
             items={inventory}
+            stockMovements={stockMovements}
+            inventoryBatches={inventoryBatches}
+            purchaseOrders={purchaseOrders}
+            stockCounts={stockCounts}
             onRestockItem={handleRestockItem}
             onAddIngredient={handleAddIngredient}
+            onReceiveStock={handleReceiveStock}
+            onRecordWaste={handleRecordWaste}
+            onTransferStock={handleTransferStock}
+            onCreateStockCount={handleCreateStockCount}
+            onApproveStockCount={handleApproveStockCount}
+            onCreatePurchaseOrder={handleCreatePurchaseOrder}
+            onReceivePurchaseOrder={handleReceivePurchaseOrder}
             onExportExcel={handleExportInventoryExcel}
             onNotify={showToast}
           />

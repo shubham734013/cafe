@@ -168,7 +168,6 @@ export const AppShell: React.FC<AppShellProps> = ({
             </div>
             <div className="min-w-0">
               <div className="text-sm font-bold text-primary truncate">{cafeName}</div>
-              <div className="text-[11px] text-on-surface-variant truncate">CafeOS Hub</div>
             </div>
           </div>
 
@@ -234,19 +233,10 @@ export const AppShell: React.FC<AppShellProps> = ({
             </div>
           )}
 
-          {/* Staff & Admin CafeOS Links */}
+          {/* Staff Links */}
           {canShowStaffModules && (
             <div className="space-y-1">
-              <div className="px-2.5 flex items-center justify-between mb-1.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-outline">
-                  Staff &amp; Admin CafeOS
-                </p>
-                {activeRole && (
-                  <span className="px-1.5 py-0.5 rounded bg-primary/15 text-primary text-[9px] font-bold uppercase">
-                    {activeRole}
-                  </span>
-                )}
-              </div>
+              <div className="px-2.5 mb-1.5" />
               {visibleStaffNav.map((item) => {
                 const active = activeScreen === item.id;
                 return (
@@ -326,13 +316,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="text-sm sm:text-base font-bold text-primary tracking-tight truncate">
                     {cafeName}
-                    {isStaffWorkspace && <span className="hidden sm:inline"> Staff</span>}
                   </span>
-                  {isStaffWorkspace && (
-                    <span className="hidden sm:inline-block px-1.5 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[10px] font-bold uppercase shrink-0">
-                      {activeRole ? formatStaffRoleLabel(activeRole) : 'Staff Locked'}
-                    </span>
-                  )}
                 </div>
                 <span className="text-[11px] text-on-surface-variant truncate">
                   {SCREEN_TITLES[activeScreen]}

@@ -211,9 +211,6 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
             </h1>
             <span className="w-1.5 h-1.5 rounded-full bg-tertiary shrink-0" />
           </div>
-          <p className="text-xs text-on-surface-variant truncate">
-            {crmKpis.total} Total Customers • {crmKpis.retentionPct}% Returning
-          </p>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">

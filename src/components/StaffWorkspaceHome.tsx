@@ -22,7 +22,7 @@ const STAFF_MODULES: Array<{
   {
     id: 'admin-dashboard',
     title: 'Admin Dashboard',
-    description: 'View live cafe operations.',
+    description: 'Open the operational dashboard.',
     icon: 'dashboard',
   },
   {

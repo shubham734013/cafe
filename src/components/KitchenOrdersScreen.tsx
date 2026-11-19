@@ -130,9 +130,6 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
               Kitchen Screen
             </span>
           </div>
-          <p className="text-xs text-on-surface-variant mt-0.5">
-            Synchronized live cooking queue · Zero duplicate orders
-          </p>
         </div>
 
         {/* Counter Summary Pills */}

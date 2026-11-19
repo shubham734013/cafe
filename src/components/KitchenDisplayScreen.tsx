@@ -358,10 +358,6 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
               check_circle
             </span>
             <p className="text-base font-bold text-on-surface">Kitchen Queue Clear</p>
-            <p className="text-xs text-on-surface-variant mt-1">
-              All tickets in this filter have been dispatched. Place an order from POS or Customer
-              Menu to see incoming kitchen orders.
-            </p>
           </motion.div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
