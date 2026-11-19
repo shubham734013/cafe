@@ -71,6 +71,29 @@ async function startTestServer(gateway?: UpiGatewayClient) {
   return { baseUrl, store, close };
 }
 
+async function createTestOrder(store: CafeStore) {
+  const { order } = await store.createOrder({
+    outletId: 'seth-sawariya-main',
+    serviceMode: 'takeaway',
+    paymentMode: 'cash',
+    couponCode: '',
+    cookingNote: '',
+    isPosTerminal: false,
+    items: [
+      {
+        menuItemId: 'cappuccino',
+        name: 'Cappuccino',
+        price: 0,
+        quantity: 1,
+        note: '',
+        imageUrl: '',
+        station: 'Barista',
+      },
+    ],
+  });
+  return order;
+}
+
 function getCookieHeader(response: Response): string {
   const headers = response.headers as Headers & { getSetCookie?: () => string[] };
   const cookies = headers.getSetCookie?.() ?? [];
@@ -93,8 +116,7 @@ test('UPI gateway client order references persist and resolve to the CafeOS orde
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const snapshotPath = join(directory, 'state.json');
   const store = new CafeStore(snapshotPath);
-  const order = store.getOrders()[0];
-  assert.ok(order);
+  const order = await createTestOrder(store);
 
   const clientOrderId = store.getOrCreateGatewayClientOrderId(order.id);
   assert.ok(clientOrderId);
@@ -320,6 +342,18 @@ test('UPI gateway checkout is idempotent and only authenticated gateway status s
   assert.deepEqual(await paymentStatusResponse.json(), { paymentStatus: 'paid' });
   assert.equal(store.getOrder(order.id)?.paymentStatus, 'paid');
 
+  const kitchenBootstrapResponse = await fetch(
+    `${baseUrl}/api/bootstrap?screen=kitchen-display-system&scope=kitchen`
+  );
+  assert.equal(kitchenBootstrapResponse.status, 200);
+  const kitchenBootstrap = (await kitchenBootstrapResponse.json()) as {
+    orders: Array<Record<string, unknown> & { id: string; paymentStatus?: string }>;
+  };
+  const kitchenOrder = kitchenBootstrap.orders.find((candidate) => candidate.id === order.id);
+  assert.equal(kitchenOrder?.paymentStatus, 'paid');
+  assert.equal('paymentRef' in (kitchenOrder ?? {}), false);
+  assert.equal('customerId' in (kitchenOrder ?? {}), false);
+
   const timestamp = String(Math.floor(Date.now() / 1000));
   const body = JSON.stringify({
     event_id: 'gateway-event-1',
@@ -519,10 +553,9 @@ test('table QR links remain independent of payment processing', () => {
   );
 });
 
-test('legacy persisted gateway fields are dropped during cafe-state loading', () => {
+test('legacy persisted gateway fields are dropped during cafe-state loading', async () => {
   const seed = new CafeStore(null);
-  const firstOrder = seed.getOrders()[0];
-  assert.ok(firstOrder);
+  const firstOrder = await createTestOrder(seed);
   const directory = mkdtempSync(join(tmpdir(), 'cafe-store-migration-'));
   const snapshotPath = join(directory, 'state.json');
   try {
@@ -633,9 +666,7 @@ test('customer order feedback records review and awards loyalty points', async (
   const { baseUrl, store, close } = await startTestServer(gateway);
   t.after(close);
 
-  const orders = store.getOrders();
-  const targetOrder = orders[0];
-  assert.ok(targetOrder);
+  const targetOrder = await createTestOrder(store);
 
   const initialPoints = store.getBootstrap().rewardPoints;
 
@@ -712,9 +743,7 @@ test('order refund requires staff auth, updates paymentStatus to refunded, and r
   const { baseUrl, store, close } = await startTestServer(gateway);
   t.after(close);
 
-  const orders = store.getOrders();
-  const targetOrder = orders[0];
-  assert.ok(targetOrder);
+  const targetOrder = await createTestOrder(store);
 
   // 1. Unauthenticated request should fail
   const unauthRes = await fetch(`${baseUrl}/api/orders/${targetOrder.id}/refund`, {
@@ -760,8 +789,16 @@ test('order refund requires staff auth, updates paymentStatus to refunded, and r
 
 test('kitchen staff can raise stock alert and request reorder for low ingredients', async (t) => {
   const gateway = new TestUpiGateway();
-  const { baseUrl, close } = await startTestServer(gateway);
+  const { baseUrl, store, close } = await startTestServer(gateway);
   t.after(close);
+  const milk = store.addIngredient({
+    name: 'Milk',
+    quantity: 1,
+    unit: 'L',
+    minThreshold: 2,
+    supplier: 'Test supplier',
+    unitCost: 1,
+  });
 
   // Authenticate as barista (PIN: 3456)
   const baristaCookie = await loginWithPin(baseUrl, '3456');
@@ -771,7 +808,7 @@ test('kitchen staff can raise stock alert and request reorder for low ingredient
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: baristaCookie },
     body: JSON.stringify({
-      id: 'ing-milk',
+      id: milk.id,
       note: 'Only 1 carton remaining in hot station fridge',
     }),
   });
@@ -795,7 +832,7 @@ test('kitchen staff can raise stock alert and request reorder for low ingredient
   assert.ok(alertEvent);
 
   // When manager restocks, reorderRequested is cleared
-  const restockRes = await fetch(`${baseUrl}/api/inventory/ing-milk/restock`, {
+  const restockRes = await fetch(`${baseUrl}/api/inventory/${milk.id}/restock`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: managerCookie },
     body: JSON.stringify({ addedQty: 10 }),

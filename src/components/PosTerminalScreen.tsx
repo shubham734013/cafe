@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { MENU_ITEMS } from '../data/cafeSeedData';
 import type {
   CafeOrder,
   CafeTable,
@@ -18,7 +17,7 @@ interface PosTerminalScreenProps {
   serviceMode: ServiceMode;
   selectedTable: string;
   tables: CafeTable[];
-  menuItems?: MenuItem[];
+  menuItems: MenuItem[];
   customers?: CustomerProfile[];
   isSubmitting?: boolean;
   lastCompletedOrder?: CafeOrder | null;
@@ -47,7 +46,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
   serviceMode,
   selectedTable,
   tables,
-  menuItems = MENU_ITEMS,
+  menuItems,
   customers = [],
   isSubmitting = false,
   lastCompletedOrder,

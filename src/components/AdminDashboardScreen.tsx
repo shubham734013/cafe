@@ -8,7 +8,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { MENU_ITEMS } from '../data/cafeSeedData';
 import {
   CafeActivityLogItem,
   CafeOrder,
@@ -36,6 +35,7 @@ interface AdminDashboardScreenProps {
   customers?: CustomerProfile[];
   menuItems?: MenuItem[];
   staffRoster?: StaffMember[];
+  isConnected?: boolean;
   onRestockItem?: (id: string) => void;
   onNavigateStaff: (screen: StaffScreenId) => void;
   onExportCsv: () => void;
@@ -68,6 +68,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
   customers = [],
   menuItems = [],
   staffRoster = [],
+  isConnected = false,
   onRestockItem,
   onNavigateStaff,
   onExportCsv,
@@ -91,10 +92,29 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
       return true;
     });
   }, [activityLog, activityFilter]);
-  const topItems = useMemo(
-    () => [...(menuItems.length > 0 ? menuItems : MENU_ITEMS)].sort((a, b) => b.unitsSold - a.unitsSold).slice(0, 4),
-    [menuItems]
-  );
+  const topItems = useMemo(() => {
+    const sales = new Map<string, { name: string; quantity: number; category?: string; station: string }>();
+    for (const order of orders) {
+      if (
+        order.status === 'cancelled' ||
+        order.paymentStatus === 'cancelled' ||
+        order.paymentStatus === 'refunded'
+      ) continue;
+      for (const line of order.items) {
+        const sold = sales.get(line.menuItemId);
+        sales.set(line.menuItemId, {
+          name: line.name,
+          quantity: (sold?.quantity ?? 0) + line.quantity,
+          category: menuItems.find((item) => item.id === line.menuItemId)?.category,
+          station: line.station,
+        });
+      }
+    }
+    return [...sales.entries()]
+      .map(([id, item]) => ({ id, ...item }))
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 4);
+  }, [menuItems, orders]);
   const sevenDayTrend = useMemo(() => buildPast7DaysRevenueTrend(orders), [orders]);
   const sevenDayTotal = useMemo(
     () => sevenDayTrend.reduce((acc, d) => acc + d.revenue, 0),
@@ -113,17 +133,17 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
     if (occupiedTables.length > 0) {
       return `${occupiedTables.slice(0, 3).join(', ')}${occupiedTables.length > 3 ? ` +${occupiedTables.length - 3}` : ''} active · ${reservedCount} reserved`;
     }
-    return `${tables.length > 0 ? `${tables.length} tables synced` : 'Floor synced'} · Counter Queue ready`;
+    return tables.length > 0 ? `${tables.length} tables configured · ${reservedCount} reserved` : 'No tables configured';
   }, [tables]);
 
   // Build SVG polyline points cleanly from metrics.bars
-  const maxAmount = Math.max(...metrics.bars.map((b) => b.amount), 1);
+  const maxAmount = Math.max(...metrics.bars.map((b) => b.revenue), 1);
   const chartPoints = metrics.bars.map((b, i) => {
     const x =
       metrics.bars.length === 1
         ? 180
         : 35 + (i * (330 - 35)) / (metrics.bars.length - 1);
-    const y = 112 - Math.round((b.amount / maxAmount) * 82);
+    const y = 112 - Math.round((b.revenue / maxAmount) * 82);
     return { x, y, ...b };
   });
   const polylineStr = chartPoints.map((p) => `${p.x},${p.y}`).join(' ');
@@ -136,13 +156,13 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
         <div>
           <div className="flex items-center gap-2.5">
             <h1 className="text-xl sm:text-2xl font-black text-on-surface tracking-tight">Dashboard</h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-black inline-flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Live Sync Active</span>
+            <span className="px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[11px] font-black inline-flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-outline'}`} />
+              <span>{isConnected ? 'Connected' : 'Connecting'}</span>
             </span>
           </div>
           <p className="text-xs text-on-surface-variant flex items-center gap-2 mt-1">
-            <span className="text-[#FF6422] font-bold">{liveKotCount} KOTs cooking in kitchen</span>
+            <span className="text-[#FF6422] font-bold">{liveKotCount} active kitchen orders</span>
             <span>·</span>
             <span>{floorSyncSummary}</span>
           </p>
@@ -202,10 +222,6 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
             <span className="text-lg sm:text-2xl text-on-surface font-black tracking-tight tabular-nums">
               {metrics.totalOrders.toLocaleString('en-IN')}
             </span>
-            <span className="flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-black shrink-0">
-              <span className="material-symbols-outlined text-[12px]">north</span>{' '}
-              {metrics.ordersDelta}
-            </span>
           </div>
         </div>
 
@@ -221,10 +237,6 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
           <div className="mt-3 flex items-baseline justify-between gap-1">
             <span className="text-base sm:text-2xl text-on-surface font-black tracking-tight tabular-nums truncate">
               {formatINR(metrics.totalRevenue)}
-            </span>
-            <span className="flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-black shrink-0">
-              <span className="material-symbols-outlined text-[12px]">north</span>{' '}
-              {metrics.revDelta}
             </span>
           </div>
           {metrics.refundedCount > 0 && (
@@ -247,10 +259,6 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
             <span className="text-lg sm:text-2xl text-on-surface font-black tracking-tight tabular-nums">
               {formatINR(metrics.avgOrderValue)}
             </span>
-            <span className="flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-black shrink-0">
-              <span className="material-symbols-outlined text-[12px]">north</span>{' '}
-              {metrics.aovDelta}
-            </span>
           </div>
         </div>
 
@@ -266,10 +274,6 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
           <div className="mt-3 flex items-baseline justify-between gap-1">
             <span className="text-lg sm:text-2xl text-on-surface font-black tracking-tight tabular-nums">
               {metrics.customers.toLocaleString('en-IN')}
-            </span>
-            <span className="flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-black shrink-0">
-              <span className="material-symbols-outlined text-[12px]">north</span>{' '}
-              {metrics.custDelta}
             </span>
           </div>
         </div>
@@ -403,7 +407,11 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
           </div>
 
           <div className="space-y-2">
-            {topItems.map((item, idx) => {
+            {topItems.length === 0 ? (
+              <p className="rounded-lg bg-surface-container p-3 text-xs text-on-surface-variant">
+                No item sales recorded yet.
+              </p>
+            ) : topItems.map((item, idx) => {
               const iconMap = ['blender', 'lunch_dining', 'coffee', 'fastfood'];
               const badgeColor = [
                 'bg-primary-container/20 text-primary-container',
@@ -427,13 +435,13 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
                         {item.name}
                       </span>
                       <span className="text-xs text-on-surface-variant truncate">
-                        {item.category} · {item.station}
+                        {item.category || item.station}
                       </span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className="text-sm font-bold text-primary tabular-nums">
-                      {item.unitsSold}
+                      {item.quantity}
                     </span>
                     <span className="text-[11px] text-on-surface-variant">sold</span>
                   </div>

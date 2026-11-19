@@ -4,9 +4,6 @@ import { io } from 'socket.io-client';
 import { z } from 'zod';
 import {
   INITIAL_CAFE_SETTINGS,
-  INITIAL_CAMPAIGNS,
-  INITIAL_LOYALTY_RULES,
-  INITIAL_TABLES,
   MENU_ITEMS,
 } from '../data/cafeSeedData';
 import type { CafeBootstrapState } from '../server/store';
@@ -31,17 +28,12 @@ export const AUTH_SESSION_QUERY_KEY = ['cafeos', 'auth-session'] as const;
 const FALLBACK_BOOTSTRAP: CafeBootstrapState = {
   outletId: 'seth-sawariya-main',
   orders: [],
-  tables: INITIAL_TABLES.map((t) => ({
-    ...t,
-    activeOrderId: undefined,
-    reservedBy: undefined,
-    reservedPartySize: undefined,
-  })),
+  tables: [],
   inventory: [],
   customers: [],
-  loyaltyRules: INITIAL_LOYALTY_RULES,
+  loyaltyRules: [],
   pointLedger: [],
-  campaigns: INITIAL_CAMPAIGNS,
+  campaigns: [],
   staffRoster: [],
   cafeSettings: INITIAL_CAFE_SETTINGS,
   menuItems: MENU_ITEMS,
@@ -69,7 +61,7 @@ export async function authenticateManagerPinApi(pin: string): Promise<AuthSessio
   });
 }
 
-export function useCafeApi(screen: string, kitchenRoute = false) {
+export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId = '') {
   const queryClient = useQueryClient();
   const [socketConnected, setSocketConnected] = useState(false);
 
@@ -96,7 +88,7 @@ export function useCafeApi(screen: string, kitchenRoute = false) {
   useEffect(() => {
     const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const tableToken = params?.get('table') || '';
-    const orderId = params?.get('orderId') || '';
+    const orderId = params?.get('orderId') || trackedOrderId;
 
     const socket = io({
       query: {
@@ -161,7 +153,7 @@ export function useCafeApi(screen: string, kitchenRoute = false) {
       socket.off('cafe:sync', invalidateRouteData);
       socket.disconnect();
     };
-  }, [kitchenRoute, queryClient]);
+  }, [kitchenRoute, queryClient, trackedOrderId]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: BOOTSTRAP_QUERY_KEY });
 

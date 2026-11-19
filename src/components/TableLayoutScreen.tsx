@@ -112,7 +112,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
     resolver: zodResolver(tableTransferMergeSchema),
     defaultValues: {
       sourceTableId: selectedTable,
-      targetTableId: tables.find((t) => t.id !== selectedTable)?.id ?? 'T1',
+      targetTableId: tables.find((t) => t.id !== selectedTable)?.id ?? '',
     },
   });
 

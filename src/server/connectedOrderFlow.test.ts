@@ -26,6 +26,15 @@ async function startServer() {
 test('End-to-End Connected Order Lifecycle: Customer QR -> Accept (Stock Deduct) -> Kitchen Prep -> Serve -> Pay Counter', async (t) => {
   const { baseUrl, store, close } = await startServer();
   t.after(close);
+  const milk = store.addIngredient({
+    name: 'Milk',
+    quantity: 12,
+    unit: 'L',
+    minThreshold: 2,
+    supplier: 'Test supplier',
+    unitCost: 1,
+  });
+  store.setRecipe('cappuccino', [{ ingredientId: milk.id, amount: 0.2 }]);
 
   // 1. Staff logs in with PIN to obtain auth cookie
   const loginRes = await fetch(`${baseUrl}/api/auth/pin`, {
@@ -59,6 +68,8 @@ test('End-to-End Connected Order Lifecycle: Customer QR -> Accept (Stock Deduct)
     body: JSON.stringify(orderPayload),
   });
   assert.equal(createRes.status, 201);
+  const customerCookie = createRes.headers.get('set-cookie')?.split(';')[0] || '';
+  assert.ok(customerCookie.includes('cafeos_customer_session'));
   const createdBody = (await createRes.json()) as { order: { id: string; status: string; total: number } };
   const orderId = createdBody.order.id;
   assert.equal(createdBody.order.status, 'placed');
@@ -66,7 +77,7 @@ test('End-to-End Connected Order Lifecycle: Customer QR -> Accept (Stock Deduct)
 
   // Check initial milk stock before acceptance
   const initialInventory = store.getInventory();
-  const milkBefore = initialInventory.find((i) => i.id === 'ing-milk')!;
+  const milkBefore = initialInventory.find((i) => i.id === milk.id)!;
   const milkQtyBefore = milkBefore.quantity;
 
   // 3. Staff accepts order: status -> 'accepted'
@@ -83,7 +94,7 @@ test('End-to-End Connected Order Lifecycle: Customer QR -> Accept (Stock Deduct)
   const acceptedBody = (await acceptRes.json()) as { ok: boolean; order: { status: string } };
   assert.equal(acceptedBody.order.status, 'accepted');
 
-  const milkAfter = store.getInventory().find((i) => i.id === 'ing-milk')!;
+  const milkAfter = store.getInventory().find((i) => i.id === milk.id)!;
   assert.equal(
     Math.round((milkQtyBefore - milkAfter.quantity) * 100) / 100,
     0.4,
@@ -124,6 +135,18 @@ test('End-to-End Connected Order Lifecycle: Customer QR -> Accept (Stock Deduct)
   });
   assert.equal(servedRes.status, 200);
   assert.equal(((await servedRes.json()) as any).order.status, 'served');
+
+  const customerBootstrapRes = await fetch(`${baseUrl}/api/bootstrap`, {
+    headers: { Cookie: customerCookie },
+  });
+  assert.equal(customerBootstrapRes.status, 200);
+  const customerBootstrap = (await customerBootstrapRes.json()) as {
+    orders: Array<{ id: string; status: string }>;
+  };
+  assert.equal(
+    customerBootstrap.orders.find((order) => order.id === orderId)?.status,
+    'served'
+  );
 
   // 6. Payment settled at counter via cash
   const payRes = await fetch(`${baseUrl}/api/orders/${orderId}/pay-counter`, {

@@ -297,7 +297,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
             type="text"
             value={couponDraft}
             onChange={(event) => setCouponDraft(event.target.value)}
-            placeholder="Enter promo code (e.g. CAFE50)"
+            placeholder="Enter promo code"
             className="w-full bg-surface px-3.5 py-2.5 rounded-full text-xs font-extrabold text-on-surface uppercase tracking-wider focus:outline-none focus:ring-1 focus:ring-[#FF6422] font-mono border border-outline-variant/20"
           />
           <button
@@ -309,22 +309,17 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
           </button>
         </div>
 
-        {/* Quick-Apply Promo Chips */}
+        {campaigns.some((campaign) => campaign.status === 'active') && (
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
-          {[
-            { code: 'CAFE50', label: 'CAFE50 (₹50 Off)' },
-            { code: 'SAW10', label: 'SAW10 (10% Off)' },
-            { code: 'CAMPUS15', label: 'CAMPUS15 (15% Off)' },
-            { code: 'BOGO2025', label: 'BOGO2025 (20% Off)' },
-          ].map((chip) => {
-            const isCurrent = couponCode.toUpperCase() === chip.code;
+          {campaigns.filter((campaign) => campaign.status === 'active').map((campaign) => {
+            const isCurrent = couponCode.toUpperCase() === campaign.code.toUpperCase();
             return (
               <button
-                key={chip.code}
+                key={campaign.id}
                 type="button"
                 onClick={() => {
-                  setCouponDraft(chip.code);
-                  onCouponChange(chip.code);
+                  setCouponDraft(campaign.code);
+                  onCouponChange(campaign.code);
                 }}
                 className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
                   isCurrent
@@ -332,11 +327,12 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
                     : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
                 }`}
               >
-                {isCurrent ? `✓ ${chip.code}` : `+ ${chip.label}`}
+                {isCurrent ? `✓ ${campaign.code}` : `+ ${campaign.code}`}
               </button>
             );
           })}
         </div>
+        )}
 
         {totals.couponApplied && (
           <span className="text-[11px] font-bold text-emerald-500 flex items-center gap-1 pt-0.5">

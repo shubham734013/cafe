@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { CUSTOMER_REVIEWS, MENU_ITEMS } from '../data/cafeSeedData';
-import { CafeOrder, CustomerReview, MenuItem } from '../types/cafe';
+import type { CafeOrder, CustomerReview, MenuItem } from '../types/cafe';
 import type { CustomerFeedbackInput } from '../shared/schemas';
 
 interface CustomerReviewsSectionProps {
   orders?: CafeOrder[];
+  menuItems: MenuItem[];
   onSelectDish?: (item: MenuItem) => void;
   onSubmitFeedback: (feedback: CustomerFeedbackInput) => Promise<void>;
   onNotify: (msg: string) => void;
@@ -12,6 +12,7 @@ interface CustomerReviewsSectionProps {
 
 export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
   orders = [],
+  menuItems,
   onSelectDish,
   onSubmitFeedback,
   onNotify,
@@ -24,35 +25,39 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
-  // Derive reviews from live completed orders with feedback + user-submitted + seed reviews
+  // Derive reviews only from customer-submitted order feedback.
   const allReviews = useMemo(() => {
     const liveOrderReviews: CustomerReview[] = [];
     orders.forEach((order) => {
       if (order.rating && (order.feedbackComment || order.feedbackTags?.length)) {
         const dishItem = order.items?.[0];
-        const menuItem = dishItem ? MENU_ITEMS.find((m) => m.id === dishItem.menuItemId) : undefined;
-        const tableLabel = order.tableNumber ? order.tableNumber.replace('T', '') : '1';
+        const menuItem = dishItem ? menuItems.find((m) => m.id === dishItem.menuItemId) : undefined;
+        const tableLabel = order.tableNumber?.replace(/^T/, '');
         liveOrderReviews.push({
           id: `order-rev-${order.id}`,
-          customerName: `Guest (Table ${tableLabel})`,
+          customerName: 'Cafe Customer',
           rating: order.rating,
-          comment: order.feedbackComment || 'Great food and wonderful experience! Highly recommended.',
-          dishName: dishItem?.name || menuItem?.name || 'Chef Special',
+          comment: order.feedbackComment || order.feedbackTags?.join(' · ') || '',
+          dishName: dishItem?.name || menuItem?.name,
           diningMode:
             order.serviceMode === 'dine-in'
-              ? `Verified Dine-In • Table ${tableLabel}`
-              : 'Verified Takeaway',
+              ? tableLabel
+                ? `Verified Dine-In • Table ${tableLabel}`
+                : 'Verified Dine-In'
+              : order.serviceMode === 'delivery'
+                ? 'Verified Delivery'
+                : 'Verified Takeaway',
           dateLabel: order.createdAtLabel || 'Recent',
         });
       }
     });
 
-    return [...liveOrderReviews, ...CUSTOMER_REVIEWS];
-  }, [orders]);
+    return liveOrderReviews;
+  }, [menuItems, orders]);
 
   const handleDishClick = (dishName?: string) => {
     if (!dishName || !onSelectDish) return;
-    const match = MENU_ITEMS.find(
+    const match = menuItems.find(
       (m) =>
         m.name.toLowerCase().includes(dishName.toLowerCase()) ||
         dishName.toLowerCase().includes(m.name.toLowerCase())

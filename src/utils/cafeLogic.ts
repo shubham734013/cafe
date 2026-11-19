@@ -1,4 +1,3 @@
-import { DAILY_SALES_BY_RANGE } from '../data/cafeSeedData';
 import {
   CafeOrder,
   CampaignFilter,
@@ -75,38 +74,12 @@ export function calculateCartTotals(
     const matchingCampaign = campaigns?.find(
       (c) => c.code.trim().toUpperCase() === normalizedCoupon
     );
-    if (matchingCampaign && matchingCampaign.status !== 'active') {
-      couponError = `Promo code ${normalizedCoupon} is currently ${matchingCampaign.status} and cannot be applied.`;
-    } else if (normalizedCoupon === 'CAFE50') {
-      if (subtotal >= 200) {
-        discount = 50;
-        discountLabel = 'Special Discount (CAFE50)';
-        couponApplied = true;
-      } else {
-        couponError = 'Add ₹' + (200 - subtotal) + ' more to apply CAFE50';
-      }
-    } else if (normalizedCoupon === 'SAW10') {
-      discount = Math.round(subtotal * 0.1);
-      discountLabel = 'Member 10% Off (SAW10)';
-      couponApplied = true;
-    } else if (normalizedCoupon === 'CAMPUS15') {
-      if (subtotal >= 199) {
-        discount = Math.round(subtotal * 0.15);
-        discountLabel = 'Student Discount (CAMPUS15)';
-        couponApplied = true;
-      } else {
-        couponError = 'Add ₹' + (199 - subtotal) + ' more to apply CAMPUS15';
-      }
-    } else if (normalizedCoupon === 'BOGO2025') {
-      discount = Math.round(subtotal * 0.2);
-      discountLabel = 'Evening Brew Promo (BOGO2025)';
-      couponApplied = true;
-    } else if (matchingCampaign && matchingCampaign.status === 'active') {
+    if (matchingCampaign?.status === 'active') {
       discount = Math.round(subtotal * 0.1);
       discountLabel = `${matchingCampaign.title} (${normalizedCoupon})`;
       couponApplied = true;
     } else {
-      couponError = 'Invalid code. Try CAFE50, SAW10, or BOGO2025';
+      couponError = 'This promo code is invalid or inactive.';
     }
   }
 
@@ -266,9 +239,10 @@ export function filterOrders(
 }
 
 export function computeDashboardMetrics(orders: CafeOrder[], range: DateRangeKey) {
-  const baseline = DAILY_SALES_BY_RANGE[range];
-  const activeOrders = orders.filter((o) => o.paymentStatus !== 'cancelled');
-  const refundedOrders = orders.filter((o) => o.paymentStatus === 'refunded');
+  const activeOrders = orders.filter(
+    (order) => order.paymentStatus !== 'cancelled' && isOrderWithinRange(order, range)
+  );
+  const refundedOrders = activeOrders.filter((order) => order.paymentStatus === 'refunded');
   const refundedAmount = refundedOrders.reduce(
     (acc, o) => acc + (o.refundAmount || o.total),
     0
@@ -277,11 +251,20 @@ export function computeDashboardMetrics(orders: CafeOrder[], range: DateRangeKey
   const liveRevenue = activeOrders
     .filter((o) => o.paymentStatus !== 'refunded')
     .reduce((acc, o) => acc + o.total, 0);
-
-  const totalOrders = baseline.baseOrders + liveOrdersCount;
-  const totalRevenue = Math.max(0, baseline.baseRevenue + liveRevenue);
+  const totalOrders = liveOrdersCount;
+  const totalRevenue = liveRevenue;
   const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
-  const customers = baseline.baseCustomers + liveOrdersCount;
+  const customers = new Set(
+    activeOrders
+      .filter((order) => order.paymentStatus !== 'refunded')
+      .map((order) => order.customerId)
+      .filter((customerId): customerId is string => Boolean(customerId))
+  ).size;
+  const bars = buildPast7DaysRevenueTrend(orders);
+  const peak = bars.reduce(
+    (highest, bar) => (bar.revenue > highest.revenue ? bar : highest),
+    bars[0]
+  );
 
   return {
     totalOrders,
@@ -290,13 +273,27 @@ export function computeDashboardMetrics(orders: CafeOrder[], range: DateRangeKey
     customers,
     refundedCount: refundedOrders.length,
     refundedAmount,
-    ordersDelta: baseline.ordersDelta,
-    revDelta: baseline.revDelta,
-    aovDelta: baseline.aovDelta,
-    custDelta: baseline.custDelta,
-    peakLabel: baseline.peakLabel,
-    bars: baseline.bars,
+    peakLabel: peak.revenue > 0 ? `${formatINR(peak.revenue)} Peak` : 'No sales yet',
+    bars,
   };
+}
+
+function isOrderWithinRange(order: CafeOrder, range: DateRangeKey, now = new Date()): boolean {
+  if (!order.createdAt) return false;
+  const createdAt = new Date(order.createdAt);
+  if (Number.isNaN(createdAt.getTime())) return false;
+
+  const rangeStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (range === 'Last 7 Days') {
+    rangeStart.setDate(rangeStart.getDate() - 6);
+  } else if (range === 'Last 30 Days') {
+    rangeStart.setDate(rangeStart.getDate() - 29);
+  } else if (range === 'This Month') {
+    rangeStart.setDate(1);
+  } else if (range === 'Quarter to Date') {
+    rangeStart.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);
+  }
+  return createdAt >= rangeStart && createdAt <= now;
 }
 
 export function formatINR(amount: number): string {
@@ -318,7 +315,9 @@ export function formatOrderCsv(orders: CafeOrder[]): string {
   const rows = orders.map((order) => {
     const location =
       order.serviceMode === 'dine-in'
-        ? `Table ${order.tableNumber || 'T1'}`
+        ? order.tableNumber
+          ? `Table ${order.tableNumber}`
+          : 'Dine-In'
         : order.deliveryPartner || 'Takeaway';
     const itemsSummary = order.items.map((i) => `${i.quantity}x ${i.name}`).join('; ');
     return [
@@ -436,79 +435,79 @@ export function filterStaffRoster(
   }
 }
 
-const PAST_7_DAY_ORDER_COUNTS = [104, 146, 189, 212, 152, 268, 172];
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const SHORT_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-export function buildPast7DaysRevenueTrend(orders: CafeOrder[]): DailyRevenuePoint[] {
-  const sevenDayBars = DAILY_SALES_BY_RANGE['Last 7 Days'].bars;
-  const liveRevenue = orders.reduce((acc, o) => acc + o.total, 0);
-  const initialSeedLiveRevenue = 1762;
+function dateKey(date: Date): string {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
 
-  return sevenDayBars.map((bar, idx) => {
-    const isLatestDay = idx === sevenDayBars.length - 1;
-    const baseRevenue = isLatestDay
-      ? Math.max(0, bar.amount - initialSeedLiveRevenue)
-      : bar.amount;
-    const revenue = isLatestDay ? baseRevenue + liveRevenue : baseRevenue;
-    const ordersCount = isLatestDay
-      ? PAST_7_DAY_ORDER_COUNTS[idx] + orders.length
-      : PAST_7_DAY_ORDER_COUNTS[idx];
-
-    return {
-      day: bar.day,
-      shortLabel: bar.shortLabel,
-      revenue,
-      ordersCount,
-      isPeak: bar.isPeak,
-    };
+function getOrdersForDay(orders: CafeOrder[], day: Date): CafeOrder[] {
+  const key = dateKey(day);
+  return orders.filter((order) => {
+    if (!order.createdAt) return false;
+    const createdAt = new Date(order.createdAt);
+    return !Number.isNaN(createdAt.getTime()) && dateKey(createdAt) === key;
   });
 }
 
-const PAST_30_DAY_ORDER_COUNTS = [
-  132, 148, 165, 194, 248, 212, 141, 138, 156, 174,
-  208, 256, 224, 152, 144, 162, 188, 218, 264, 231,
-  158, 149, 172, 196, 229, 272, 238, 164, 178, 168,
-];
-
-const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const SHORT_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+export function buildPast7DaysRevenueTrend(
+  orders: CafeOrder[],
+  referenceDate: Date = new Date()
+): DailyRevenuePoint[] {
+  const start = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    referenceDate.getDate() - 6
+  );
+  const points = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(start);
+    day.setDate(start.getDate() + index);
+    const dayOrders = getOrdersForDay(orders, day);
+    return {
+      day: day.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }),
+      shortLabel: day.toLocaleDateString('en-IN', { weekday: 'short' }),
+      revenue: dayOrders
+        .filter((order) => order.paymentStatus !== 'refunded' && order.paymentStatus !== 'cancelled')
+        .reduce((total, order) => total + order.total, 0),
+      ordersCount: dayOrders.filter((order) => order.paymentStatus !== 'cancelled').length,
+    };
+  });
+  const peakRevenue = Math.max(...points.map((point) => point.revenue));
+  return points.map((point) => ({
+    ...point,
+    isPeak: peakRevenue > 0 && point.revenue === peakRevenue,
+  }));
+}
 
 export function buildPast30DaysOrderVolumeTrend(
   orders: CafeOrder[],
   referenceDate: Date = new Date()
 ): DailyOrderVolumePoint[] {
-  const liveRevenue = orders.reduce((acc, o) => acc + o.total, 0);
-  const initialSeedLiveRevenue = 1762;
-  const avgSeedTicket = 128;
-
-  const anchor = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
-  const rawPoints = PAST_30_DAY_ORDER_COUNTS.map((baseCount, idx) => {
-    const offsetDays = PAST_30_DAY_ORDER_COUNTS.length - 1 - idx;
-    const d = new Date(anchor);
-    d.setDate(anchor.getDate() - offsetDays);
-
-    const shortLabel = `${d.getDate()} ${SHORT_MONTHS[d.getMonth()]}`;
-    const isLatestDay = idx === PAST_30_DAY_ORDER_COUNTS.length - 1;
-    const dayLabel = isLatestDay
-      ? `${SHORT_WEEKDAYS[d.getDay()]}, ${shortLabel} (Today)`
-      : `${SHORT_WEEKDAYS[d.getDay()]}, ${shortLabel}`;
-
-    const ordersCount = isLatestDay ? baseCount + orders.length : baseCount;
-    const revenue = isLatestDay
-      ? Math.max(0, baseCount * avgSeedTicket - initialSeedLiveRevenue) + liveRevenue
-      : baseCount * avgSeedTicket;
-
+  const start = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    referenceDate.getDate() - 29
+  );
+  const points = Array.from({ length: 30 }, (_, index) => {
+    const day = new Date(start);
+    day.setDate(start.getDate() + index);
+    const dayOrders = getOrdersForDay(orders, day);
+    const shortLabel = `${day.getDate()} ${SHORT_MONTHS[day.getMonth()]}`;
+    const isToday = dateKey(day) === dateKey(referenceDate);
     return {
-      day: dayLabel,
+      day: `${SHORT_WEEKDAYS[day.getDay()]}, ${shortLabel}${isToday ? ' (Today)' : ''}`,
       shortLabel,
-      ordersCount,
-      revenue,
+      ordersCount: dayOrders.filter((order) => order.paymentStatus !== 'cancelled').length,
+      revenue: dayOrders
+        .filter((order) => order.paymentStatus !== 'refunded' && order.paymentStatus !== 'cancelled')
+        .reduce((total, order) => total + order.total, 0),
     };
   });
-
-  const maxOrders = Math.max(...rawPoints.map((p) => p.ordersCount), 0);
-  return rawPoints.map((p) => ({
-    ...p,
-    isPeak: maxOrders > 0 && p.ordersCount === maxOrders,
+  const maxOrders = Math.max(...points.map((point) => point.ordersCount), 0);
+  return points.map((point) => ({
+    ...point,
+    isPeak: maxOrders > 0 && point.ordersCount === maxOrders,
   }));
 }
 

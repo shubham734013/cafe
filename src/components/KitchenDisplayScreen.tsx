@@ -14,22 +14,16 @@ import { deriveKotCardPhase, isKitchenActiveOrder } from '../utils/cafeLogic';
 interface KitchenDisplayScreenProps {
   orders: CafeOrder[];
   inventory?: InventoryIngredient[];
+  isConnected?: boolean;
   pendingOrderId?: string | null;
   onToggleKotItem: (orderId: string, menuItemId: string) => void;
   onAdvanceOrderStatus: (orderId: string) => void | Promise<void>;
+  onRefresh?: () => void;
   onRequestReorder?: (ingredientId: string, note?: string) => Promise<void>;
   onNotify: (msg: string) => void;
 }
 
 type KotFilter = 'all' | 'dine-in' | 'takeaway' | 'priority';
-
-function deterministicOffsetSeconds(orderId: string): number {
-  let hash = 0;
-  for (let i = 0; i < orderId.length; i += 1) {
-    hash = (hash * 31 + orderId.charCodeAt(i)) % 60;
-  }
-  return hash;
-}
 
 function playKitchenChime() {
   if (typeof window === 'undefined') return;
@@ -69,19 +63,22 @@ function playKitchenChime() {
   }
 }
 
-const KotElapsedBadge: React.FC<{ baseMinutes: number; orderId: string }> = React.memo(
-  ({ baseMinutes, orderId }) => {
-    const [elapsedOffsetSec, setElapsedOffsetSec] = useState(0);
+const KotElapsedBadge: React.FC<{ baseMinutes: number; createdAt?: string }> = React.memo(
+  ({ baseMinutes, createdAt }) => {
+    const mountedAt = useRef(Date.now()).current;
+    const [now, setNow] = useState(mountedAt);
 
     useEffect(() => {
       const interval = setInterval(() => {
-        setElapsedOffsetSec((s) => s + 1);
+        setNow(Date.now());
       }, 1000);
       return () => clearInterval(interval);
     }, []);
 
-    const initialSec = deterministicOffsetSeconds(orderId);
-    const totalSec = Math.max(0, baseMinutes * 60 + ((initialSec + elapsedOffsetSec) % 3600));
+    const createdAtMs = createdAt ? Date.parse(createdAt) : Number.NaN;
+    const totalSec = Number.isFinite(createdAtMs)
+      ? Math.max(0, Math.floor((now - createdAtMs) / 1000))
+      : Math.max(0, baseMinutes * 60 + Math.floor((now - mountedAt) / 1000));
     const min = Math.floor(totalSec / 60);
     const sec = totalSec % 60;
     return (
@@ -102,9 +99,11 @@ KotElapsedBadge.displayName = 'KotElapsedBadge';
 export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
   orders,
   inventory = [],
+  isConnected = false,
   pendingOrderId = null,
   onToggleKotItem,
   onAdvanceOrderStatus,
+  onRefresh,
   onRequestReorder,
   onNotify,
 }) => {
@@ -248,9 +247,9 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
                 <h1 className="text-lg sm:text-xl font-black text-on-surface tracking-tight">
                   Kitchen Orders (KOT)
                 </h1>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-black">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  Live Sync
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[11px] font-black">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-outline'}`} />
+                  {isConnected ? 'Connected' : 'Connecting'}
                 </span>
               </div>
               <p className="text-xs text-on-surface-variant flex items-center gap-2 mt-0.5 tabular-nums">
@@ -299,7 +298,10 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
             <button
               type="button"
               aria-label="Refresh KOT feed"
-              onClick={() => onNotify('KOT feed synchronized')}
+              onClick={() => {
+                onRefresh?.();
+                onNotify('KOT feed refreshed');
+              }}
               className="w-10 h-10 rounded-full bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 flex items-center justify-center text-on-surface-variant hover:text-[#FF6422] transition-colors cursor-pointer"
             >
               <span className="material-symbols-outlined text-[20px]">refresh</span>
@@ -433,7 +435,9 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
                               </span>
                             )}
                             {order.serviceMode === 'dine-in'
-                              ? `Table ${order.tableNumber || 'T3'}`
+                              ? order.tableNumber
+                                ? `Table ${order.tableNumber}`
+                                : 'Dine-In'
                               : order.serviceMode === 'delivery'
                                 ? order.deliveryPartner || 'Delivery'
                                 : 'Takeaway'}
@@ -488,12 +492,14 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
                             const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
                             return `${totalQty} ${totalQty === 1 ? 'item' : 'items'}`;
                           })()}{' '}
-                          · {cardPhase.checkedCount}/{cardPhase.totalCount} prepped ·{' '}
-                          {order.elapsedMinutes}m ago
+                          · {cardPhase.checkedCount}/{cardPhase.totalCount} prepped
                         </span>
                       </div>
 
-                      <KotElapsedBadge baseMinutes={order.elapsedMinutes} orderId={order.id} />
+                      <KotElapsedBadge
+                        baseMinutes={order.elapsedMinutes}
+                        createdAt={order.createdAt}
+                      />
                     </div>
 
                     {/* Immediate Visual Feedback Banner when Order Transitions to Prepared */}
@@ -626,27 +632,6 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
             </AnimatePresence>
           </div>
         )}
-
-        {/* Chef Station Quick Telemetry Bar */}
-        <aside className="w-full bg-surface-container-lowest rounded-xl p-4 flex flex-col gap-2 shadow-md">
-          <div className="flex items-center justify-between text-on-surface-variant text-xs">
-            <span className="flex items-center gap-1 text-primary font-medium">
-              <span className="material-symbols-outlined text-[16px]">speed</span>
-              Avg Cook Pace
-            </span>
-            <span className="text-on-surface font-semibold tabular-nums">06m 12s</span>
-          </div>
-          <div className="w-full h-1.5 rounded-full bg-surface-container-highest overflow-hidden">
-            <div className="h-full bg-primary-container rounded-full w-[68%]" />
-          </div>
-          <div className="flex items-center justify-between pt-0.5 text-xs text-on-surface-variant">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-tertiary" />
-              Station 1 (Hot Kitchen + Barista)
-            </span>
-            <span className="text-secondary text-[11px]">Active Sync: Live</span>
-          </div>
-        </aside>
 
         {/* Kitchen Ingredient Low-Stock Alert & Quick Reorder Dialog */}
         <Dialog open={stockModalOpen} onOpenChange={setStockModalOpen}>

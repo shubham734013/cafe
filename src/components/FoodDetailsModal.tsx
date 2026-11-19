@@ -120,19 +120,6 @@ export const FoodDetailsModal: React.FC<FoodDetailsModalProps> = ({
               </span>
             </div>
 
-            {/* Rating & Reviews */}
-            <div className="flex items-center gap-1.5 mt-1.5">
-              <span className="material-symbols-outlined text-amber-400 icon-filled text-[18px]">
-                star
-              </span>
-              <span className="text-xs font-bold text-on-surface">
-                {item.rating?.toFixed(1) || '4.8'}
-              </span>
-              <span className="text-xs text-on-surface-variant">
-                ({item.reviewsCount || 124} Reviews)
-              </span>
-            </div>
-
             <p className="text-xs sm:text-sm text-on-surface-variant mt-2.5 leading-relaxed">
               {item.description}
             </p>

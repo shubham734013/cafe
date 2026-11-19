@@ -197,7 +197,9 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
                   <span className="block font-bold text-on-surface">#{order.id}</span>
                   <span className="text-xs text-on-surface-variant">
                     {order.serviceMode === 'dine-in'
-                      ? `Dine-In · ${order.tableNumber ?? 'T3'}`
+                      ? order.tableNumber
+                        ? `Dine-In · ${order.tableNumber}`
+                        : 'Dine-In'
                       : order.serviceMode === 'delivery'
                         ? `Delivery · ${order.deliveryPartner ?? 'Direct'}`
                         : 'Takeaway'}

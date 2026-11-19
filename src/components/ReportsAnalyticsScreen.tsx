@@ -11,16 +11,15 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import {
-  INVENTORY_REPORT_ITEMS,
-  MENU_ITEMS,
-  STAFF_PERFORMANCE_ROWS,
-} from '../data/cafeSeedData';
-import {
+import type {
   CafeOrder,
+  CustomerProfile,
   DailyOrderVolumePoint,
   DateRangeKey,
+  InventoryIngredient,
+  MenuItem,
   ReportCategory,
+  StaffMember,
 } from '../types/cafe';
 import {
   buildPast30DaysOrderVolumeTrend,
@@ -31,6 +30,10 @@ import { CafeImage } from './CafeImage';
 
 interface ReportsAnalyticsScreenProps {
   orders: CafeOrder[];
+  inventory: InventoryIngredient[];
+  customers: CustomerProfile[];
+  staffRoster: StaffMember[];
+  menuItems: MenuItem[];
   onExportCsv: () => void;
   onExportExcel?: () => void;
   onDownloadReportPdf?: (args: {
@@ -44,9 +47,9 @@ interface ReportsAnalyticsScreenProps {
 
 const TIMEFRAMES: { label: string; key: DateRangeKey }[] = [
   { label: 'Today', key: 'Today' },
-  { label: 'This Week', key: 'Last 7 Days' },
+  { label: 'Last 7 Days', key: 'Last 7 Days' },
   { label: 'This Month', key: 'This Month' },
-  { label: 'Last 30 Days', key: 'Quarter to Date' },
+  { label: 'Last 30 Days', key: 'Last 30 Days' },
 ];
 
 const REPORT_TABS: { id: ReportCategory; icon: string }[] = [
@@ -54,7 +57,7 @@ const REPORT_TABS: { id: ReportCategory; icon: string }[] = [
   { id: 'Item Report', icon: 'inventory_2' },
   { id: 'Inventory Report', icon: 'kitchen' },
   { id: 'Customer Report', icon: 'group' },
-  { id: 'Staff Performance', icon: 'badge' },
+  { id: 'Staff Roster', icon: 'badge' },
 ];
 
 interface OrderVolumeTooltipProps {
@@ -76,8 +79,53 @@ const OrderVolumeTooltip: React.FC<OrderVolumeTooltipProps> = ({ active, payload
   );
 };
 
+function buildSalesTrend(orders: CafeOrder[], range: DateRangeKey, now = new Date()) {
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (range === 'Last 7 Days') start.setDate(start.getDate() - 6);
+  if (range === 'Last 30 Days') start.setDate(start.getDate() - 29);
+  if (range === 'This Month') start.setDate(1);
+  if (range === 'Quarter to Date') start.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);
+  const hourly = range === 'Today';
+  const bucketCount = hourly
+    ? 24
+    : Math.floor((now.getTime() - start.getTime()) / 86_400_000) + 1;
+  const points = Array.from({ length: bucketCount }, (_, index) => {
+    const date = new Date(start);
+    if (!hourly) date.setDate(start.getDate() + index);
+    const hour = hourly ? index : undefined;
+    const matchingOrders = orders.filter((order) => {
+      if (!order.createdAt || order.paymentStatus === 'cancelled' || order.paymentStatus === 'refunded') {
+        return false;
+      }
+      const createdAt = new Date(order.createdAt);
+      if (Number.isNaN(createdAt.getTime())) return false;
+      return hourly
+        ? createdAt.getFullYear() === now.getFullYear() &&
+            createdAt.getMonth() === now.getMonth() &&
+            createdAt.getDate() === now.getDate() &&
+            createdAt.getHours() === hour
+        : createdAt >= date &&
+            createdAt < new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+    });
+    const shortLabel = hourly
+      ? new Date(2000, 0, 1, index).toLocaleTimeString('en-IN', { hour: 'numeric' })
+      : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    return {
+      day: hourly ? shortLabel : date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }),
+      shortLabel,
+      amount: matchingOrders.reduce((sum, order) => sum + order.total, 0),
+    };
+  });
+  const peakAmount = Math.max(...points.map((point) => point.amount), 0);
+  return points.map((point) => ({ ...point, isPeak: peakAmount > 0 && point.amount === peakAmount }));
+}
+
 export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
   orders,
+  inventory,
+  customers,
+  staffRoster,
+  menuItems,
   onExportCsv,
   onExportExcel,
   onDownloadReportPdf,
@@ -93,32 +141,39 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
     () => computeDashboardMetrics(orders, currentTimeframe.key),
     [orders, currentTimeframe.key]
   );
+  const revenueBars = useMemo(
+    () => buildSalesTrend(orders, currentTimeframe.key),
+    [orders, currentTimeframe.key]
+  );
 
   const thirtyDayOrderTrend = useMemo(() => buildPast30DaysOrderVolumeTrend(orders), [orders]);
   const { total30dOrders, avgDaily30dOrders, peak30dDay } = useMemo(() => {
     const sum = thirtyDayOrderTrend.reduce((acc, p) => acc + p.ordersCount, 0);
     const avg = Math.round(sum / Math.max(1, thirtyDayOrderTrend.length));
-    const peak =
-      thirtyDayOrderTrend.find((p) => p.isPeak) ??
-      thirtyDayOrderTrend[thirtyDayOrderTrend.length - 1];
+    const peak = sum > 0 ? thirtyDayOrderTrend.find((p) => p.isPeak) : undefined;
     return { total30dOrders: sum, avgDaily30dOrders: avg, peak30dDay: peak };
   }, [thirtyDayOrderTrend]);
 
-  const peakBar = metrics.bars.find((b) => b.isPeak) || metrics.bars[metrics.bars.length - 1];
-  const inspected = selectedDay || { day: peakBar.day, amount: peakBar.amount };
+  const peakBar = revenueBars.find((b) => b.isPeak) || revenueBars[revenueBars.length - 1];
+  const inspected = selectedDay || { day: peakBar?.day || '', amount: peakBar?.amount || 0 };
 
   const {
     channelStats,
     leadingChannelLabel,
     topMenuItem,
   } = useMemo(() => {
-    const dineInCount = orders.filter((o) => o.serviceMode === 'dine-in').length;
-    const takeawayCount = orders.filter((o) => o.serviceMode === 'takeaway').length;
-    const deliveryCount = orders.filter((o) => o.serviceMode === 'delivery').length;
-    const totalCount = Math.max(1, orders.length);
-    const dineInPct = orders.length === 0 ? 0 : Math.round((dineInCount / totalCount) * 100);
-    const takeawayPct = orders.length === 0 ? 0 : Math.round((takeawayCount / totalCount) * 100);
-    const deliveryPct = orders.length === 0 ? 0 : Math.max(0, 100 - dineInPct - takeawayPct);
+    const reportOrders = orders.filter(
+      (order) => order.status !== 'cancelled' &&
+        order.paymentStatus !== 'cancelled' &&
+        order.paymentStatus !== 'refunded'
+    );
+    const dineInCount = reportOrders.filter((o) => o.serviceMode === 'dine-in').length;
+    const takeawayCount = reportOrders.filter((o) => o.serviceMode === 'takeaway').length;
+    const deliveryCount = reportOrders.filter((o) => o.serviceMode === 'delivery').length;
+    const totalCount = Math.max(1, reportOrders.length);
+    const dineInPct = reportOrders.length === 0 ? 0 : Math.round((dineInCount / totalCount) * 100);
+    const takeawayPct = reportOrders.length === 0 ? 0 : Math.round((takeawayCount / totalCount) * 100);
+    const deliveryPct = reportOrders.length === 0 ? 0 : Math.max(0, 100 - dineInPct - takeawayPct);
 
     const channels = [
       { label: `Dine-In (${dineInCount} orders)`, pct: dineInPct, color: 'bg-primary-container', name: 'Dine-In' },
@@ -127,14 +182,62 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
     ];
     const leader = [...channels].sort((a, b) => b.pct - a.pct)[0];
 
-    const bestItem = [...MENU_ITEMS].sort((a, b) => b.unitsSold - a.unitsSold)[0];
+    const sales = new Map<string, { name: string; quantity: number; revenue: number; price: number }>();
+    for (const order of orders) {
+      if (
+        order.status === 'cancelled' ||
+        order.paymentStatus === 'cancelled' ||
+        order.paymentStatus === 'refunded'
+      ) continue;
+      for (const line of order.items) {
+        const sold = sales.get(line.menuItemId);
+        sales.set(line.menuItemId, {
+          name: line.name,
+          quantity: (sold?.quantity ?? 0) + line.quantity,
+          revenue: (sold?.revenue ?? 0) + line.price * line.quantity,
+          price: line.price,
+        });
+      }
+    }
+    const bestItem = [...sales.entries()]
+      .sort(([, a], [, b]) => b.quantity - a.quantity)[0];
+    const catalogItem = bestItem ? menuItems.find((item) => item.id === bestItem[0]) : undefined;
+    const topItem = bestItem
+      ? {
+          id: bestItem[0],
+          name: bestItem[1].name,
+          quantity: bestItem[1].quantity,
+          revenue: bestItem[1].revenue,
+          price: bestItem[1].price,
+          imageUrl: catalogItem?.imageUrl,
+          category: catalogItem?.category || 'Menu item',
+        }
+      : undefined;
 
     return {
       channelStats: channels,
-      leadingChannelLabel: orders.length === 0 ? 'No orders yet' : `${leader.name} Leader`,
-      topMenuItem: bestItem,
+      leadingChannelLabel:
+        reportOrders.length === 0 ? 'No orders yet' : `${leader.name} Leader`,
+      topMenuItem: topItem,
     };
+  }, [menuItems, orders]);
+
+  const knownCustomerOrderCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const order of orders) {
+      if (
+        order.status !== 'cancelled' &&
+        order.paymentStatus !== 'cancelled' &&
+        order.paymentStatus !== 'refunded' &&
+        order.customerId &&
+        !order.customerId.startsWith('guest_')
+      ) {
+        counts.set(order.customerId, (counts.get(order.customerId) ?? 0) + 1);
+      }
+    }
+    return [...counts.values()];
   }, [orders]);
+  const repeatCustomerCount = knownCustomerOrderCounts.filter((count) => count > 1).length;
 
   return (
     <div className="flex flex-col w-full pb-6 space-y-4">
@@ -222,11 +325,7 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
         <div className="p-3.5 rounded-lg bg-surface-container-low flex flex-col justify-between shadow-sm min-w-0">
           <div className="flex items-center justify-between gap-1">
             <span className="text-[11px] text-on-surface-variant uppercase tracking-wider font-medium truncate">
-              Order Value
-            </span>
-            <span className="flex items-center text-tertiary text-[11px] font-bold shrink-0">
-              <span className="material-symbols-outlined text-[14px]">trending_up</span> +
-              {metrics.revDelta}
+              Total Revenue
             </span>
           </div>
           <div className="mt-2">
@@ -234,7 +333,7 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
               {formatINR(metrics.totalRevenue)}
             </span>
             <p className="text-[11px] text-on-surface-variant mt-0.5 tabular-nums">
-              {metrics.totalOrders.toLocaleString('en-IN')} orders completed
+              {metrics.totalOrders.toLocaleString('en-IN')} orders
             </p>
           </div>
         </div>
@@ -244,17 +343,13 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
             <span className="text-[11px] text-on-surface-variant uppercase tracking-wider font-medium truncate">
               Avg Order Value
             </span>
-            <span className="flex items-center text-tertiary text-[11px] font-bold shrink-0">
-              <span className="material-symbols-outlined text-[14px]">arrow_upward</span> +
-              {metrics.aovDelta}
-            </span>
           </div>
           <div className="mt-2">
             <span className="text-xl sm:text-2xl text-primary-fixed-dim font-bold tabular-nums">
               {formatINR(metrics.avgOrderValue)}
             </span>
             <p className="text-[11px] text-on-surface-variant mt-0.5">
-              Highest on evening rush
+              Average for the selected period
             </p>
           </div>
         </div>
@@ -280,7 +375,7 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
                   {formatINR(metrics.totalRevenue)}
                 </span>
                 <span className="block text-[10px] text-tertiary font-medium">
-                  Peak: {peakBar.shortLabel}
+                  {metrics.totalRevenue > 0 ? `Peak: ${peakBar.shortLabel}` : 'No sales yet'}
                 </span>
               </div>
             </div>
@@ -295,12 +390,12 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
             <div className="w-full h-52 min-w-0">
               <ResponsiveContainer width="100%" height={208}>
                 <BarChart
-                  data={metrics.bars}
+                  data={revenueBars}
                   margin={{ top: 10, right: 8, left: -12, bottom: 2 }}
                   onClick={(state) => {
                     const idx = typeof state?.activeTooltipIndex === 'number' ? state.activeTooltipIndex : -1;
-                    if (idx >= 0 && metrics.bars[idx]) {
-                      setSelectedDay({ day: metrics.bars[idx].day, amount: metrics.bars[idx].amount });
+                    if (idx >= 0 && revenueBars[idx]) {
+                      setSelectedDay({ day: revenueBars[idx].day, amount: revenueBars[idx].amount });
                     }
                   }}
                 >
@@ -329,7 +424,7 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
                     formatter={(value: unknown) => [formatINR(Number(value ?? 0)), 'Sales']}
                   />
                   <Bar dataKey="amount" radius={[4, 4, 0, 0]} isAnimationActive={false}>
-                    {metrics.bars.map((bar) => (
+                    {revenueBars.map((bar) => (
                       <Cell
                         key={bar.day}
                         fill={bar.isPeak ? '#f59e0b' : '#2bca62'}
@@ -358,7 +453,7 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
                     Daily Order Volume (30 Days)
                   </h2>
                   <p className="text-xs text-on-surface-variant">
-                    Past 30 Days · Daily Completed Orders
+                    Past 30 Days · Daily Orders
                   </p>
                 </div>
               </div>
@@ -460,49 +555,59 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
       {activeTab === 'Item Report' && (
         <div className="p-4 rounded-xl bg-surface-container space-y-2.5">
           <h2 className="text-base font-bold text-on-surface">Top Selling Menu Items</h2>
-          {MENU_ITEMS.slice(0, 6).map((item) => (
+          {topMenuItem ? (
             <div
-              key={item.id}
+              key={topMenuItem.id}
               className="flex items-center justify-between p-2.5 rounded-lg bg-surface-container-low"
             >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg overflow-hidden">
-                  <CafeImage src={item.imageUrl} alt={item.name} />
+                  {topMenuItem.imageUrl && <CafeImage src={topMenuItem.imageUrl} alt={topMenuItem.name} />}
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-on-surface">{item.name}</p>
+                  <p className="text-sm font-semibold text-on-surface">{topMenuItem.name}</p>
                   <p className="text-xs text-on-surface-variant">
-                    {item.category} · {item.unitsSold} units
+                    {topMenuItem.category} · {topMenuItem.quantity} units
                   </p>
                 </div>
               </div>
               <span className="text-sm font-bold text-primary tabular-nums">
-                {formatINR(item.unitsSold * item.price)}
+                {formatINR(topMenuItem.revenue)}
               </span>
             </div>
-          ))}
+          ) : (
+            <p className="rounded-lg bg-surface-container-low p-3 text-xs text-on-surface-variant">
+              No item sales recorded yet.
+            </p>
+          )}
         </div>
       )}
 
       {activeTab === 'Inventory Report' && (
         <div className="p-4 rounded-xl bg-surface-container space-y-2.5">
-          <h2 className="text-base font-bold text-on-surface">Roastery &amp; Kitchen Stock</h2>
-          {INVENTORY_REPORT_ITEMS.map((inv) => (
+          <h2 className="text-base font-bold text-on-surface">Inventory</h2>
+          {inventory.length === 0 ? (
+            <p className="rounded-lg bg-surface-container-low p-3 text-xs text-on-surface-variant">
+              No inventory recorded yet.
+            </p>
+          ) : inventory.map((inv) => (
             <div key={inv.id} className="p-3 rounded-lg bg-surface-container-low space-y-1.5">
               <div className="flex items-center justify-between text-sm">
                 <span className="font-semibold text-on-surface">{inv.name}</span>
                 <span
                   className={`text-xs font-bold ${
-                    inv.status === 'Low Stock' ? 'text-error' : 'text-tertiary'
+                    inv.status === 'Critical' || inv.status === 'Reorder Soon' ? 'text-error' : 'text-tertiary'
                   }`}
                 >
-                  {inv.stock} ({inv.status})
+                  {inv.quantity} {inv.unit} ({inv.status})
                 </span>
               </div>
               <div className="w-full h-1.5 rounded-full bg-surface-container-highest overflow-hidden">
                 <div
                   className={`h-full rounded-full ${
-                    inv.status === 'Low Stock' ? 'bg-error' : 'bg-tertiary-container'
+                    inv.status === 'Critical' || inv.status === 'Reorder Soon'
+                      ? 'bg-error'
+                      : 'bg-tertiary-container'
                   }`}
                   style={{ width: `${inv.fillPct}%` }}
                 />
@@ -515,22 +620,24 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
       {activeTab === 'Customer Report' && (
         <div className="p-4 rounded-xl bg-surface-container grid grid-cols-2 gap-3">
           <div className="p-3 rounded-lg bg-surface-container-low">
-            <span className="text-xs text-on-surface-variant">Repeat Guests</span>
-            <p className="text-2xl font-bold text-primary mt-1 tabular-nums">64%</p>
-            <span className="text-[11px] text-tertiary">+9% this month</span>
+            <span className="text-xs text-on-surface-variant">Repeat Customers</span>
+            <p className="text-2xl font-bold text-primary mt-1 tabular-nums">{repeatCustomerCount}</p>
           </div>
           <div className="p-3 rounded-lg bg-surface-container-low">
-            <span className="text-xs text-on-surface-variant">Loyalty Members</span>
-            <p className="text-2xl font-bold text-on-surface mt-1 tabular-nums">418</p>
-            <span className="text-[11px] text-primary">Gold Roaster active</span>
+            <span className="text-xs text-on-surface-variant">Customer Profiles</span>
+            <p className="text-2xl font-bold text-on-surface mt-1 tabular-nums">{customers.length}</p>
           </div>
         </div>
       )}
 
-      {activeTab === 'Staff Performance' && (
+      {activeTab === 'Staff Roster' && (
         <div className="p-4 rounded-xl bg-surface-container space-y-2.5">
-          <h2 className="text-base font-bold text-on-surface">Shift Leaders &amp; Prep Pace</h2>
-          {STAFF_PERFORMANCE_ROWS.map((st) => (
+          <h2 className="text-base font-bold text-on-surface">Staff Roster</h2>
+          {staffRoster.length === 0 ? (
+            <p className="rounded-lg bg-surface-container-low p-3 text-xs text-on-surface-variant">
+              No staff members recorded yet.
+            </p>
+          ) : staffRoster.map((st) => (
             <div
               key={st.id}
               className="flex items-center justify-between p-3 rounded-lg bg-surface-container-low"
@@ -539,12 +646,7 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
                 <p className="text-sm font-bold text-on-surface">{st.name}</p>
                 <p className="text-xs text-on-surface-variant">{st.role}</p>
               </div>
-              <div className="text-right text-xs">
-                <span className="text-primary font-bold block tabular-nums">
-                  {st.ordersHandled} orders
-                </span>
-                <span className="text-tertiary">Avg {st.avgPrep}</span>
-              </div>
+              <span className="text-xs text-on-surface-variant">{st.isOnDuty ? 'On duty' : 'Off duty'}</span>
             </div>
           ))}
         </div>
@@ -555,7 +657,7 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
         <div className="p-3.5 rounded-xl bg-surface-container-low shadow-sm flex items-center justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-12 h-12 rounded-lg bg-surface-container-highest overflow-hidden shrink-0">
-              <CafeImage src={topMenuItem.imageUrl} alt={topMenuItem.name} />
+              {topMenuItem.imageUrl && <CafeImage src={topMenuItem.imageUrl} alt={topMenuItem.name} />}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -563,12 +665,11 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
                   {topMenuItem.name}
                 </span>
                 <span className="px-1.5 py-0.5 rounded bg-primary-container/20 text-primary-container text-[10px] font-bold uppercase shrink-0">
-                  #1 Sold
+                  Top Item
                 </span>
               </div>
               <p className="text-[11px] text-on-surface-variant mt-0.5">
-                {topMenuItem.unitsSold} units served ·{' '}
-                {formatINR(topMenuItem.unitsSold * topMenuItem.price)} order value
+                {topMenuItem.quantity} units · {formatINR(topMenuItem.revenue)} order value
               </p>
             </div>
           </div>

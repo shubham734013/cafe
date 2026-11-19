@@ -26,7 +26,6 @@ import type {
   StaffScreenId,
   WorkspaceMode,
 } from './types/cafe';
-import { MENU_ITEMS } from './data/cafeSeedData';
 import type { CustomerFeedbackInput } from './shared/schemas';
 import { calculateCartTotals, formatOrderCsv, isKitchenActiveOrder } from './utils/cafeLogic';
 import { triggerBlobDownload } from './utils/download';
@@ -169,6 +168,7 @@ export default function App() {
     isLoading,
     isAuthLoading,
     isError,
+    socketConnected,
     errorMessage,
     refetch,
     loginPinMutation,
@@ -199,7 +199,7 @@ export default function App() {
     toggleStaffDutyMutation,
     saveSettingsMutation,
     resetSettingsMutation,
-  } = useCafeApi(activeScreen, isKitchenRoute);
+  } = useCafeApi(activeScreen, isKitchenRoute, trackedOrderId);
 
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pinInput, setPinInput] = useState('');
@@ -1012,7 +1012,7 @@ export default function App() {
             tables={tables}
             cartCount={customerTotals.itemCount}
             orders={orders}
-            menuItems={menuItems || MENU_ITEMS}
+            menuItems={menuItems}
             onSelectServiceAndTable={(mode, table) => {
               setServiceMode(mode);
               setSelectedTable(table);
@@ -1038,7 +1038,7 @@ export default function App() {
       {activeScreen === 'menu' && (
         <Suspense fallback={<MenuScreenSkeleton />}>
           <CustomerMenuScreen
-            items={menuItems || MENU_ITEMS}
+            items={menuItems}
             serviceMode={serviceMode}
             selectedTable={selectedTable}
             activeCategory={menuCategory}
@@ -1104,14 +1104,11 @@ export default function App() {
         <Suspense fallback={<ScreenFallback />}>
           <CustomerRewardsScreen
             points={rewardPoints}
+            campaigns={campaigns}
             onRedeemCoupon={(code) => {
               setCouponCode(code);
               handleNavigate('cart', 'customer');
               showToast(`Coupon ${code} selected for your cart`);
-            }}
-            onAddRewardItem={(item) => {
-              addCustomerItem(item);
-              handleNavigate('cart', 'customer');
             }}
           />
         </Suspense>
@@ -1163,7 +1160,7 @@ export default function App() {
             serviceMode={serviceMode}
             selectedTable={selectedTable}
             tables={tables}
-            menuItems={menuItems || MENU_ITEMS}
+            menuItems={menuItems}
             customers={customers}
             isSubmitting={createOrderMutation.isPending}
             lastCompletedOrder={lastCompletedPosOrder}
@@ -1183,6 +1180,8 @@ export default function App() {
           <KitchenDisplayScreen
             orders={orders}
             inventory={inventory}
+            isConnected={socketConnected}
+            onRefresh={() => void refetch()}
             onToggleKotItem={handleToggleKotItem}
             onAdvanceOrderStatus={handleAdvanceOrderStatus}
             onRequestReorder={handleRequestIngredientReorder}
@@ -1203,6 +1202,7 @@ export default function App() {
           <AdminDashboardScreen
             orders={orders}
             inventory={inventory}
+            isConnected={socketConnected}
             tables={tables}
             activityLog={activityLog}
             customers={customers}
@@ -1241,6 +1241,10 @@ export default function App() {
         {activeScreen === 'reports-analytics' && (
           <ReportsAnalyticsScreen
             orders={orders}
+            inventory={inventory}
+            customers={customers}
+            staffRoster={staffRoster}
+            menuItems={menuItems}
             onExportCsv={handleExportCsv}
             onExportExcel={handleExportOrdersExcel}
             onDownloadReportPdf={handleDownloadReportPdf}

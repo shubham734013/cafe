@@ -65,8 +65,8 @@ export type MenuCategory =
   | 'Salad'
   | 'Drink'
   | 'Dessert';
-export type DateRangeKey = 'Today' | 'Last 7 Days' | 'This Month' | 'Quarter to Date';
-export type ReportCategory = 'Sales Report' | 'Item Report' | 'Inventory Report' | 'Customer Report' | 'Staff Performance';
+export type DateRangeKey = 'Today' | 'Last 7 Days' | 'Last 30 Days' | 'This Month' | 'Quarter to Date';
+export type ReportCategory = 'Sales Report' | 'Item Report' | 'Inventory Report' | 'Customer Report' | 'Staff Roster';
 
 export type InventoryTab = 'Inventory' | 'Low Stock' | 'Ingredients' | 'Stock In' | 'Stock Out' | 'Suppliers';
 export type InventoryStatus = 'Good' | 'Reorder Soon' | 'Critical';
@@ -149,6 +149,7 @@ export interface CafeOrder {
   pointsRedeemed?: number;
   status: OrderStatus;
   createdAtLabel: string;
+  createdAt?: string;
   elapsedMinutes: number;
   isUrgent?: boolean;
   serverName?: string;

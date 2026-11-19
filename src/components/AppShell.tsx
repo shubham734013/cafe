@@ -111,7 +111,7 @@ export const AppShell: React.FC<AppShellProps> = ({
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
-      if (!isStaffWorkspace && isLightTheme) {
+      if (isLightTheme) {
         document.documentElement.classList.add('customer-theme-light');
         document.body.classList.add('customer-theme-light');
       } else {
@@ -119,9 +119,9 @@ export const AppShell: React.FC<AppShellProps> = ({
         document.body.classList.remove('customer-theme-light');
       }
     }
-  }, [isLightTheme, isStaffWorkspace]);
+  }, [isLightTheme]);
 
-  const toggleCustomerTheme = () => {
+  const toggleTheme = () => {
     setIsLightTheme((prev) => {
       const next = !prev;
       if (typeof window !== 'undefined') {
@@ -343,6 +343,20 @@ export const AppShell: React.FC<AppShellProps> = ({
 
             {/* Right Header Controls */}
             <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                aria-label={isLightTheme ? 'Switch to Dark Theme' : 'Switch to Light Theme'}
+                onClick={toggleTheme}
+                className="px-2.5 py-1 rounded-full bg-surface-container hover:bg-surface-container-high flex items-center gap-1 text-xs font-bold text-on-surface transition-all cursor-pointer shadow-sm border border-outline-variant/15"
+              >
+                <span className="material-symbols-outlined text-[15px] text-amber-400">
+                  {isLightTheme ? 'light_mode' : 'dark_mode'}
+                </span>
+                <span className="text-[11px] font-bold hidden sm:inline">
+                  {isLightTheme ? 'Light' : 'Dark'}
+                </span>
+              </button>
+
               {isStaff && canStaffRoleAccessScreen(activeRole, 'settings-cafe-profile') && (
                 <button
                   type="button"
@@ -380,15 +394,6 @@ export const AppShell: React.FC<AppShellProps> = ({
                       <p className="font-semibold text-on-surface">
                         {liveKotCount} active KOT tickets in kitchen
                       </p>
-                      <p className="text-on-surface-variant text-[11px] mt-0.5">
-                        Avg prep pace: 6m 12s
-                      </p>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-surface-container text-xs">
-                      <p className="font-semibold text-tertiary">Promo CAFE50 active</p>
-                      <p className="text-on-surface-variant text-[11px] mt-0.5">
-                        ₹50 off orders ₹200+
-                      </p>
                     </div>
                   </div>
                 )}
@@ -396,20 +401,6 @@ export const AppShell: React.FC<AppShellProps> = ({
 
               {!isStaffWorkspace ? (
                 <>
-                  <button
-                    type="button"
-                    aria-label={isLightTheme ? 'Switch to Dark Theme' : 'Switch to Light Theme'}
-                    onClick={toggleCustomerTheme}
-                    className="px-2.5 py-1 rounded-full bg-surface-container hover:bg-surface-container-high flex items-center gap-1 text-xs font-bold text-on-surface transition-all cursor-pointer shadow-sm border border-outline-variant/15"
-                  >
-                    <span className="material-symbols-outlined text-[15px] text-amber-400">
-                      {isLightTheme ? 'light_mode' : 'dark_mode'}
-                    </span>
-                    <span className="text-[11px] font-bold hidden sm:inline">
-                      {isLightTheme ? 'Light' : 'Dark'}
-                    </span>
-                  </button>
-
                   <button
                     type="button"
                     onClick={() => onNavigate('admin-dashboard', 'staff')}

@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CAFE_ASSETS, MENU_ITEMS } from '../data/cafeSeedData';
 import { CafeOrder, CafeTable, MenuCategory, MenuItem, ServiceMode } from '../types/cafe';
 import { CafeImage } from './CafeImage';
 import { CustomerReviewsSection } from './CustomerReviewsSection';
@@ -20,7 +19,7 @@ interface CustomerHomeScreenProps {
   tables: CafeTable[];
   cartCount: number;
   orders?: CafeOrder[];
-  menuItems?: MenuItem[];
+  menuItems: MenuItem[];
   onSelectServiceAndTable: (mode: ServiceMode, table: string) => void;
   onNavigateMenu: (category?: MenuCategory) => void;
   onNavigateCart: () => void;
@@ -32,50 +31,13 @@ interface CustomerHomeScreenProps {
   onNotify: (msg: string) => void;
 }
 
-const CATEGORY_ITEMS: Array<{
-  id: MenuCategory;
-  name: string;
-  image: string;
-}> = [
-  {
-    id: 'Pizza',
-    name: 'Pizza',
-    image: CAFE_ASSETS.pizzaMargherita,
-  },
-  {
-    id: 'Burger',
-    name: 'Burger',
-    image: CAFE_ASSETS.burgerClassic,
-  },
-  {
-    id: 'Pasta',
-    name: 'Pasta',
-    image: CAFE_ASSETS.pastaAlfredo,
-  },
-  {
-    id: 'Salad',
-    name: 'Salad',
-    image: CAFE_ASSETS.saladGarden,
-  },
-  {
-    id: 'Drink',
-    name: 'Drink',
-    image: CAFE_ASSETS.drinkCitrus,
-  },
-  {
-    id: 'Dessert',
-    name: 'Dessert',
-    image: CAFE_ASSETS.dessertCheesecake,
-  },
-];
-
 export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
   serviceMode,
   selectedTable,
   tables,
   cartCount,
   orders = [],
-  menuItems = MENU_ITEMS,
+  menuItems,
   onSelectServiceAndTable,
   onNavigateMenu,
   onNavigateCart,
@@ -89,7 +51,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<MenuCategory | 'All'>('All');
   const [detailItem, setDetailItem] = useState<MenuItem | null>(null);
-  const [favorites, setFavorites] = useState<Set<string>>(new Set(['margherita-pizza']));
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [tableModalOpen, setTableModalOpen] = useState(false);
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [bookingGuests, setBookingGuests] = useState('2 Guests');
@@ -108,6 +70,18 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
     }
     return menuItems.filter((m) => m.category === catId).length;
   };
+  const categoryItems = useMemo(
+    () =>
+      [...new Set(menuItems.map((item) => item.category))].map((category) => {
+        const categoryItems = menuItems.filter((item) => item.category === category);
+        return {
+          id: category as MenuCategory,
+          name: category,
+          image: categoryItems[0]?.imageUrl ?? '',
+        };
+      }),
+    [menuItems]
+  );
 
   // Keyboard shortcut listener for modals
   useEffect(() => {
@@ -285,40 +259,6 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
 
       {!hasSearchQuery && (
         <>
-      {/* Promo Banner Card (Exact style from reference screenshot) */}
-      <div className="pb-6">
-        <div className="relative w-full rounded-3xl overflow-hidden bg-gradient-to-r from-amber-600/25 via-orange-500/20 to-amber-900/10 border border-[#FF6422]/20 p-5 sm:p-6 shadow-xl flex items-center justify-between min-h-[140px]">
-          <div className="relative z-10 max-w-[62%] sm:max-w-[65%] space-y-2">
-            <h2 className="text-base sm:text-lg font-black text-on-surface leading-snug tracking-tight">
-              Get 20% OFF <br />
-              <span className="text-xs sm:text-sm font-semibold text-on-surface-variant">
-                on your first order
-              </span>
-            </h2>
-            <button
-              type="button"
-              onClick={() => {
-                onNavigateMenu('Pizza');
-                onNotify('Applied 20% promo on menu items!');
-              }}
-              className="mt-1 px-4 py-1.5 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white text-xs font-bold shadow-[0_4px_14px_rgba(255,100,34,0.35)] transition-all active:scale-95 cursor-pointer inline-flex items-center gap-1"
-            >
-              <span>Order Now</span>
-            </button>
-          </div>
-
-          {/* Protruding Pizza Image */}
-          <div className="absolute -right-5 -bottom-5 w-36 h-36 sm:w-44 sm:h-44 rounded-full overflow-hidden shadow-[0_12px_28px_rgba(0,0,0,0.5)] border-4 border-surface-container/60 transform rotate-12 transition-transform duration-500 hover:rotate-0">
-            <CafeImage
-              src={CAFE_ASSETS.pizzaBanner}
-              alt="Promo Pizza"
-              className="w-full h-full object-cover"
-              fallbackIcon="local_pizza"
-            />
-          </div>
-        </div>
-      </div>
-
       {/* Categories Section */}
       <div className="pb-6">
         <div className="flex items-center justify-between mb-3">
@@ -334,7 +274,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
 
         {/* Circular Category Buttons */}
         <div className="flex items-center gap-3.5 overflow-x-auto no-scrollbar py-1">
-          {CATEGORY_ITEMS.map((cat) => {
+          {categoryItems.map((cat) => {
             const isSelected = selectedCategory === cat.id;
             return (
               <button
@@ -442,15 +382,6 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                       <span className="text-xs sm:text-sm font-black text-on-surface">
                         ₹{dish.price}
                       </span>
-                      <span className="text-[11px] text-on-surface-variant">·</span>
-                      <div className="flex items-center gap-0.5">
-                        <span className="material-symbols-outlined text-amber-400 icon-filled text-[14px]">
-                          star
-                        </span>
-                        <span className="text-[11px] font-bold text-on-surface">
-                          {dish.rating?.toFixed(1) || '4.8'}
-                        </span>
-                      </div>
                     </div>
                   </div>
 
@@ -497,6 +428,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
       {!hasSearchQuery && (
         <CustomerReviewsSection
           orders={orders}
+          menuItems={menuItems}
           onSelectDish={(dish) => setDetailItem(dish)}
           onSubmitFeedback={onSubmitFeedback}
           onNotify={onNotify}
@@ -551,8 +483,9 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                 <label className="block text-xs font-bold text-on-surface mb-2">
                   Select Dine-In Table
                 </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {(tables.length > 0 ? tables : [{ id: 'T1' }, { id: 'T2' }, { id: 'T3' }, { id: 'T4' }]).map((t) => {
+                {tables.length > 0 ? (
+                  <div className="grid grid-cols-4 gap-2">
+                  {tables.map((t) => {
                     const tableId = t.id;
                     const isSelected = selectedTable === tableId;
                     return (
@@ -574,7 +507,12 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                       </button>
                     );
                   })}
-                </div>
+                  </div>
+                ) : (
+                  <p className="rounded-xl bg-surface-container-low p-3 text-xs text-on-surface-variant">
+                    Dine-in tables are not configured yet.
+                  </p>
+                )}
               </div>
             )}
 

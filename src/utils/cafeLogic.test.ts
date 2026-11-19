@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  CUSTOMER_REVIEWS,
   INITIAL_CAMPAIGNS,
   INITIAL_CUSTOMERS,
   INITIAL_INVENTORY,
@@ -31,7 +30,7 @@ import {
   restockIngredientItem,
 } from './cafeLogic';
 
-test('calculateCartTotals computes customer cart with CAFE50 coupon accurately', () => {
+test('calculateCartTotals applies only configured active campaign codes', () => {
   const items = [
     {
       menuItemId: 'protein-shake',
@@ -62,17 +61,15 @@ test('calculateCartTotals computes customer cart with CAFE50 coupon accurately',
     },
   ];
 
-  const totals = calculateCartTotals(items, 'CAFE50', 'dine-in', false);
+  const activeCampaign = INITIAL_CAMPAIGNS.find((campaign) => campaign.status === 'active')!;
+  const totals = calculateCartTotals(items, activeCampaign.code, 'dine-in', false, [activeCampaign]);
   assert.equal(totals.itemCount, 3);
   assert.equal(totals.subtotal, 377);
-  assert.equal(totals.discount, 50);
-  assert.equal(totals.tax, 15.57);
-  assert.equal(totals.roundOff, 0);
-  assert.equal(totals.total, 327);
+  assert.equal(totals.discount, 38);
   assert.equal(totals.couponApplied, true);
   assert.equal(totals.couponError, null);
 });
-test('calculateCartTotals validates minimum order for CAFE50 and handles POS dine-in discount', () => {
+test('calculateCartTotals rejects inactive campaigns and handles POS dine-in discount', () => {
   const smallOrder = [
     {
       menuItemId: 'french-fries',
@@ -84,9 +81,16 @@ test('calculateCartTotals validates minimum order for CAFE50 and handles POS din
       station: 'Fryer' as const,
     },
   ];
-  const invalidTotals = calculateCartTotals(smallOrder, 'CAFE50', 'takeaway', false);
+  const inactiveCampaign = INITIAL_CAMPAIGNS.find((campaign) => campaign.status !== 'active')!;
+  const invalidTotals = calculateCartTotals(
+    smallOrder,
+    inactiveCampaign.code,
+    'takeaway',
+    false,
+    [inactiveCampaign]
+  );
   assert.equal(invalidTotals.couponApplied, false);
-  assert.match(invalidTotals.couponError ?? '', /111/);
+  assert.match(invalidTotals.couponError ?? '', /inactive/);
 
   const posOrder = [
     {
@@ -152,13 +156,20 @@ test('filterOrders filters by service channel and query text', () => {
   assert.equal(tableThree[0].id, 'SSCB421');
 });
 
-test('computeDashboardMetrics aggregates baseline and live orders', () => {
-  const metrics = computeDashboardMetrics(INITIAL_ORDERS, 'Last 7 Days');
-  assert.equal(metrics.totalOrders, 1248);
-  assert.equal(metrics.totalRevenue, 156340);
-  assert.equal(metrics.avgOrderValue, 125);
-  assert.equal(metrics.customers, 892);
-  assert.equal(formatINR(metrics.totalRevenue), '₹1,56,340');
+test('computeDashboardMetrics derives totals only from timestamped orders', () => {
+  const order = {
+    ...INITIAL_ORDERS[0],
+    createdAt: new Date().toISOString(),
+    total: 345,
+    paymentStatus: 'paid' as const,
+  };
+  const metrics = computeDashboardMetrics([order], 'Last 7 Days');
+  assert.equal(metrics.totalOrders, 1);
+  assert.equal(metrics.totalRevenue, 345);
+  assert.equal(metrics.avgOrderValue, 345);
+  assert.equal(metrics.customers, order.customerId ? 1 : 0);
+  assert.equal(formatINR(metrics.totalRevenue), '₹345');
+  assert.equal(computeDashboardMetrics([INITIAL_ORDERS[0]], 'Last 7 Days').totalOrders, 0);
 });
 
 test('formatOrderCsv produces valid CSV lines for all orders', () => {
@@ -206,13 +217,22 @@ test('filterCampaigns and filterStaffRoster filter correctly', () => {
 });
 
 test('buildPast7DaysRevenueTrend returns 7 days and incorporates live order totals', () => {
-  const trend = buildPast7DaysRevenueTrend(INITIAL_ORDERS);
+  const referenceDate = new Date();
+  const todayOrder = {
+    ...INITIAL_ORDERS[0],
+    createdAt: referenceDate.toISOString(),
+  };
+  const trend = buildPast7DaysRevenueTrend([todayOrder], referenceDate);
   assert.equal(trend.length, 7);
   const sum = trend.reduce((acc, d) => acc + d.revenue, 0);
-  assert.equal(sum, computeDashboardMetrics(INITIAL_ORDERS, 'Last 7 Days').totalRevenue);
+  assert.equal(sum, todayOrder.total);
 
-  const extraOrder = { ...INITIAL_ORDERS[0], id: 'SSCB499', total: 500 };
-  const updated = buildPast7DaysRevenueTrend([extraOrder, ...INITIAL_ORDERS]);
+  const extraOrder = {
+    ...todayOrder,
+    id: 'SSCB499',
+    total: 500,
+  };
+  const updated = buildPast7DaysRevenueTrend([extraOrder, todayOrder], referenceDate);
   assert.equal(updated[6].revenue, trend[6].revenue + 500);
   assert.equal(updated[6].ordersCount, trend[6].ordersCount + 1);
 });
@@ -256,19 +276,23 @@ test('isIngredientBelowThreshold and Low Stock tab filter strictly below minThre
 
 test('buildPast30DaysOrderVolumeTrend returns 30 days, marks peak, and tracks live orders', () => {
   const ref = new Date(2026, 10, 13); // 13 Nov 2026
-  const baseTrend = buildPast30DaysOrderVolumeTrend(INITIAL_ORDERS, ref);
+  const datedOrder = {
+    ...INITIAL_ORDERS[0],
+    createdAt: new Date(2026, 10, 13, 12).toISOString(),
+  };
+  const baseTrend = buildPast30DaysOrderVolumeTrend([datedOrder], ref);
   assert.equal(baseTrend.length, 30);
   assert.equal(baseTrend[29].shortLabel, '13 Nov');
   assert.match(baseTrend[29].day, /\(Today\)$/);
-  assert.ok(baseTrend.every((p) => p.ordersCount > 0 && p.revenue > 0));
+  assert.equal(baseTrend.slice(0, -1).every((p) => p.ordersCount === 0 && p.revenue === 0), true);
 
   const peaks = baseTrend.filter((p) => p.isPeak);
   assert.ok(peaks.length >= 1);
   const maxOrders = Math.max(...baseTrend.map((p) => p.ordersCount));
   assert.equal(peaks[0].ordersCount, maxOrders);
 
-  const extraOrder = { ...INITIAL_ORDERS[0], id: 'SSCB901', total: 420 };
-  const updatedTrend = buildPast30DaysOrderVolumeTrend([extraOrder, ...INITIAL_ORDERS], ref);
+  const extraOrder = { ...datedOrder, id: 'SSCB901', total: 420 };
+  const updatedTrend = buildPast30DaysOrderVolumeTrend([extraOrder, datedOrder], ref);
   assert.equal(updatedTrend[29].ordersCount, baseTrend[29].ordersCount + 1);
   assert.equal(updatedTrend[29].revenue, baseTrend[29].revenue + 420);
 });
@@ -379,6 +403,7 @@ test('computeDashboardMetrics correctly accounts for refunded orders and live re
   const refundedOrder = {
     ...INITIAL_ORDERS[0],
     id: 'REF-ORDER-001',
+    createdAt: new Date().toISOString(),
     total: 350,
     paymentStatus: 'refunded' as const,
     refundAmount: 350,
@@ -386,17 +411,4 @@ test('computeDashboardMetrics correctly accounts for refunded orders and live re
   const metrics = computeDashboardMetrics([refundedOrder], 'Today');
   assert.equal(metrics.refundedCount, 1);
   assert.equal(metrics.refundedAmount, 350);
-});
-
-test('CUSTOMER_REVIEWS contains verified real diner reviews with valid ratings and dishes', () => {
-  assert.ok(CUSTOMER_REVIEWS.length >= 6);
-  for (const review of CUSTOMER_REVIEWS) {
-    assert.ok(review.customerName.length > 0);
-    assert.ok(review.rating >= 1 && review.rating <= 5);
-    assert.ok(review.comment.length > 10);
-    assert.ok(review.dishName && review.dishName.length > 0);
-    assert.ok(review.isVerified === true);
-    assert.ok(review.diningMode?.includes('Verified'));
-    assert.ok(Array.isArray(review.tags) && review.tags.length > 0);
-  }
 });

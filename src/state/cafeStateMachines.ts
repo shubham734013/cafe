@@ -126,7 +126,7 @@ export const ORDER_STATUS_META: Record<OrderStatus, OrderStepMeta> = {
     kdsActionLabel: null,
     kdsActionIcon: 'check_circle',
     orderMgmtActionLabel: null,
-    progressPercent: 90,
+    progressPercent: 100,
     trackingMessage: 'Served — Enjoy your Seth Sawariya brew!',
   },
   paid: {

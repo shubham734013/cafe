@@ -4,14 +4,6 @@ import path from 'node:path';
 import { BSON, MongoClient, type Collection, type Db } from 'mongodb';
 import {
   INITIAL_CAFE_SETTINGS,
-  INITIAL_CAMPAIGNS,
-  INITIAL_CUSTOMERS,
-  INITIAL_INVENTORY,
-  INITIAL_LOYALTY_RULES,
-  INITIAL_ORDERS,
-  INITIAL_POINT_LEDGER,
-  INITIAL_STAFF_ROSTER,
-  INITIAL_TABLES,
   INITIAL_RECIPES,
   MENU_ITEMS,
 } from '../data/cafeSeedData';
@@ -627,54 +619,22 @@ export class CafeStore {
   }
 
   private createSeedState(): PersistedEnvelope {
-    const orders = clone(INITIAL_ORDERS);
     return {
       outletId: 'seth-sawariya-main',
-      orders,
-      tables: clone(INITIAL_TABLES),
-      inventory: clone(INITIAL_INVENTORY),
-      customers: clone(INITIAL_CUSTOMERS),
-      loyaltyRules: clone(INITIAL_LOYALTY_RULES),
-      pointLedger: clone(INITIAL_POINT_LEDGER),
-      campaigns: clone(INITIAL_CAMPAIGNS),
-      staffRoster: clone(INITIAL_STAFF_ROSTER),
+      orders: [],
+      tables: [],
+      inventory: [],
+      customers: [],
+      loyaltyRules: [],
+      pointLedger: [],
+      campaigns: [],
+      staffRoster: [],
       cafeSettings: clone(INITIAL_CAFE_SETTINGS),
       menuItems: clone(MENU_ITEMS),
-      rewardPoints: 340,
-      activityLog: [
-        {
-          id: 'act-init-1',
-          type: 'order_paid',
-          title: 'Order Settled Paid',
-          description: 'Order #SSCB421 settled at counter (₹377)',
-          actorName: 'Neha V.',
-          actorRole: 'server',
-          timestamp: '2:14 PM',
-          severity: 'success',
-        },
-        {
-          id: 'act-init-2',
-          type: 'table_updated',
-          title: 'Table Checked In',
-          description: 'Table T3 occupied by Aman Sharma (2 guests)',
-          actorName: 'Aman Sharma',
-          actorRole: 'customer',
-          timestamp: '1:45 PM',
-          severity: 'info',
-        },
-        {
-          id: 'act-init-3',
-          type: 'stock_updated',
-          title: 'Stock Restocked',
-          description: 'Restocked Arabica Coffee Beans (+5.0 kg)',
-          actorName: 'Seth Sawariya Manager',
-          actorRole: 'manager',
-          timestamp: '11:30 AM',
-          severity: 'info',
-        },
-      ],
+      rewardPoints: 0,
+      activityLog: [],
       updatedAt: new Date().toISOString(),
-      nextOrderSeq: deriveMaxOrderSeq(orders),
+      nextOrderSeq: 0,
       idempotencyOrderIds: {},
       recipes: clone(INITIAL_RECIPES),
       stockDeductedOrderIds: [],
@@ -926,7 +886,6 @@ export class CafeStore {
           ...publicState,
           orders: publicState.orders.map((order) => ({
             ...order,
-            paymentStatus: undefined,
             paymentRef: undefined,
             preferredUpiApp: undefined,
             paymentChannelLabel: undefined,
@@ -1405,7 +1364,7 @@ export class CafeStore {
       kotNumber: `#${nextNum}`,
       isPosTerminal: Boolean(input.isPosTerminal),
       serviceMode: input.serviceMode,
-      tableNumber: input.serviceMode === 'dine-in' ? input.tableNumber || 'T3' : undefined,
+      tableNumber: input.serviceMode === 'dine-in' ? input.tableNumber : undefined,
       deliveryPartner:
         input.serviceMode === 'delivery'
           ? input.deliveryPartner || 'Direct Delivery'
@@ -1423,6 +1382,7 @@ export class CafeStore {
       customerId: input.customerId,
       status: 'placed',
       createdAtLabel: 'Just now',
+      createdAt: new Date().toISOString(),
       elapsedMinutes: 0,
       isUrgent: true,
       serverName: 'Neha V.',

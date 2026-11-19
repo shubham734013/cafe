@@ -1,12 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { CAFE_ASSETS, MENU_ITEMS } from '../data/cafeSeedData';
 import { CartItem, MenuCategory, MenuItem, ServiceMode } from '../types/cafe';
 import { filterMenuItems } from '../utils/cafeLogic';
 import { CafeImage } from './CafeImage';
 import { FoodDetailsModal } from './FoodDetailsModal';
 
 interface CustomerMenuScreenProps {
-  items?: MenuItem[];
+  items: MenuItem[];
   serviceMode: ServiceMode;
   selectedTable: string;
   activeCategory: MenuCategory;
@@ -24,51 +23,12 @@ interface CustomerMenuScreenProps {
 interface CategoryCardMeta {
   id: MenuCategory;
   name: string;
-  countLabel: string;
-  image: string;
+  count: number;
+  image?: string;
 }
 
-const CATEGORY_CARDS: CategoryCardMeta[] = [
-  {
-    id: 'Pizza',
-    name: 'Pizza',
-    countLabel: '36 Items',
-    image: CAFE_ASSETS.pizzaMargherita,
-  },
-  {
-    id: 'Burger',
-    name: 'Burger',
-    countLabel: '24 Items',
-    image: CAFE_ASSETS.burgerClassic,
-  },
-  {
-    id: 'Pasta',
-    name: 'Pasta',
-    countLabel: '18 Items',
-    image: CAFE_ASSETS.pastaAlfredo,
-  },
-  {
-    id: 'Salad',
-    name: 'Salad',
-    countLabel: '16 Items',
-    image: CAFE_ASSETS.saladGarden,
-  },
-  {
-    id: 'Drink',
-    name: 'Drink',
-    countLabel: '20 Items',
-    image: CAFE_ASSETS.drinkCitrus,
-  },
-  {
-    id: 'Dessert',
-    name: 'Dessert',
-    countLabel: '14 Items',
-    image: CAFE_ASSETS.dessertCheesecake,
-  },
-];
-
 export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
-  items = MENU_ITEMS,
+  items,
   serviceMode: _serviceMode,
   selectedTable: _selectedTable,
   activeCategory,
@@ -85,7 +45,20 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
   const [viewMode, setViewMode] = useState<'categories' | 'dishes'>('categories');
   const [searchQuery, setSearchQuery] = useState('');
   const [detailItem, setDetailItem] = useState<MenuItem | null>(null);
-  const [favorites, setFavorites] = useState<Set<string>>(new Set(['margherita-pizza']));
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const categoryCards: CategoryCardMeta[] = useMemo(
+    () =>
+      [...new Set(items.map((item) => item.category))].map((category) => {
+        const matchingItems = items.filter((item) => item.category === category);
+        return {
+          id: category,
+          name: category,
+          image: matchingItems[0]?.imageUrl,
+          count: matchingItems.length,
+        };
+      }),
+    [items]
+  );
 
   const visibleItems = useMemo(
     () => filterMenuItems(items, activeCategory, searchQuery),
@@ -166,7 +139,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
       {viewMode === 'categories' ? (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3.5 sm:gap-4">
-            {CATEGORY_CARDS.map((cat) => (
+            {categoryCards.map((cat) => (
               <div
                 key={cat.id}
                 onClick={() => handleSelectCategory(cat.id)}
@@ -175,7 +148,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                 {/* Circular Category Photo */}
                 <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden p-1 shadow-md bg-surface ring-2 ring-outline-variant/10 mb-3 group-hover:scale-105 transition-transform duration-300">
                   <CafeImage
-                    src={cat.image}
+                    src={cat.image ?? ''}
                     alt={cat.name}
                     className="w-full h-full object-cover rounded-full"
                     fallbackIcon="restaurant"
@@ -189,7 +162,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
 
                 {/* Item Count Label */}
                 <p className="text-[11px] text-on-surface-variant mt-0.5 font-medium">
-                  {cat.countLabel}
+                  {cat.count} items
                 </p>
               </div>
             ))}
@@ -297,15 +270,6 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                         <span className="text-xs sm:text-sm font-black text-on-surface">
                           ₹{item.price}
                         </span>
-                        <span className="text-[11px] text-on-surface-variant">·</span>
-                        <div className="flex items-center gap-0.5">
-                          <span className="material-symbols-outlined text-amber-400 icon-filled text-[14px]">
-                            star
-                          </span>
-                          <span className="text-[11px] font-bold text-on-surface">
-                            {item.rating?.toFixed(1) || '4.8'}
-                          </span>
-                        </div>
                       </div>
                     </div>
 

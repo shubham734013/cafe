@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { MENU_ITEMS } from '../data/cafeSeedData';
 import {
   getPathForScreen,
   isKitchenPath,
@@ -40,11 +39,11 @@ function getInitialFromUrl(): {
   trackedOrderId: string;
 } {
   if (typeof window === 'undefined') {
-    return { screen: 'splash', mode: 'customer', table: 'T3', trackedOrderId: '' };
+    return { screen: 'splash', mode: 'customer', table: '', trackedOrderId: '' };
   }
   const params = new URLSearchParams(window.location.search);
   const rawTable = params.get('table')?.trim().toUpperCase() || '';
-  const table = rawTable || 'T3';
+  const table = rawTable;
   const orderFromUrl = params.get('orderId')?.trim() || '';
   let storedOrder = '';
   try {
@@ -82,31 +81,6 @@ function persistCustomerCart(cart: CartItem[]) {
       }
     } catch {}
   }
-}
-
-function buildInitialPosCart(): CartItem[] {
-  const protein = MENU_ITEMS.find((m) => m.id === 'protein-shake')!;
-  const sandwich = MENU_ITEMS.find((m) => m.id === 'veg-sandwich')!;
-  return [
-    {
-      menuItemId: protein.id,
-      name: protein.name,
-      price: protein.price,
-      quantity: 1,
-      note: protein.defaultNote,
-      imageUrl: protein.imageUrl,
-      station: protein.station,
-    },
-    {
-      menuItemId: sandwich.id,
-      name: sandwich.name,
-      price: sandwich.price,
-      quantity: 1,
-      note: sandwich.defaultNote,
-      imageUrl: sandwich.imageUrl,
-      station: sandwich.station,
-    },
-  ];
 }
 
 function upsertItem(list: CartItem[], item: MenuItem, quantity = 1): CartItem[] {
@@ -173,8 +147,8 @@ export const useCafeStore = create<CafeClientState>((set) => ({
   selectedTable: initialUrl.table,
   menuCategory: 'Beverages',
   customerCart: getInitialCustomerCart(),
-  posCart: buildInitialPosCart(),
-  couponCode: 'CAFE50',
+  posCart: [],
+  couponCode: '',
   cookingNote: '',
   trackedOrderId: initialUrl.trackedOrderId,
 
