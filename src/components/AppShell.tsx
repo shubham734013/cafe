@@ -33,7 +33,7 @@ const STAFF_NAV_MOBILE: { id: StaffScreenId; label: string; icon: string }[] = [
   { id: 'pos-terminal', label: 'POS', icon: 'point_of_sale' },
   { id: 'kitchen-display-system', label: 'Kitchen', icon: 'countertops' },
   { id: 'order-management', label: 'Orders', icon: 'receipt_long' },
-  { id: 'table-layout', label: 'Tables', icon: 'table_restaurant' },
+  { id: 'inventory-stock', label: 'Stock', icon: 'inventory_2' },
 ];
 
 const STAFF_NAV_SIDEBAR: { id: StaffScreenId; label: string; icon: string }[] = [
@@ -41,7 +41,6 @@ const STAFF_NAV_SIDEBAR: { id: StaffScreenId; label: string; icon: string }[] = 
   { id: 'pos-terminal', label: 'POS Terminal', icon: 'point_of_sale' },
   { id: 'kitchen-display-system', label: 'Kitchen KDS', icon: 'countertops' },
   { id: 'order-management', label: 'Orders & Billing', icon: 'receipt_long' },
-  { id: 'table-layout', label: 'Tables & Floor', icon: 'table_restaurant' },
   { id: 'inventory-stock', label: 'Inventory & Stock', icon: 'inventory_2' },
   { id: 'crm-customers', label: 'Customers & CRM', icon: 'groups' },
   { id: 'offers-campaigns', label: 'Offers & Campaigns', icon: 'local_offer' },

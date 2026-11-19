@@ -218,7 +218,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search dishes or beverages by name... (Shortcut: F3)"
+              placeholder="Search menu..."
               aria-label="Search menu"
               className="w-full rounded-xl bg-surface-container-low pl-10 pr-4 py-2.5 text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-primary shadow-sm"
             />
@@ -355,7 +355,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                 type="tel"
                 value={phoneQuery}
                 onChange={(e) => setPhoneQuery(e.target.value)}
-                placeholder="Customer mobile # (e.g. 9876543210)"
+                placeholder="Phone number..."
                 className="flex-1 bg-surface-container-high rounded-lg px-2.5 py-1.5 text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-primary font-mono"
               />
               {phoneQuery && (
@@ -556,7 +556,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                   autoFocus
                   value={newCustName}
                   onChange={(e) => setNewCustName(e.target.value)}
-                  placeholder="e.g. Rohit Verma"
+                  placeholder="Full name"
                   className="w-full bg-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>

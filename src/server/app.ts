@@ -8,6 +8,7 @@ import {
   addCustomerSchema,
   addIngredientSchema,
   addLoyaltyRuleSchema,
+  addMenuItemSchema,
   addStaffSchema,
   addTableSchema,
   cafeSettingsSchema,
@@ -1365,6 +1366,23 @@ export function createCafeServer(
         await store.flushToPersistence();
         emitSync('menu:availability-toggled', { item });
         res.status(200).json({ ok: true, item });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/menu/items',
+    requireRoles(['owner', 'manager']),
+    async (req, res, next) => {
+      try {
+        const input = parseBody(addMenuItemSchema, req.body);
+        const item = store.addMenuItem(input);
+        await store.flushToPersistence();
+        emitSync('menu:item-created', { item });
+        emitSync('menu:availability-toggled', { item });
+        res.status(201).json({ ok: true, item });
       } catch (err) {
         next(err);
       }

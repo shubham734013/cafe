@@ -134,7 +134,7 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
             setSearchQuery(event.target.value);
             setVisibleLimit(PAGE_SIZE);
           }}
-          placeholder="Search order ID or items"
+          placeholder="Search orders..."
           aria-label="Search orders"
           className="rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface"
         />
@@ -414,7 +414,7 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
                 type="text"
                 value={refundReason}
                 onChange={(e) => setRefundReason(e.target.value)}
-                placeholder="Or type custom refund reason..."
+                placeholder="Custom reason..."
                 className="mt-1 w-full bg-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-amber-400"
               />
             </div>

@@ -433,7 +433,7 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
                 <input
                   type="text"
                   {...form.register('title')}
-                  placeholder="e.g. Weekend Iced Latte Treat"
+                  placeholder="Campaign title"
                   className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 {form.formState.errors.title && (
@@ -482,7 +482,7 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
                 <input
                   type="text"
                   {...form.register('description')}
-                  placeholder="Flat 20% off on orders above ₹199"
+                  placeholder="Offer description"
                   className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 {form.formState.errors.description && (

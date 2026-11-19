@@ -529,7 +529,7 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
                 <input
                   type="text"
                   {...staffForm.register('name')}
-                  placeholder="e.g. Aarav Tiwari"
+                  placeholder="Staff name"
                   className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 {staffForm.formState.errors.name && (

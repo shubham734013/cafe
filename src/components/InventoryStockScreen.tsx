@@ -339,7 +339,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
               aria-label="Search ingredient or barcode"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search ingredient or barcode..."
+              placeholder="Search stock..."
               className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-surface-container-low text-on-surface placeholder:text-outline text-sm focus:outline-none focus:ring-1 focus:ring-primary shadow-inner"
             />
             <button
@@ -750,7 +750,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
                 <input
                   type="text"
                   {...form.register('name')}
-                  placeholder="e.g. Vanilla Extract"
+                  placeholder="Ingredient name"
                   className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 {form.formState.errors.name && (
@@ -820,7 +820,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
                   <input
                     type="text"
                     {...form.register('supplier')}
-                    placeholder="Metro Wholesale"
+                    placeholder="Supplier name"
                     className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                   {form.formState.errors.supplier && (

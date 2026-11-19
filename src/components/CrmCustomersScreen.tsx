@@ -267,7 +267,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                 setQuery(e.target.value);
                 setVisibleLimit(PAGE_SIZE);
               }}
-              placeholder="Search by name or phone..."
+              placeholder="Search customers..."
               className="w-full bg-transparent border-0 outline-none text-on-surface placeholder:text-outline text-sm"
             />
             {query.length > 0 && (
@@ -590,7 +590,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                 <input
                   type="text"
                   {...form.register('name')}
-                  placeholder="e.g. Ananya Gupta"
+                  placeholder="Full name"
                   className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 {form.formState.errors.name && (
@@ -607,7 +607,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                   <input
                     type="tel"
                     {...form.register('phone')}
-                    placeholder="9876543219"
+                    placeholder="Phone number"
                     className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                   {form.formState.errors.phone && (

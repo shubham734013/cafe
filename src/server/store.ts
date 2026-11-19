@@ -39,6 +39,7 @@ import type {
   addCustomerSchema,
   addIngredientSchema,
   addLoyaltyRuleSchema,
+  addMenuItemSchema,
   addStaffSchema,
   addTableSchema,
   cafeSettingsSchema,
@@ -1578,6 +1579,44 @@ export class CafeStore {
     );
     this.touch();
     return clone(target);
+  }
+
+  public addMenuItem(input: z.infer<typeof addMenuItemSchema>): MenuItem {
+    const id = `item-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const fallbackImage = input.category === 'Beverages'
+      ? 'https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&w=400&q=80'
+      : input.category === 'Pizza' || input.category === 'Burger' || input.category === 'Meals'
+      ? 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=400&q=80'
+      : 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=400&q=80';
+
+    const newItem: MenuItem = {
+      id,
+      name: input.name.trim(),
+      description: input.description?.trim() || '',
+      price: Math.round(input.price),
+      category: input.category,
+      rating: 5.0,
+      isVeg: input.isVeg,
+      isBestSeller: input.isBestSeller ?? false,
+      isAvailable: true,
+      station: input.station,
+      defaultNote: input.defaultNote || '',
+      imageUrl: input.imageUrl?.trim() || fallbackImage,
+      unitsSold: 0,
+    };
+
+    this.state.menuItems.unshift(newItem);
+    this.menuById.set(newItem.id, newItem);
+    this.recordActivity({
+      type: 'stock_updated',
+      title: `Product Added: ${newItem.name}`,
+      description: `New menu item added to ${newItem.category} (₹${newItem.price})`,
+      actorName: 'Admin',
+      actorRole: 'owner',
+      severity: 'info',
+    });
+    this.touch();
+    return clone(newItem);
   }
 
   public toggleMenuItemAvailability(menuItemId: string): MenuItem | null {

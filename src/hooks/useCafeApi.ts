@@ -11,6 +11,7 @@ import type {
   addCustomerSchema,
   addIngredientSchema,
   addLoyaltyRuleSchema,
+  addMenuItemSchema,
   addStaffSchema,
   addTableSchema,
   cafeSettingsSchema,
@@ -250,6 +251,15 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
     onSuccess: invalidate,
   });
 
+  const addMenuItemMutation = useMutation({
+    mutationFn: (payload: z.infer<typeof addMenuItemSchema>) =>
+      apiJson<{ ok: boolean; item: MenuItem }>('/api/menu/items', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: invalidate,
+  });
+
   const submitOrderFeedbackMutation = useMutation({
     mutationFn: (payload: {
       orderId: string;
@@ -406,6 +416,7 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
     refundOrderMutation,
     toggleKotItemMutation,
     toggleMenuAvailabilityMutation,
+    addMenuItemMutation,
     submitOrderFeedbackMutation,
     submitCustomerFeedbackMutation,
     reserveTableMutation,

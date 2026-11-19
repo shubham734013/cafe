@@ -42,6 +42,28 @@ export const toggleKotItemSchema = z.object({
   menuItemId: z.string().min(1),
 });
 
+export const addMenuItemSchema = z.object({
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(80),
+  description: z.string().trim().max(300).optional().default(''),
+  price: z.coerce.number().positive('Price must be greater than 0').max(100000),
+  category: z.enum([
+    'Beverages',
+    'Snacks',
+    'Meals',
+    'Combos',
+    'Desserts',
+    'Pizza',
+    'Burger',
+    'Pasta',
+    'Salad',
+  ]),
+  isVeg: z.boolean().default(true),
+  isBestSeller: z.boolean().optional().default(false),
+  station: z.enum(['Barista', 'Grill', 'Fryer', 'Cold Bar', 'Kitchen']).default('Kitchen'),
+  imageUrl: z.string().trim().optional().default(''),
+  defaultNote: z.string().trim().optional().default(''),
+});
+
 export const addIngredientSchema = z.object({
   name: z.string().trim().min(2, 'Enter at least 2 characters').max(80),
   quantity: z.coerce.number().positive('Opening stock must be greater than 0'),

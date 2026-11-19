@@ -26,7 +26,8 @@ import type {
   StaffScreenId,
   WorkspaceMode,
 } from './types/cafe';
-import type { CustomerFeedbackInput } from './shared/schemas';
+import type { z } from 'zod';
+import type { addMenuItemSchema, CustomerFeedbackInput } from './shared/schemas';
 import { calculateCartTotals, formatOrderCsv, isKitchenActiveOrder } from './utils/cafeLogic';
 import { triggerBlobDownload } from './utils/download';
 import {
@@ -181,6 +182,7 @@ export default function App() {
     refundOrderMutation,
     toggleKotItemMutation,
     toggleMenuAvailabilityMutation,
+    addMenuItemMutation,
     submitOrderFeedbackMutation,
     submitCustomerFeedbackMutation,
     reserveTableMutation,
@@ -507,6 +509,19 @@ export default function App() {
       }
     },
     [showErrorToast, showToast, toggleMenuAvailabilityMutation]
+  );
+
+  const handleAddMenuItem = useCallback(
+    async (payload: z.infer<typeof addMenuItemSchema>) => {
+      try {
+        const res = await addMenuItemMutation.mutateAsync(payload);
+        showToast(`Added ${res.item.name} to ${res.item.category}!`);
+      } catch (err) {
+        showErrorToast(err, 'Could not add product');
+        throw err;
+      }
+    },
+    [addMenuItemMutation, showErrorToast, showToast]
   );
 
   const handleQuickAddCustomer = useCallback(
@@ -1211,6 +1226,8 @@ export default function App() {
             onRestockItem={handleRestockItem}
             onNavigateStaff={(screen) => handleNavigate(screen, 'staff')}
             onExportCsv={handleExportOrdersExcel}
+            onAddMenuItem={handleAddMenuItem}
+            onToggleMenuAvailability={handleToggleMenuAvailability}
           />
         )}
 
