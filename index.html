@@ -11,11 +11,196 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Cormorant+Garamond:ital,wght@0,500;1,500;1,600&family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg-cream: #F9F5EE;
+        --espresso: #1E140F;
+        --roast: #4A3224;
+        --crema: #C59B67;
+        --hairline: rgba(30, 20, 15, 0.14);
+      }
+      .dark {
+        --bg-cream: #120D0A;
+        --espresso: #F5EFEB;
+        --roast: #D4B28C;
+        --crema: #E0AC69;
+        --hairline: rgba(245, 239, 235, 0.14);
+      }
+      .initial-loader-root {
+        position: fixed;
+        inset: 0;
+        background-color: var(--bg-cream);
+        color: var(--espresso);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        font-family: 'Plus Jakarta Sans', sans-serif;
+      }
+      .initial-loader-root::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background: radial-gradient(circle at 50% 45%, rgba(197, 155, 103, 0.12), transparent 65%);
+        pointer-events: none;
+      }
+      .initial-loader-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 2rem;
+        max-width: 720px;
+        width: 100%;
+      }
+      .initial-cup-svg {
+        width: 56px;
+        height: 56px;
+        margin-bottom: 1.75rem;
+        overflow: visible;
+      }
+      .initial-cup-line {
+        fill: none;
+        stroke: var(--espresso);
+        stroke-width: 1.85;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-dasharray: 170;
+        stroke-dashoffset: 170;
+        animation: initialDrawCup 1.6s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+      }
+      .initial-steam-line {
+        fill: none;
+        stroke: var(--crema);
+        stroke-width: 1.6;
+        stroke-linecap: round;
+        opacity: 0;
+        animation: initialSteamRise 2.4s ease-in-out infinite;
+      }
+      .initial-steam-1 { animation-delay: 0.5s; }
+      .initial-steam-2 { animation-delay: 0.9s; }
+      .initial-steam-3 { animation-delay: 1.3s; }
+      .initial-brand-hero {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.45rem;
+      }
+      .initial-brand-eyebrow {
+        font-size: 0.7rem;
+        font-weight: 500;
+        letter-spacing: 0.38em;
+        text-transform: uppercase;
+        color: var(--crema);
+        opacity: 0;
+        animation: initialSlideFadeUp 0.8s ease-out 0.2s forwards;
+      }
+      .initial-brand-wordmark {
+        font-family: 'Cinzel', serif;
+        font-size: clamp(2.1rem, 5.2vw, 3.6rem);
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        line-height: 1.1;
+        text-transform: uppercase;
+        color: var(--espresso);
+      }
+      .initial-brand-subtitle {
+        font-family: 'Cormorant Garamond', serif;
+        font-style: italic;
+        font-size: clamp(1.2rem, 2.4vw, 1.55rem);
+        font-weight: 500;
+        letter-spacing: 0.22em;
+        color: var(--roast);
+        opacity: 0;
+        animation: initialSlideFadeUp 0.9s ease-out 0.75s forwards;
+      }
+      .initial-gauge-section {
+        margin-top: 2.75rem;
+        width: 260px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+        opacity: 0;
+        animation: initialSlideFadeUp 0.8s ease-out 0.9s forwards;
+      }
+      .initial-gauge-header {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.68rem;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--roast);
+      }
+      .initial-gauge-rail {
+        position: relative;
+        width: 100%;
+        height: 1px;
+        background-color: var(--hairline);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .initial-gauge-progress {
+        position: absolute;
+        height: 1.5px;
+        width: 25%;
+        background: linear-gradient(90deg, transparent 0%, var(--crema) 25%, var(--espresso) 50%, var(--crema) 75%, transparent 100%);
+      }
+      .initial-gauge-diamond {
+        width: 8px;
+        height: 8px;
+        background-color: var(--bg-cream);
+        border: 1.5px solid var(--crema);
+        transform: rotate(45deg);
+        z-index: 2;
+      }
+      @keyframes initialDrawCup { to { stroke-dashoffset: 0; } }
+      @keyframes initialSteamRise {
+        0% { opacity: 0; transform: translateY(4px); }
+        50% { opacity: 0.9; }
+        100% { opacity: 0; transform: translateY(-8px); }
+      }
+      @keyframes initialSlideFadeUp {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    </style>
   </head>
   <body class="bg-surface text-on-surface font-body-md antialiased selection:bg-primary-container selection:text-on-primary-container">
-    <div id="root"></div>
+    <div id="root">
+      <div class="initial-loader-root" role="status" aria-label="Loading Seth Sawariya Cafe">
+        <div class="initial-loader-box">
+          <svg class="initial-cup-svg" viewBox="0 0 64 64" aria-hidden="true">
+            <path class="initial-steam-line initial-steam-1" d="M22 18 C22 14, 25 14, 25 10" />
+            <path class="initial-steam-line initial-steam-2" d="M30 16 C30 12, 33 12, 33 8" />
+            <path class="initial-steam-line initial-steam-3" d="M38 18 C38 14, 41 14, 41 10" />
+            <path class="initial-cup-line" d="M14 26 H46 V38 C46 45.7 39.7 52 32 52 H28 C20.3 52 14 45.7 14 38 Z" />
+            <path class="initial-cup-line" d="M46 30 H50 C52.8 30 55 32.2 55 35 C55 37.8 52.8 40 50 40 H46" />
+            <path class="initial-cup-line" d="M10 56 H50" />
+          </svg>
+          <div class="initial-brand-hero">
+            <span class="initial-brand-eyebrow">Handcrafted Brews &amp; Heritage</span>
+            <h1 class="initial-brand-wordmark">SETH SAWARIYA</h1>
+            <p class="initial-brand-subtitle">— Cafe &amp; Roastery —</p>
+          </div>
+          <div class="initial-gauge-section">
+            <div class="initial-gauge-header">
+              <span>Grinding Beans</span>
+              <span>18%</span>
+            </div>
+            <div class="initial-gauge-rail">
+              <div class="initial-gauge-progress"></div>
+              <div class="initial-gauge-diamond"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
