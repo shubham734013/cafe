@@ -162,12 +162,30 @@ export function createCafeServer(
     const staffSession = (socket.data as any).staffSession;
     const customerSession = (socket.data as any).customerSession;
     const tableToken = socket.handshake.query.tableToken as string;
+    const queryScope = String(socket.handshake.query.scope || '');
+    const referer = String(socket.handshake.headers.referer || '');
+    const isKitchenStation =
+      queryScope === 'kitchen' ||
+      socket.handshake.query.station === 'kitchen' ||
+      referer.includes('/kitchen');
+    const isStaffStation =
+      queryScope === 'staff' ||
+      referer.includes('/admin') ||
+      referer.includes('/staff') ||
+      referer.includes('/pos') ||
+      referer.includes('/tables');
 
     if (staffSession) {
       void socket.join(STAFF_ROOM);
-      if (['kitchen', 'barista', 'owner', 'manager'].includes(staffSession.role)) {
+      if (['kitchen', 'barista', 'owner', 'manager', 'super-admin'].includes(staffSession.role)) {
         void socket.join(KITCHEN_ROOM);
       }
+    } else if (isKitchenStation) {
+      // Automatic kitchen terminal channel
+      void socket.join(KITCHEN_ROOM);
+      void socket.join(STAFF_ROOM);
+    } else if (isStaffStation) {
+      void socket.join(STAFF_ROOM);
     } else {
       void socket.join(PUBLIC_ROOM);
       if (customerSession?.orderIds?.length) {
@@ -184,15 +202,21 @@ export function createCafeServer(
     }
 
     // Explicit authenticated room subscriptions only
-    socket.on('outlet:join', (data?: { tableToken?: string; orderId?: string }) => {
+    socket.on('outlet:join', (data?: { tableToken?: string; orderId?: string; scope?: string }) => {
       const currentStaff = (socket.data as any).staffSession || getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
       const currentCust = (socket.data as any).customerSession || getCustomerSessionFromCookieHeader(socket.handshake.headers.cookie);
+      const joinScope = data?.scope || queryScope;
 
       if (currentStaff) {
         void socket.join(STAFF_ROOM);
-        if (['kitchen', 'barista', 'owner', 'manager'].includes(currentStaff.role)) {
+        if (['kitchen', 'barista', 'owner', 'manager', 'super-admin'].includes(currentStaff.role)) {
           void socket.join(KITCHEN_ROOM);
         }
+      } else if (joinScope === 'kitchen' || isKitchenStation) {
+        void socket.join(KITCHEN_ROOM);
+        void socket.join(STAFF_ROOM);
+      } else if (joinScope === 'staff' || isStaffStation) {
+        void socket.join(STAFF_ROOM);
       } else {
         void socket.join(PUBLIC_ROOM);
         if (data?.tableToken) {
@@ -209,7 +233,7 @@ export function createCafeServer(
       if (!data?.orderId) return;
       const currentStaff = (socket.data as any).staffSession || getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
       const currentCust = (socket.data as any).customerSession || getCustomerSessionFromCookieHeader(socket.handshake.headers.cookie);
-      if (currentStaff || currentCust?.orderIds?.includes(data.orderId)) {
+      if (currentStaff || isKitchenStation || currentCust?.orderIds?.includes(data.orderId)) {
         void socket.join(`order:${data.orderId}`);
       }
     });
@@ -229,9 +253,11 @@ export function createCafeServer(
     if (
       event.startsWith('order:') ||
       event.startsWith('inventory:') ||
-      event.startsWith('stock:')
+      event.startsWith('stock:') ||
+      event.startsWith('table:')
     ) {
       io.to(KITCHEN_ROOM).emit(event, data);
+      io.to(KITCHEN_ROOM).emit('cafe:sync', { event, ts: Date.now() });
     }
 
     // 3. Isolated Customer delivery: only emit order events to the specific authorized order room
@@ -247,6 +273,7 @@ export function createCafeServer(
     if (
       event === 'menu:item-availability' ||
       event === 'menu:availability-toggled' ||
+      event === 'table:updated' ||
       event === 'cafe:sync'
     ) {
       io.to(PUBLIC_ROOM).emit(event, data);

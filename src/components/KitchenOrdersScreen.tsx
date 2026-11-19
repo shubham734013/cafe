@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -31,6 +31,19 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [advancingId, setAdvancingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleNewOrder = (e: Event) => {
+      const customEvt = e as CustomEvent<{ order?: CafeOrder; orderId?: string }>;
+      const order = customEvt.detail?.order;
+      const ticketLabel = order?.kotNumber || (order?.id ? `#${order.id}` : 'ticket');
+      const tableLabel = order?.tableNumber ? ` (Table ${order.tableNumber})` : '';
+      onNotify?.(`🔔 New Kitchen Order ${ticketLabel}${tableLabel}!`);
+    };
+
+    window.addEventListener('cafe:order:new', handleNewOrder);
+    return () => window.removeEventListener('cafe:order:new', handleNewOrder);
+  }, [onNotify]);
 
   // Active kitchen queue (decluttered: filters out served/cancelled/unpaid upi orders)
   const activeOrders = useMemo(

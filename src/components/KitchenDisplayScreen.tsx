@@ -150,6 +150,22 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
   };
 
   useEffect(() => {
+    const handleNewOrder = (e: Event) => {
+      const customEvt = e as CustomEvent<{ order?: CafeOrder; orderId?: string }>;
+      const order = customEvt.detail?.order;
+      if (!isMuted) {
+        playKitchenChime();
+      }
+      const ticketLabel = order?.kotNumber || (order?.id ? `#${order.id}` : 'ticket');
+      const tableLabel = order?.tableNumber ? ` (Table ${order.tableNumber})` : '';
+      onNotify(`🔔 New Kitchen Order ${ticketLabel}${tableLabel}!`);
+    };
+
+    window.addEventListener('cafe:order:new', handleNewOrder);
+    return () => window.removeEventListener('cafe:order:new', handleNewOrder);
+  }, [isMuted, onNotify]);
+
+  useEffect(() => {
     const prev = prevStatusMapRef.current;
     const newlyPrepared: string[] = [];
 

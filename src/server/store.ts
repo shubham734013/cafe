@@ -1029,113 +1029,39 @@ export class CafeStore {
     screen: string,
     kitchenRoute = false
   ): CafeBootstrapState {
-    const fullState = this.getBootstrap(actor);
-    const routeState: CafeBootstrapState = {
-      ...fullState,
-      orders: [],
-      tables: [],
-      inventory: [],
-      customers: [],
-      loyaltyRules: [],
-      pointLedger: [],
-      campaigns: [],
-      staffRoster: [],
-      menuItems: [],
-    };
-
-    if (kitchenRoute) {
-      if (['kitchen-display-system', 'pos-orders', 'order-management', 'inventory-stock'].includes(screen)) {
-        routeState.orders = fullState.orders;
-        routeState.inventory = fullState.inventory;
-      }
-      if (['kitchen-tables', 'table-layout', 'order-management'].includes(screen)) {
-        routeState.tables = fullState.tables;
-        if (screen !== 'order-management') routeState.orders = fullState.orders;
-      }
-      if (screen === 'pos-terminal') {
-        routeState.orders = fullState.orders;
-        routeState.tables = fullState.tables;
-        routeState.menuItems = fullState.menuItems;
-        routeState.campaigns = fullState.campaigns;
-      }
-      return routeState;
+    // 1. Staff / Admin: full centralized operational state across all admin & POS routes
+    if (actor.staffSession) {
+      return this.getBootstrap(actor);
     }
 
-    switch (screen) {
-      case 'splash':
-        break;
-      case 'home':
-      case 'menu':
-      case 'cart':
-        routeState.tables = fullState.tables;
-        routeState.menuItems = fullState.menuItems;
-        routeState.campaigns = fullState.campaigns;
-        break;
-      case 'tracking':
-        routeState.orders = fullState.orders;
-        break;
-      case 'rewards':
-        routeState.orders = fullState.orders;
-        routeState.campaigns = fullState.campaigns;
-        break;
-      case 'profile':
-      case 'staff-home':
-        break;
-      case 'pos-terminal':
-        routeState.orders = fullState.orders;
-        routeState.tables = fullState.tables;
-        routeState.menuItems = fullState.menuItems;
-        routeState.campaigns = fullState.campaigns;
-        routeState.customers = fullState.customers;
-        break;
-      case 'pos-orders':
-      case 'kitchen-display-system':
-        routeState.orders = fullState.orders;
-        routeState.inventory = fullState.inventory;
-        break;
-      case 'admin-dashboard':
-        routeState.orders = fullState.orders;
-        routeState.tables = fullState.tables;
-        routeState.inventory = fullState.inventory;
-        routeState.activityLog = fullState.activityLog;
-        routeState.customers = fullState.customers;
-        break;
-      case 'order-management':
-        routeState.orders = fullState.orders;
-        break;
-      case 'reports-analytics':
-        routeState.orders = fullState.orders;
-        break;
-      case 'table-layout':
-      case 'kitchen-tables':
-        routeState.orders = fullState.orders;
-        routeState.tables = fullState.tables;
-        break;
-      case 'inventory-stock':
-        routeState.inventory = fullState.inventory;
-        break;
-      case 'crm-customers':
-        routeState.customers = fullState.customers;
-        routeState.orders = fullState.orders;
-        break;
-      case 'loyalty-rewards':
-        routeState.customers = fullState.customers;
-        routeState.loyaltyRules = fullState.loyaltyRules;
-        routeState.pointLedger = fullState.pointLedger;
-        break;
-      case 'offers-campaigns':
-        routeState.campaigns = fullState.campaigns;
-        break;
-      case 'staff-roles':
-        routeState.staffRoster = fullState.staffRoster;
-        break;
-      case 'settings-cafe-profile':
-        break;
-      default:
-        return fullState;
+    // 2. Kitchen Terminal: full kitchen operational state (all tickets, tables, stock, menu availability)
+    if (
+      kitchenRoute ||
+      ['kitchen-display-system', 'pos-orders', 'kitchen-tables'].includes(screen)
+    ) {
+      return this.getBootstrap({
+        staffSession: {
+          role: 'kitchen',
+          staffName: 'Kitchen Terminal',
+          issuedAt: Date.now(),
+          exp: Date.now() + 86400000,
+        },
+        customerSession: null,
+      });
     }
 
-    return routeState;
+    // 3. Guest Customer: scoped public state (menu, tables, campaigns, customer's own orders)
+    const customerState = this.getBootstrap(actor);
+    if (['splash', 'profile'].includes(screen)) {
+      return {
+        ...customerState,
+        orders: [],
+        customers: [],
+        menuItems: [],
+      };
+    }
+
+    return customerState;
   }
 
   public getOrders(): CafeOrder[] {

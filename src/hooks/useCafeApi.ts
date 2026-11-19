@@ -74,15 +74,15 @@ export function useCafeApi(screen: string, kitchenRoute = false) {
   const [socketConnected, setSocketConnected] = useState(false);
 
   const bootstrapQuery = useQuery<CafeBootstrapState>({
-    queryKey: [...BOOTSTRAP_QUERY_KEY, kitchenRoute ? 'kitchen' : 'main', screen],
+    queryKey: [...BOOTSTRAP_QUERY_KEY, kitchenRoute ? 'kitchen' : 'main'],
     queryFn: () =>
       apiJson<CafeBootstrapState>(
         `/api/bootstrap?screen=${encodeURIComponent(screen)}&scope=${kitchenRoute ? 'kitchen' : 'main'}`
       ),
     placeholderData: FALLBACK_BOOTSTRAP,
-    staleTime: 2_000,
+    staleTime: 1_000,
     refetchOnWindowFocus: true,
-    refetchInterval: 3_000,
+    refetchInterval: 2_500,
   });
 
   const authSessionQuery = useQuery<AuthSessionState>({
@@ -92,20 +92,29 @@ export function useCafeApi(screen: string, kitchenRoute = false) {
     refetchOnWindowFocus: false,
   });
 
-  // Refetch the active route slice so unrelated slices stay empty in its cache.
+  // Centralized real-time operational socket synchronization across all routes
   useEffect(() => {
     const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const tableToken = params?.get('table') || '';
     const orderId = params?.get('orderId') || '';
 
     const socket = io({
-      query: { outletId: 'seth-sawariya-main', tableToken, orderId },
+      query: {
+        outletId: 'seth-sawariya-main',
+        tableToken,
+        orderId,
+        scope: kitchenRoute ? 'kitchen' : 'main',
+      },
       transports: ['websocket', 'polling'],
     });
 
     const handleConnect = () => {
       setSocketConnected(true);
-      socket.emit('outlet:join', { tableToken, orderId });
+      socket.emit('outlet:join', {
+        tableToken,
+        orderId,
+        scope: kitchenRoute ? 'kitchen' : 'main',
+      });
     };
     const handleDisconnect = () => setSocketConnected(false);
 
@@ -113,10 +122,17 @@ export function useCafeApi(screen: string, kitchenRoute = false) {
       void queryClient.invalidateQueries({ queryKey: BOOTSTRAP_QUERY_KEY });
     };
 
+    const handleOrderEvent = (data: any) => {
+      invalidateRouteData();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('cafe:order:new', { detail: data }));
+      }
+    };
+
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
-    socket.on('order:created', invalidateRouteData);
-    socket.on('order:new', invalidateRouteData);
+    socket.on('order:created', handleOrderEvent);
+    socket.on('order:new', handleOrderEvent);
     socket.on('order:updated', invalidateRouteData);
     socket.on('order:refunded', invalidateRouteData);
     socket.on('table:updated', invalidateRouteData);
@@ -131,8 +147,8 @@ export function useCafeApi(screen: string, kitchenRoute = false) {
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
-      socket.off('order:created', invalidateRouteData);
-      socket.off('order:new', invalidateRouteData);
+      socket.off('order:created', handleOrderEvent);
+      socket.off('order:new', handleOrderEvent);
       socket.off('order:updated', invalidateRouteData);
       socket.off('order:refunded', invalidateRouteData);
       socket.off('table:updated', invalidateRouteData);
@@ -145,7 +161,7 @@ export function useCafeApi(screen: string, kitchenRoute = false) {
       socket.off('cafe:sync', invalidateRouteData);
       socket.disconnect();
     };
-  }, [queryClient]);
+  }, [kitchenRoute, queryClient]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: BOOTSTRAP_QUERY_KEY });
 

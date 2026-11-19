@@ -13,9 +13,12 @@ import {
   CafeActivityLogItem,
   CafeOrder,
   CafeTable,
+  CustomerProfile,
   DailyRevenuePoint,
   DateRangeKey,
   InventoryIngredient,
+  MenuItem,
+  StaffMember,
   StaffScreenId,
 } from '../types/cafe';
 import {
@@ -30,6 +33,9 @@ interface AdminDashboardScreenProps {
   inventory: InventoryIngredient[];
   tables?: CafeTable[];
   activityLog?: CafeActivityLogItem[];
+  customers?: CustomerProfile[];
+  menuItems?: MenuItem[];
+  staffRoster?: StaffMember[];
   onRestockItem?: (id: string) => void;
   onNavigateStaff: (screen: StaffScreenId) => void;
   onExportCsv: () => void;
@@ -59,6 +65,9 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
   inventory,
   tables = [],
   activityLog = [],
+  customers = [],
+  menuItems = [],
+  staffRoster = [],
   onRestockItem,
   onNavigateStaff,
   onExportCsv,
@@ -83,8 +92,8 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
     });
   }, [activityLog, activityFilter]);
   const topItems = useMemo(
-    () => [...MENU_ITEMS].sort((a, b) => b.unitsSold - a.unitsSold).slice(0, 4),
-    []
+    () => [...(menuItems.length > 0 ? menuItems : MENU_ITEMS)].sort((a, b) => b.unitsSold - a.unitsSold).slice(0, 4),
+    [menuItems]
   );
   const sevenDayTrend = useMemo(() => buildPast7DaysRevenueTrend(orders), [orders]);
   const sevenDayTotal = useMemo(

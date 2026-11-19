@@ -309,7 +309,7 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (workspaceMode !== 'staff' || activeScreen === 'splash') return;
+    if (workspaceMode !== 'staff' || activeScreen === 'splash' || isKitchenRoute) return;
     if (isAuthLoading) return;
     if (!authSession.authenticated) {
       pendingStaffScreenRef.current = activeScreen as StaffScreenId;
@@ -1205,6 +1205,9 @@ export default function App() {
             inventory={inventory}
             tables={tables}
             activityLog={activityLog}
+            customers={customers}
+            menuItems={menuItems}
+            staffRoster={staffRoster}
             onRestockItem={handleRestockItem}
             onNavigateStaff={(screen) => handleNavigate(screen, 'staff')}
             onExportCsv={handleExportOrdersExcel}
