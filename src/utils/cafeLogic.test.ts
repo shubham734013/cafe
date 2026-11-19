@@ -28,6 +28,8 @@ import {
   isKitchenActiveOrder,
   isIngredientBelowThreshold,
   restockIngredientItem,
+  convertRecipeAmountToInventoryUnit,
+  calculateOrderStockDeduction,
 } from './cafeLogic';
 
 test('calculateCartTotals applies only configured active campaign codes', () => {
@@ -411,4 +413,28 @@ test('computeDashboardMetrics correctly accounts for refunded orders and live re
   const metrics = computeDashboardMetrics([refundedOrder], 'Today');
   assert.equal(metrics.refundedCount, 1);
   assert.equal(metrics.refundedAmount, 350);
+});
+
+test('convertRecipeAmountToInventoryUnit correctly calculates grams per pc into inventory kg and calculates order deduction', () => {
+  // 1. 20 grams of coffee beans per 1 pc -> 0.02 kg
+  const beansPerPc = convertRecipeAmountToInventoryUnit(20, 'g', 'kg');
+  assert.equal(beansPerPc, 0.02);
+
+  // 2. 200 ml of milk per 1 pc -> 0.2 L
+  const milkPerPc = convertRecipeAmountToInventoryUnit(200, 'ml', 'L');
+  assert.equal(milkPerPc, 0.2);
+
+  // 3. 2 pcs of buns per 1 pc -> 2 pcs
+  const bunsPerPc = convertRecipeAmountToInventoryUnit(2, 'pcs', 'pcs');
+  assert.equal(bunsPerPc, 2);
+
+  // 4. Order quantity calculation: 5 pcs of coffee with 20g/pc
+  const orderDeduction = calculateOrderStockDeduction(20, 'g', 'kg', 5);
+  assert.equal(orderDeduction.unitDeduction, 0.02);
+  assert.equal(orderDeduction.totalDeduction, 0.1); // 0.1 kg = 100 grams
+  assert.equal(orderDeduction.formattedDeduction, '0.1 kg');
+
+  // 5. Order quantity calculation: 3 pcs with 200 ml/pc
+  const milkOrder = calculateOrderStockDeduction(200, 'ml', 'L', 3);
+  assert.equal(milkOrder.totalDeduction, 0.6); // 0.6 L = 600 ml
 });

@@ -254,7 +254,17 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
         description: newProductDescription.trim(),
         imageUrl: newProductImageUrl.trim(),
         defaultNote: 'Freshly prepared',
-        recipe: newProductRecipe,
+        recipe: newProductRecipe.map((line) => {
+          const ing = inventory.find((item) => item.id === line.ingredientId);
+          const resolvedUnit =
+            line.amountUnit ||
+            (ing?.unit === 'kg' ? 'g' : ing?.unit === 'L' ? 'ml' : (ing?.unit as any) || 'pcs');
+          return {
+            ingredientId: line.ingredientId,
+            amount: Number(line.amount),
+            amountUnit: resolvedUnit,
+          };
+        }),
       });
       setAddModalOpen(false);
       setNewProductName('');
@@ -910,18 +920,18 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
 
       {/* Add Product Modal (Admin Exclusive) */}
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
-        <DialogContent className="max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl text-slate-100">
+        <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto rounded-3xl bg-slate-900 border border-slate-800 p-6 shadow-2xl text-slate-100">
           <DialogHeader>
             <DialogTitle className="text-base font-bold text-slate-100 flex items-center gap-2">
               <Plus className="w-4 h-4 text-[#FF6422]" />
               <span>Add New Menu Product</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-400">
-              Create a new dish or beverage to make it instantly available in POS and customer menu.
+              Set product details and ingredient quantities for 1 piece. Stock will automatically deduct according to order quantity.
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleCreateProduct} className="space-y-3.5 pt-2">
+          <form onSubmit={handleCreateProduct} className="space-y-4 pt-2">
             <div>
               <label className="text-xs font-semibold text-slate-300 block mb-1">
                 Product Name
@@ -936,6 +946,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
               />
             </div>
 
+            {/* Category & Price */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-slate-300 block mb-1">
@@ -955,122 +966,6 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-300">
-                    Recipe Ingredients
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setNewProductRecipe((current) => [
-                        ...current,
-                        {
-                          ingredientId: inventory[0]?.id || '',
-                          amount: 1,
-                          amountUnit:
-                            inventory[0]?.unit === 'kg'
-                              ? 'g'
-                              : (inventory[0]?.unit as 'g' | 'ml' | 'L' | 'pcs') || 'pcs',
-                        },
-                      ])
-                    }
-                    disabled={inventory.length === 0}
-                    className="text-[11px] font-bold text-[#FF6422] disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-                  >
-                    + Add Ingredient
-                  </button>
-                </div>
-                {inventory.length === 0 ? (
-                  <p className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[11px] text-slate-400">
-                    Add inventory ingredients first to define this product&apos;s recipe.
-                  </p>
-                ) : newProductRecipe.length === 0 ? (
-                  <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
-                    Add at least one ingredient for automatic stock deduction.
-                  </p>
-                ) : (
-                  <div className="space-y-2 max-h-36 overflow-y-auto no-scrollbar">
-                    {newProductRecipe.map((line, index) => {
-                      const ingredient = inventory.find((item) => item.id === line.ingredientId);
-                      return (
-                        <div key={`${line.ingredientId}-${index}`} className="grid grid-cols-[1fr_90px_28px] gap-2">
-                          <select
-                            value={line.ingredientId}
-                            onChange={(event) =>
-                              setNewProductRecipe((current) =>
-                                current.map((entry, entryIndex) =>
-                                  entryIndex === index
-                                    ? {
-                                        ...entry,
-                                        ingredientId: event.target.value,
-                                        amountUnit:
-                                          inventory.find((item) => item.id === event.target.value)?.unit === 'kg'
-                                            ? 'g'
-                                            : (inventory.find((item) => item.id === event.target.value)?.unit as
-                                                | 'g'
-                                                | 'ml'
-                                                | 'L'
-                                                | 'pcs') || 'pcs',
-                                      }
-                                    : entry
-                                )
-                              )
-                            }
-                            className="w-full px-2 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100"
-                          >
-                            {inventory.map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.name} ({item.unit})
-                              </option>
-                            ))}
-                          </select>
-                          <input
-                            type="number"
-                            min="0.01"
-                            step="0.01"
-                            value={line.amount}
-                            onChange={(event) =>
-                              setNewProductRecipe((current) =>
-                                current.map((entry, entryIndex) =>
-                                  entryIndex === index
-                                    ? { ...entry, amount: Number(event.target.value) }
-                                    : entry
-                                )
-                              )
-                            }
-                            placeholder={
-                              ingredient?.unit === 'kg'
-                                ? 'grams / 1 pc'
-                                : ingredient?.unit === 'g'
-                                  ? 'grams / 1 pc'
-                                  : ingredient?.unit === 'ml'
-                                    ? 'ml / 1 pc'
-                                    : ingredient?.unit === 'L'
-                                      ? 'liters / 1 pc'
-                                      : 'pcs / 1 pc'
-                            }
-                            className="w-full px-2 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100"
-                          />
-                          <button
-                            type="button"
-                            aria-label="Remove ingredient"
-                            onClick={() =>
-                              setNewProductRecipe((current) =>
-                                current.filter((_, entryIndex) => entryIndex !== index)
-                              )
-                            }
-                            className="w-7 h-7 self-center rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 cursor-pointer"
-                          >
-                            <X className="w-4 h-4 mx-auto" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div>
                 <label className="text-xs font-semibold text-slate-300 block mb-1">
                   Price (₹)
                 </label>
@@ -1084,6 +979,148 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
                   className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-[#FF6422]"
                 />
               </div>
+            </div>
+
+            {/* Recipe Ingredients & Quantity in Gms for 1 Pc */}
+            <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-xs font-bold text-slate-200 block">
+                    Recipe Ingredients (Quantity for 1 Pc)
+                  </label>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Order quantity ke according stock auto deduct hoga.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const first = inventory[0];
+                    setNewProductRecipe((current) => [
+                      ...current,
+                      {
+                        ingredientId: first?.id || '',
+                        amount: first?.unit === 'kg' ? 20 : first?.unit === 'L' ? 200 : 1,
+                        amountUnit: first?.unit === 'kg' ? 'g' : first?.unit === 'L' ? 'ml' : (first?.unit as any) || 'pcs',
+                      },
+                    ]);
+                  }}
+                  disabled={inventory.length === 0}
+                  className="px-2.5 py-1 rounded-lg bg-[#FF6422]/15 border border-[#FF6422]/30 text-[11px] font-bold text-[#FF6422] hover:bg-[#FF6422]/25 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed transition-colors"
+                >
+                  + Add Ingredient
+                </button>
+              </div>
+
+              {inventory.length === 0 ? (
+                <p className="p-2.5 rounded-xl border border-slate-800/80 bg-slate-900/60 text-[11px] text-slate-400">
+                  Add inventory ingredients first to define this product&apos;s recipe.
+                </p>
+              ) : newProductRecipe.length === 0 ? (
+                <p className="p-2.5 rounded-xl border border-amber-500/20 bg-amber-500/5 text-[11px] text-amber-300">
+                  ⚠️ Add at least one ingredient so stock auto-deducts when customer orders.
+                </p>
+              ) : (
+                <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
+                  {newProductRecipe.map((line, index) => {
+                    const ingredient = inventory.find((item) => item.id === line.ingredientId);
+                    const unitBadge =
+                      ingredient?.unit === 'kg'
+                        ? 'gms / 1 pc'
+                        : ingredient?.unit === 'L'
+                        ? 'ml / 1 pc'
+                        : `${ingredient?.unit || 'pcs'} / 1 pc`;
+
+                    // Sample calculation for 5 orders
+                    const sampleQty = 5;
+                    const sampleBurn =
+                      ingredient?.unit === 'kg'
+                        ? `${line.amount * sampleQty >= 1000 ? `${(line.amount * sampleQty / 1000).toFixed(2)} kg` : `${line.amount * sampleQty} g`}`
+                        : ingredient?.unit === 'L'
+                        ? `${line.amount * sampleQty >= 1000 ? `${(line.amount * sampleQty / 1000).toFixed(2)} L` : `${line.amount * sampleQty} ml`}`
+                        : `${line.amount * sampleQty} ${ingredient?.unit || 'pcs'}`;
+
+                    return (
+                      <div key={`${line.ingredientId}-${index}`} className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
+                        <div className="grid grid-cols-[1fr_125px_30px] gap-2 items-center">
+                          <select
+                            value={line.ingredientId}
+                            onChange={(event) => {
+                              const newId = event.target.value;
+                              const matched = inventory.find((i) => i.id === newId);
+                              setNewProductRecipe((current) =>
+                                current.map((entry, entryIndex) =>
+                                  entryIndex === index
+                                    ? {
+                                        ...entry,
+                                        ingredientId: newId,
+                                        amount: matched?.unit === 'kg' ? 20 : matched?.unit === 'L' ? 200 : 1,
+                                        amountUnit: matched?.unit === 'kg' ? 'g' : matched?.unit === 'L' ? 'ml' : (matched?.unit as any) || 'pcs',
+                                      }
+                                    : entry
+                                )
+                              );
+                            }}
+                            className="w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 font-medium focus:outline-none focus:border-[#FF6422]"
+                          >
+                            {inventory.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name} ({item.quantity} {item.unit} in stock)
+                              </option>
+                            ))}
+                          </select>
+
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="0.001"
+                              step="any"
+                              required
+                              value={line.amount}
+                              onChange={(event) => {
+                                const val = Number(event.target.value);
+                                setNewProductRecipe((current) =>
+                                  current.map((entry, entryIndex) =>
+                                    entryIndex === index
+                                      ? { ...entry, amount: val }
+                                      : entry
+                                  )
+                                );
+                              }}
+                              className="w-full pl-2 pr-14 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 font-bold tabular-nums focus:outline-none focus:border-[#FF6422]"
+                            />
+                            <span className="absolute right-2 top-2 text-[10px] font-semibold text-[#FF6422] pointer-events-none">
+                              {unitBadge}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            aria-label="Remove ingredient"
+                            onClick={() =>
+                              setNewProductRecipe((current) =>
+                                current.filter((_, entryIndex) => entryIndex !== index)
+                              )
+                            }
+                            className="w-7 h-7 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 flex items-center justify-center cursor-pointer transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 px-0.5">
+                          <span>
+                            1 pc: <strong className="text-slate-200">{line.amount} {unitBadge.split('/')[0].trim()}</strong>
+                          </span>
+                          <span className="text-emerald-400 font-medium">
+                            ⚡ 5 pcs order burns {sampleBurn}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-3 gap-2.5">

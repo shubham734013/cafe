@@ -32,6 +32,7 @@ import {
   calculateCartTotals,
   computeInventoryStatus,
   restockIngredientItem,
+  convertRecipeAmountToInventoryUnit,
 } from '../utils/cafeLogic';
 import {
   InvalidDomainTransitionError,
@@ -1680,9 +1681,17 @@ export class CafeStore {
     this.state.menuItems.unshift(newItem);
     this.menuById.set(newItem.id, newItem);
     if (input.recipe.length > 0) {
-      const validRecipe = input.recipe.filter((line) =>
-        this.state.inventory.some((ingredient) => ingredient.id === line.ingredientId)
-      );
+      const validRecipe = input.recipe
+        .filter((line) => this.state.inventory.some((ingredient) => ingredient.id === line.ingredientId))
+        .map((line) => {
+          const ing = this.state.inventory.find((i) => i.id === line.ingredientId)!;
+          const normalizedAmount = convertRecipeAmountToInventoryUnit(line.amount, line.amountUnit, ing.unit);
+          return {
+            ingredientId: line.ingredientId,
+            amount: normalizedAmount,
+            amountUnit: line.amountUnit,
+          };
+        });
       if (validRecipe.length > 0) {
         this.state.recipes = {
           ...(this.state.recipes || INITIAL_RECIPES),

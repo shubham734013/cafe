@@ -524,3 +524,80 @@ export function getLowInventoryItems(items: InventoryIngredient[]): InventoryIng
       return ratioA - ratioB;
     });
 }
+
+/**
+ * Converts recipe ingredient quantity for 1 pc (e.g. 20 grams, 200 ml, 2 pcs)
+ * into the ingredient's native inventory unit (kg, L, g, ml, pcs).
+ */
+export function convertRecipeAmountToInventoryUnit(
+  amount: number,
+  recipeUnit: string | undefined,
+  inventoryUnit: string
+): number {
+  if (!amount || amount <= 0) return 0;
+  const rUnit = (recipeUnit || '').toLowerCase().trim();
+  const iUnit = (inventoryUnit || '').toLowerCase().trim();
+
+  // Inventory is in kg
+  if (iUnit === 'kg') {
+    if (rUnit === 'g' || rUnit === 'gms' || rUnit === 'gram' || rUnit === 'grams') {
+      return Math.round((amount / 1000) * 100000) / 100000;
+    }
+    if (rUnit === 'kg') {
+      return amount;
+    }
+    return amount >= 1 ? Math.round((amount / 1000) * 100000) / 100000 : amount;
+  }
+
+  // Inventory is in L (liters)
+  if (iUnit === 'l' || iUnit === 'liter' || iUnit === 'liters') {
+    if (rUnit === 'ml' || rUnit === 'g' || rUnit === 'gms') {
+      return Math.round((amount / 1000) * 100000) / 100000;
+    }
+    if (rUnit === 'l') {
+      return amount;
+    }
+    return amount >= 1 ? Math.round((amount / 1000) * 100000) / 100000 : amount;
+  }
+
+  // Inventory is in g (grams)
+  if (iUnit === 'g' || iUnit === 'gms') {
+    if (rUnit === 'kg') {
+      return amount * 1000;
+    }
+    return amount;
+  }
+
+  // Inventory is in ml
+  if (iUnit === 'ml') {
+    if (rUnit === 'l') {
+      return amount * 1000;
+    }
+    return amount;
+  }
+
+  // Inventory is in pcs
+  return amount;
+}
+
+/**
+ * Calculates total stock deducted for an order of quantity Q
+ */
+export function calculateOrderStockDeduction(
+  recipeAmountFor1Pc: number,
+  recipeUnit: string | undefined,
+  inventoryUnit: string,
+  orderQuantity: number
+): {
+  unitDeduction: number;
+  totalDeduction: number;
+  formattedDeduction: string;
+} {
+  const perPc = convertRecipeAmountToInventoryUnit(recipeAmountFor1Pc, recipeUnit, inventoryUnit);
+  const total = Math.round(perPc * orderQuantity * 100000) / 100000;
+  return {
+    unitDeduction: perPc,
+    totalDeduction: total,
+    formattedDeduction: `${total} ${inventoryUnit}`,
+  };
+}
