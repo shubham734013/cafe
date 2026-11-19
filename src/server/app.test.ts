@@ -242,6 +242,30 @@ test('order creation enforces catalog prices, idempotency, and customer scoping'
   };
   assert.deepEqual(customerBootstrap.orders.map((order) => order.id), [created.order.id]);
   assert.deepEqual(customerBootstrap.customers, []);
+
+  // Verify empty string tableNumber / deliveryPartner / customerId do not fail schema validation
+  const emptyStringPayload = {
+    serviceMode: 'takeaway',
+    tableNumber: '',
+    deliveryPartner: '',
+    customerId: '',
+    items: [
+      {
+        menuItemId: 'cold-coffee',
+        name: 'Cold Coffee',
+        price: 129,
+        quantity: 1,
+        station: 'Barista',
+      },
+    ],
+    idempotencyKey: 'test-empty-strings-001',
+  };
+  const emptyStringRes = await fetch(`${baseUrl}/api/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(emptyStringPayload),
+  });
+  assert.equal(emptyStringRes.status, 201, 'Empty string fields must not fail validation with too_small');
 });
 
 test('UPI gateway checkout is idempotent and only authenticated gateway status settles the order', async (t) => {

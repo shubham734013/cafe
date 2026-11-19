@@ -87,7 +87,7 @@ interface AdminDashboardScreenProps {
   onToggleMenuAvailability?: (id: string) => Promise<void>;
   onCreateCounterOrder?: (
     input: z.infer<typeof createOrderSchema>,
-    paidBy?: 'cash' | 'card' | 'upi' | 'pay_later'
+    paidBy?: 'cash' | 'card' | 'upi'
   ) => Promise<CafeOrder>;
   onPayCounterOrder?: (orderId: string, paymentMode?: 'cash' | 'card' | 'upi') => Promise<void>;
 }
@@ -151,6 +151,9 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
   const [newProductStation, setNewProductStation] = useState<'Barista' | 'Grill' | 'Fryer' | 'Cold Bar' | 'Kitchen'>('Kitchen');
   const [newProductDescription, setNewProductDescription] = useState('');
   const [newProductImageUrl, setNewProductImageUrl] = useState(PRESET_IMAGES[0].url);
+  const [newProductRecipe, setNewProductRecipe] = useState<
+    Array<{ ingredientId: string; amount: number; amountUnit?: 'g' | 'kg' | 'ml' | 'L' | 'pcs' }>
+  >([]);
 
   // Settle Payment Modal State (for unpaid counter orders)
   const [settleOrder, setSettleOrder] = useState<CafeOrder | null>(null);
@@ -233,6 +236,12 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
   const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProductName.trim() || !newProductPrice) return;
+    if (inventory.length > 0 && newProductRecipe.length === 0) {
+      return;
+    }
+    if (newProductRecipe.some((line) => line.amount <= 0 || !line.ingredientId)) {
+      return;
+    }
     setSubmittingProduct(true);
     try {
       await onAddMenuItem?.({
@@ -245,11 +254,13 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
         description: newProductDescription.trim(),
         imageUrl: newProductImageUrl.trim(),
         defaultNote: 'Freshly prepared',
+        recipe: newProductRecipe,
       });
       setAddModalOpen(false);
       setNewProductName('');
       setNewProductPrice('');
       setNewProductDescription('');
+      setNewProductRecipe([]);
     } catch {
       // Error handled by parent toast
     } finally {
@@ -941,6 +952,122 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-300">
+                    Recipe Ingredients
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setNewProductRecipe((current) => [
+                        ...current,
+                        {
+                          ingredientId: inventory[0]?.id || '',
+                          amount: 1,
+                          amountUnit:
+                            inventory[0]?.unit === 'kg'
+                              ? 'g'
+                              : (inventory[0]?.unit as 'g' | 'ml' | 'L' | 'pcs') || 'pcs',
+                        },
+                      ])
+                    }
+                    disabled={inventory.length === 0}
+                    className="text-[11px] font-bold text-[#FF6422] disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    + Add Ingredient
+                  </button>
+                </div>
+                {inventory.length === 0 ? (
+                  <p className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[11px] text-slate-400">
+                    Add inventory ingredients first to define this product&apos;s recipe.
+                  </p>
+                ) : newProductRecipe.length === 0 ? (
+                  <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
+                    Add at least one ingredient for automatic stock deduction.
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-36 overflow-y-auto no-scrollbar">
+                    {newProductRecipe.map((line, index) => {
+                      const ingredient = inventory.find((item) => item.id === line.ingredientId);
+                      return (
+                        <div key={`${line.ingredientId}-${index}`} className="grid grid-cols-[1fr_90px_28px] gap-2">
+                          <select
+                            value={line.ingredientId}
+                            onChange={(event) =>
+                              setNewProductRecipe((current) =>
+                                current.map((entry, entryIndex) =>
+                                  entryIndex === index
+                                    ? {
+                                        ...entry,
+                                        ingredientId: event.target.value,
+                                        amountUnit:
+                                          inventory.find((item) => item.id === event.target.value)?.unit === 'kg'
+                                            ? 'g'
+                                            : (inventory.find((item) => item.id === event.target.value)?.unit as
+                                                | 'g'
+                                                | 'ml'
+                                                | 'L'
+                                                | 'pcs') || 'pcs',
+                                      }
+                                    : entry
+                                )
+                              )
+                            }
+                            className="w-full px-2 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100"
+                          >
+                            {inventory.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name} ({item.unit})
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={line.amount}
+                            onChange={(event) =>
+                              setNewProductRecipe((current) =>
+                                current.map((entry, entryIndex) =>
+                                  entryIndex === index
+                                    ? { ...entry, amount: Number(event.target.value) }
+                                    : entry
+                                )
+                              )
+                            }
+                            placeholder={
+                              ingredient?.unit === 'kg'
+                                ? 'grams / 1 pc'
+                                : ingredient?.unit === 'g'
+                                  ? 'grams / 1 pc'
+                                  : ingredient?.unit === 'ml'
+                                    ? 'ml / 1 pc'
+                                    : ingredient?.unit === 'L'
+                                      ? 'liters / 1 pc'
+                                      : 'pcs / 1 pc'
+                            }
+                            className="w-full px-2 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100"
+                          />
+                          <button
+                            type="button"
+                            aria-label="Remove ingredient"
+                            onClick={() =>
+                              setNewProductRecipe((current) =>
+                                current.filter((_, entryIndex) => entryIndex !== index)
+                              )
+                            }
+                            className="w-7 h-7 self-center rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 cursor-pointer"
+                          >
+                            <X className="w-4 h-4 mx-auto" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div>

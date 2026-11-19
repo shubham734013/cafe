@@ -42,7 +42,7 @@ function getInitialFromUrl(): {
     return { screen: 'splash', mode: 'customer', table: '', trackedOrderId: '' };
   }
   const params = new URLSearchParams(window.location.search);
-  const rawTable = params.get('table')?.trim().toUpperCase() || '';
+  const rawTable = params.get('table')?.trim().toUpperCase() || 'T1';
   const table = rawTable;
   const orderFromUrl = params.get('orderId')?.trim() || '';
   let storedOrder = '';
@@ -144,7 +144,7 @@ export const useCafeStore = create<CafeClientState>((set) => ({
   activeScreen: initialUrl.screen,
   workspaceMode: initialUrl.mode,
   serviceMode: 'dine-in',
-  selectedTable: initialUrl.table,
+  selectedTable: initialUrl.table || 'T1',
   menuCategory: 'Beverages',
   customerCart: getInitialCustomerCart(),
   posCart: [],

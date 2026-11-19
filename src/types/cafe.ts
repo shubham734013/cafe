@@ -92,6 +92,7 @@ export type StaffShiftFilter = 'all' | 'active' | 'morning' | 'fullday';
 export interface RecipeBurnItem {
   ingredientId: string;
   amount: number;
+  amountUnit?: 'g' | 'kg' | 'ml' | 'L' | 'pcs';
 }
 
 export interface MenuItem {

@@ -1806,8 +1806,11 @@ export function createCafeServer(
   // Central Zod + domain state transition + error handler
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof z.ZodError) {
+      const firstIssue = err.issues[0];
+      const fieldPath = firstIssue?.path.length ? `[${firstIssue.path.join('.')}] ` : '';
+      const message = firstIssue?.message || 'Invalid request payload';
       res.status(400).json({
-        error: err.issues[0]?.message || 'Invalid request payload',
+        error: `${fieldPath}${message}`.trim(),
         issues: err.issues,
       });
       return;

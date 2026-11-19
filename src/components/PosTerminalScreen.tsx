@@ -27,7 +27,7 @@ interface PosTerminalScreenProps {
   onUpdatePosQty: (menuItemId: string, delta: number) => void;
   onClearPosCart: () => void;
   onCompletePosOrder: (
-    paymentMode?: PaymentMode | 'pay_later',
+    paymentMode?: PaymentMode,
     customerId?: string,
     cookingNote?: string
   ) => void;
@@ -66,7 +66,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<MenuCategory>('All');
-  const [tenderType, setTenderType] = useState<PaymentMode | 'pay_later'>('cash');
+  const [tenderType, setTenderType] = useState<PaymentMode>('cash');
   const [cookingNote, setCookingNote] = useState('');
   const [manageStockMode, setManageStockMode] = useState(false);
 
@@ -170,7 +170,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
           {serviceMode === 'dine-in' && (
             <select
               aria-label="Select table"
-              value={selectedTable}
+              value={selectedTable || 'T1'}
               onChange={(event) => onTableChange(event.target.value)}
               className="rounded-lg bg-surface-container-high px-3 py-1.5 text-xs font-bold text-on-surface border border-outline-variant/30"
             >
@@ -495,13 +495,12 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
             <span className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
               Paid By (Payment Mode):
             </span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
               {(
                 [
                   ['cash', '💵 Cash'],
                   ['upi', '⚡ UPI QR'],
                   ['card', '💳 Card Swipe'],
-                  ['pay_later', '⏳ Pay Later'],
                 ] as const
               ).map(([mode, label]) => (
                 <button
@@ -537,11 +536,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
               <span className="flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[18px]">local_shipping</span>
                 <span>
-                  Punch Order ·{' '}
-                  {tenderType === 'pay_later'
-                    ? 'UNPAID (PAY LATER)'
-                    : `PAID (${tenderType.toUpperCase()})`}{' '}
-                  (F9)
+                  Punch Order · PAID ({tenderType.toUpperCase()}) (F9)
                 </span>
               </span>
             )}

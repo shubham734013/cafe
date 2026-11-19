@@ -453,6 +453,7 @@ export class CafeStore {
             rewardPoints: snapshot.rewardPoints,
             updatedAt: snapshot.updatedAt,
             nextOrderSeq: snapshot.nextOrderSeq,
+            recipes: snapshot.recipes || {},
           },
         },
       ],
@@ -497,6 +498,7 @@ export class CafeStore {
       rewardPoints: number;
       updatedAt: string;
       nextOrderSeq: number;
+      recipes?: Record<string, Array<{ ingredientId: string; amount: number }>>;
     }>(11);
     const settings = await readSingleton<CafeSettings>(10);
 
@@ -1520,7 +1522,8 @@ export class CafeStore {
           const ingIndex = this.state.inventory.findIndex((i) => i.id === ingredientId);
           if (ingIndex !== -1) {
             const ing = this.state.inventory[ingIndex];
-            const newQty = Math.max(0, Math.round((ing.quantity - amount * item.quantity) * 100) / 100);
+            const consumed = amount * item.quantity;
+            const newQty = Math.max(0, Math.round((ing.quantity - consumed) * 100) / 100);
             const status = newQty < ing.minThreshold ? 'Critical' : 'Good';
             this.state.inventory[ingIndex] = {
               ...ing,
@@ -1532,7 +1535,7 @@ export class CafeStore {
               ingredientId: ing.id,
               ingredientName: ing.name,
               type: 'sale',
-              quantityDelta: -(amount * item.quantity),
+              quantityDelta: -consumed,
               beforeQuantity: ing.quantity,
               afterQuantity: newQty,
               unit: ing.unit,
@@ -1676,6 +1679,19 @@ export class CafeStore {
 
     this.state.menuItems.unshift(newItem);
     this.menuById.set(newItem.id, newItem);
+    if (input.recipe.length > 0) {
+      const validRecipe = input.recipe.filter((line) =>
+        this.state.inventory.some((ingredient) => ingredient.id === line.ingredientId)
+      );
+      if (validRecipe.length > 0) {
+        this.state.recipes = {
+          ...(this.state.recipes || INITIAL_RECIPES),
+          [newItem.id]: validRecipe,
+        };
+        newItem.recipe = validRecipe;
+        this.state.menuItems[0].recipe = validRecipe;
+      }
+    }
     this.recordActivity({
       type: 'stock_updated',
       title: `Product Added: ${newItem.name}`,

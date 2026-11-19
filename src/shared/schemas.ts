@@ -23,8 +23,16 @@ export const cartItemSchema = z.object({
 export const createOrderSchema = z.object({
   outletId: z.string().min(1).default('seth-sawariya-main'),
   serviceMode: serviceModeSchema,
-  tableNumber: z.string().trim().min(1).max(16).optional(),
-  deliveryPartner: z.string().trim().min(1).max(60).optional(),
+  tableNumber: z
+    .preprocess(
+      (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+      z.string().trim().min(1, 'Table number must be at least 1 character').max(16).optional()
+    ),
+  deliveryPartner: z
+    .preprocess(
+      (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+      z.string().trim().min(1).max(60).optional()
+    ),
   items: z
     .array(cartItemSchema)
     .min(1, 'Order must contain at least one item')
@@ -33,9 +41,17 @@ export const createOrderSchema = z.object({
   cookingNote: z.string().trim().max(240).optional().default(''),
   isPosTerminal: z.boolean().optional().default(false),
   paymentMode: z.enum(['upi', 'cash', 'card']).optional().default('upi'),
-  customerId: z.string().trim().max(64).optional(),
+  customerId: z
+    .preprocess(
+      (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+      z.string().trim().max(64).optional()
+    ),
   redeemPoints: z.coerce.number().int().nonnegative().max(10000).optional(),
-  idempotencyKey: z.string().trim().max(120).optional(),
+  idempotencyKey: z
+    .preprocess(
+      (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+      z.string().trim().max(120).optional()
+    ),
 });
 
 export const toggleKotItemSchema = z.object({
@@ -62,6 +78,16 @@ export const addMenuItemSchema = z.object({
   station: z.enum(['Barista', 'Grill', 'Fryer', 'Cold Bar', 'Kitchen']).default('Kitchen'),
   imageUrl: z.string().trim().optional().default(''),
   defaultNote: z.string().trim().optional().default(''),
+  recipe: z
+    .array(
+      z.object({
+        ingredientId: z.string().trim().min(1),
+        amount: z.coerce.number().positive('Ingredient quantity must be greater than 0'),
+        amountUnit: z.enum(['g', 'kg', 'ml', 'L', 'pcs']).optional(),
+      })
+    )
+    .optional()
+    .default([]),
 });
 
 export const addIngredientSchema = z.object({

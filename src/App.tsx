@@ -400,9 +400,10 @@ export default function App() {
       if (customerCart.length === 0 || checkoutInFlightRef.current) return;
       checkoutInFlightRef.current = true;
       try {
+        const table = serviceMode === 'dine-in' ? (selectedTable?.trim() || 'T1') : undefined;
         const signature = JSON.stringify({
           serviceMode,
-          selectedTable,
+          selectedTable: table,
           couponCode,
           paymentMode: selectedPaymentMode,
           items: customerCart.map((i) => `${i.menuItemId}:${i.quantity}`),
@@ -411,11 +412,11 @@ export default function App() {
         const res = await createOrderMutation.mutateAsync({
           outletId: data.outletId,
           serviceMode,
-          tableNumber: serviceMode === 'dine-in' ? selectedTable : undefined,
+          tableNumber: table,
           deliveryPartner: serviceMode === 'delivery' ? 'Direct Delivery' : undefined,
           items: customerCart,
-          couponCode,
-          cookingNote,
+          couponCode: couponCode.trim(),
+          cookingNote: cookingNote.trim(),
           isPosTerminal: false,
           paymentMode: selectedPaymentMode,
           idempotencyKey,
@@ -462,20 +463,17 @@ export default function App() {
 
   const handlePosCheckout = useCallback(
     async (
-      selectedPaymentMode: PaymentMode | 'pay_later' = 'cash',
+      selectedPaymentMode: PaymentMode = 'cash',
       customerId?: string,
       cookingNote = ''
     ) => {
       if (posCart.length === 0 || checkoutInFlightRef.current) return;
       checkoutInFlightRef.current = true;
       try {
-        const isPaid = selectedPaymentMode !== 'pay_later';
-        const effectivePaymentMode: PaymentMode =
-          selectedPaymentMode === 'pay_later' ? 'cash' : selectedPaymentMode;
-
+        const table = serviceMode === 'dine-in' ? (selectedTable?.trim() || 'T1') : undefined;
         const signature = JSON.stringify({
           serviceMode,
-          selectedTable,
+          selectedTable: table,
           paymentMode: selectedPaymentMode,
           customerId,
           items: posCart.map((i) => `${i.menuItemId}:${i.quantity}`),
@@ -484,23 +482,22 @@ export default function App() {
         const res = await createOrderMutation.mutateAsync({
           outletId: data.outletId,
           serviceMode,
-          tableNumber: serviceMode === 'dine-in' ? selectedTable : undefined,
+          tableNumber: table,
           deliveryPartner: serviceMode === 'delivery' ? 'Direct Delivery' : undefined,
           items: posCart,
           couponCode: '',
           cookingNote: cookingNote.trim(),
-          isPosTerminal: isPaid,
-          paymentMode: effectivePaymentMode,
+          isPosTerminal: true,
+          paymentMode: selectedPaymentMode,
           customerId,
           idempotencyKey,
         });
         posAttemptKeyRef.current = null;
         setLastCompletedPosOrder(res.order);
         clearPosCart();
-        const payStatusLabel = isPaid
-          ? `Paid via ${effectivePaymentMode.toUpperCase()}`
-          : 'Unpaid (Pay Later)';
-        showToast(`Counter order #${res.order.id} placed · ${payStatusLabel} (₹${res.order.total})`);
+        showToast(
+          `Counter order #${res.order.id} placed · Paid via ${selectedPaymentMode.toUpperCase()} (₹${res.order.total})`
+        );
       } catch (err) {
         showErrorToast(err, 'Failed to punch counter order');
       } finally {
@@ -549,24 +546,20 @@ export default function App() {
   const handleCreateCounterOrder = useCallback(
     async (
       payload: z.infer<typeof createOrderSchema>,
-      paidBy: 'cash' | 'card' | 'upi' | 'pay_later' = 'cash'
+      paidBy: 'cash' | 'card' | 'upi' = 'cash'
     ): Promise<CafeOrder> => {
       try {
-        const isPaid = paidBy !== 'pay_later';
-        const effectivePaymentMode = paidBy === 'pay_later' ? 'cash' : paidBy;
         const res = await createOrderMutation.mutateAsync({
           ...payload,
-          isPosTerminal: isPaid,
-          paymentMode: effectivePaymentMode,
+          isPosTerminal: true,
+          paymentMode: paidBy,
         });
         const paymentLabel =
           paidBy === 'cash'
             ? 'Paid by Cash'
             : paidBy === 'upi'
               ? 'Paid by UPI'
-              : paidBy === 'card'
-                ? 'Paid by Card'
-                : 'Unpaid (Settle at Counter)';
+              : 'Paid by Card';
         showToast(`Counter order #${res.order.id} placed · ${paymentLabel} (₹${res.order.total})`);
         return res.order;
       } catch (err) {
