@@ -26,6 +26,7 @@ const CUSTOMER_NAV: { id: ScreenId; label: string; icon: string }[] = [
   { id: 'menu', label: 'Search', icon: 'search' },
   { id: 'tracking', label: 'Orders', icon: 'receipt_long' },
   { id: 'cart', label: 'Cart', icon: 'shopping_bag' },
+  { id: 'profile', label: 'Account', icon: 'person' },
 ];
 
 const STAFF_NAV_MOBILE: { id: StaffScreenId; label: string; icon: string }[] = [
@@ -65,6 +66,7 @@ const SCREEN_TITLES: Record<ScreenId, string> = {
   tracking: 'Order Status',
   rewards: 'Rewards',
   profile: 'My Profile',
+  login: 'Customer Sign In',
   'staff-home': 'Staff Home',
   'pos-terminal': 'Billing Counter',
   'pos-orders': 'Billing Orders',

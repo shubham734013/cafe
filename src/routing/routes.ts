@@ -8,6 +8,7 @@ const CUSTOMER_PATHS: Record<Exclude<ScreenId, 'splash' | StaffScreenId>, string
   tracking: '/customer/tracking',
   rewards: '/customer/rewards',
   profile: '/customer/profile',
+  login: '/customer/login',
 };
 
 const STAFF_PATHS: Record<StaffScreenId, string> = {
@@ -55,6 +56,7 @@ const PATH_TO_SCREEN = new Map<string, ScreenId>(
     ['cart', '/cart'],
     ['rewards', '/rewards'],
     ['profile', '/profile'],
+    ['login', '/login'],
     ['staff-home', '/staff'],
     ['pos-terminal', '/staff/pos'],
     ['pos-orders', '/staff/pos-orders'],

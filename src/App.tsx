@@ -60,6 +60,9 @@ const CustomerRewardsScreen = lazy(() =>
 const CustomerProfileScreen = lazy(() =>
   import('./components/CustomerProfileScreen').then((m) => ({ default: m.CustomerProfileScreen }))
 );
+const CustomerLoginScreen = lazy(() =>
+  import('./components/CustomerLoginScreen').then((m) => ({ default: m.CustomerLoginScreen }))
+);
 const LiveTrackingScreen = lazy(() =>
   import('./components/LiveTrackingScreen').then((m) => ({ default: m.LiveTrackingScreen }))
 );
@@ -1306,6 +1309,17 @@ export default function App() {
         <Suspense fallback={<ScreenFallback />}>
           <CustomerProfileScreen
             onNotify={showToast}
+            onBrowseMenu={() => handleNavigate('menu', 'customer')}
+            onNavigateLogin={() => handleNavigate('login', 'customer')}
+          />
+        </Suspense>
+      )}
+
+      {activeScreen === 'login' && (
+        <Suspense fallback={<ScreenFallback />}>
+          <CustomerLoginScreen
+            onNotify={showToast}
+            onSuccess={() => handleNavigate('profile', 'customer')}
             onBrowseMenu={() => handleNavigate('menu', 'customer')}
           />
         </Suspense>

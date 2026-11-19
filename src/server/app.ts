@@ -30,7 +30,9 @@ import {
   stockCountSchema,
   purchaseOrderSchema,
   receivePurchaseOrderSchema,
+  brevoConfirmationSchema,
 } from '../shared/schemas';
+import { sendBrevoConfirmationEmail } from './brevo';
 import {
   assertAuthSecretConfigured,
   authenticateStaffPin,
@@ -943,6 +945,28 @@ export function createCafeServer(
   app.post('/api/auth/logout', (_req, res) => {
     clearStaffSessionCookie(res);
     res.json({ authenticated: false, session: null });
+  });
+
+  // Customer Brevo Email Confirmation endpoint
+  app.post('/api/auth/brevo-confirmation', async (req, res, next) => {
+    try {
+      const input = parseBody(brevoConfirmationSchema, req.body);
+      const result = await sendBrevoConfirmationEmail({
+        toName: input.name,
+        toEmail: input.email,
+        phone: input.phone,
+        verificationCode: input.code,
+      });
+      res.json({
+        ok: result.success,
+        simulated: result.simulated ?? false,
+        messageId: result.messageId,
+        code: result.code,
+        error: result.error,
+      });
+    } catch (err) {
+      next(err);
+    }
   });
 
   // Orders & KDS

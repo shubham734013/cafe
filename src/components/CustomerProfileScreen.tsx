@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { CAFE_ASSETS } from '../data/cafeSeedData';
 import { CafeImage } from './CafeImage';
+import { getLocalCustomerSession, logoutCustomer } from '../lib/supabaseClient';
 
 interface CustomerProfileScreenProps {
   onNotify: (message: string) => void;
   onBrowseMenu: () => void;
+  onNavigateLogin?: () => void;
 }
 
 interface CustomerProfile {
@@ -44,14 +46,17 @@ function loadProfile(): CustomerProfile {
 export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
   onNotify,
   onBrowseMenu,
+  onNavigateLogin,
 }) => {
   const [profile, setProfile] = useState<CustomerProfile>(loadProfile);
   const [savedProfile, setSavedProfile] = useState<CustomerProfile>(loadProfile);
+  const [authSession, setAuthSession] = useState(getLocalCustomerSession);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; phone?: string }>({});
 
   useEffect(() => {
     setSavedProfile(loadProfile());
+    setAuthSession(getLocalCustomerSession());
   }, []);
 
   const initials = profile.name
@@ -124,9 +129,41 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
             </div>
             <h2 className="mt-3 text-base font-bold text-on-surface">{profile.name || 'Guest Customer'}</h2>
             <p className="text-xs text-on-surface-variant">{profile.email || 'Email not added'}</p>
-            <p className="mt-3 text-[11px] px-2.5 py-1 rounded-full bg-surface-container-high text-tertiary font-semibold">
-              Customer Account
-            </p>
+            {authSession ? (
+              <div className="mt-3 space-y-2 w-full">
+                <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold">
+                  <span className="material-symbols-outlined text-[13px]">verified</span>
+                  Supabase Verified
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await logoutCustomer();
+                    setAuthSession(null);
+                    onNotify('Logged out from account');
+                  }}
+                  className="block w-full py-1.5 rounded-lg bg-surface-container-high hover:bg-surface-container text-xs text-on-surface font-semibold cursor-pointer transition-colors"
+                >
+                  Log Out
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 w-full space-y-2">
+                <p className="text-[11px] text-on-surface-variant">
+                  Sign in to sync your orders &amp; reward points!
+                </p>
+                {onNavigateLogin && (
+                  <button
+                    type="button"
+                    onClick={onNavigateLogin}
+                    className="w-full py-2 rounded-xl bg-[#FF6422] hover:bg-[#E55518] text-white text-xs font-bold shadow-sm cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">login</span>
+                    <span>Sign In / Create Account</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </section>
 

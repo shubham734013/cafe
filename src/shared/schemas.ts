@@ -313,3 +313,10 @@ export const requestReorderSchema = z.object({
   id: z.string().trim().min(1, 'Ingredient ID is required'),
   note: z.string().trim().max(200).optional(),
 });
+
+export const brevoConfirmationSchema = z.object({
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(80),
+  email: z.string().trim().email('Valid email is required').max(120),
+  phone: z.string().trim().max(25).optional().default(''),
+  code: z.string().trim().max(10).optional(),
+});

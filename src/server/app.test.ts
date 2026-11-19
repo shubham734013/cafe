@@ -918,3 +918,24 @@ test('kitchen staff can raise stock alert and request reorder for low ingredient
   const restockBody = (await restockRes.json()) as { item: { reorderRequested?: boolean } };
   assert.equal(restockBody.item.reorderRequested, false);
 });
+
+test('brevo confirmation email endpoint validates input and dispatches confirmation', async (t) => {
+  const { baseUrl, close } = await startTestServer();
+  t.after(close);
+
+  const res = await fetch(`${baseUrl}/api/auth/brevo-confirmation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: 'Aarav Patel',
+      email: 'aarav@example.com',
+      phone: '+91 98765 43210',
+    }),
+  });
+
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as { ok: boolean; code?: string; simulated?: boolean };
+  assert.equal(body.ok, true);
+  assert.ok(body.code);
+  assert.equal(body.code.length, 6);
+});
