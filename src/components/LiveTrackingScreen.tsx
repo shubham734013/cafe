@@ -351,7 +351,7 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
             </div>
             <div className="flex-1">
               <h3 className="text-xs sm:text-sm font-bold text-on-surface">
-                Order Fired to Kitchen · Pay at Counter
+                Order Sent to Kitchen · Pay at Counter
               </h3>
               <p className="text-[11px] text-on-surface-variant mt-0.5">
                 Please settle ₹{activeOrder.total} at the counter upon order pickup or table service.
@@ -372,7 +372,7 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
             </h2>
           </div>
           <span className="text-[11px] font-bold text-on-surface-variant bg-surface-container-high px-2.5 py-0.5 rounded-full">
-            KOT: {activeOrder.kotNumber}
+            Order #{activeOrder.kotNumber}
           </span>
         </div>
 

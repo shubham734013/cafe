@@ -181,11 +181,6 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
 
   const sevenDayTrend = useMemo(() => buildPast7DaysRevenueTrend(orders), [orders]);
   const lowInventoryItems = useMemo(() => getLowInventoryItems(inventory), [inventory]);
-  const liveKotCount = useMemo(
-    () => orders.filter((o) => o.status !== 'served').length,
-    [orders]
-  );
-
   // Filtered menu items for Menu tab
   const filteredMenuItems = useMemo(() => {
     return menuItems.filter((item) => {
@@ -234,14 +229,8 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
             <h1 className="text-2xl font-bold tracking-tight text-slate-100 font-sans">
               Admin Console
             </h1>
-            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-800/80 border border-slate-700/50 text-[11px] font-medium text-slate-300">
-              <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-              <span>{isConnected ? 'Real-time Live' : 'Connecting'}</span>
-            </div>
           </div>
           <p className="text-xs text-slate-400 mt-1 flex items-center gap-2">
-            <span>{liveKotCount} active tickets in kitchen</span>
-            <span>·</span>
             <span>{menuItems.length} menu products active</span>
           </p>
         </div>
@@ -351,7 +340,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
                 </p>
                 <div className="flex items-center gap-1.5 mt-1 text-[11px] text-emerald-400 font-medium">
                   <TrendingUp className="w-3 h-3" />
-                  <span>Real-time settled gross</span>
+                  <span>Today's Total Sales</span>
                 </div>
               </div>
             </div>
@@ -370,7 +359,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
                 </p>
                 <div className="flex items-center gap-1.5 mt-1 text-[11px] text-emerald-400 font-medium">
                   <TrendingUp className="w-3 h-3" />
-                  <span>Active &amp; completed orders</span>
+                  <span>Total Orders Placed</span>
                 </div>
               </div>
             </div>
@@ -407,7 +396,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
                 </p>
                 <div className="flex items-center gap-1.5 mt-1 text-[11px] text-emerald-400 font-medium">
                   <TrendingUp className="w-3 h-3" />
-                  <span>Unique patrons tracked</span>
+                  <span>Total Customers</span>
                 </div>
               </div>
             </div>
@@ -420,7 +409,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-sm font-semibold text-slate-100">Revenue Performance</h2>
-                  <p className="text-[11px] text-slate-400 mt-0.5">7-day gross sales trend</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Last 7 days daily sales</p>
                 </div>
                 <span className="text-xs font-bold text-[#FF6422] bg-[#FF6422]/10 px-2.5 py-1 rounded-full border border-[#FF6422]/20">
                   {metrics.peakLabel}
@@ -479,7 +468,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
                     <Flame className="w-4 h-4 text-[#FF6422]" />
                     <h2 className="text-sm font-semibold text-slate-100">Top Sellers</h2>
                   </div>
-                  <span className="text-[11px] text-slate-400">By volume</span>
+                  <span className="text-[11px] text-slate-400">Most Ordered</span>
                 </div>
 
                 <div className="divide-y divide-slate-800/60 mt-2">
@@ -512,7 +501,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
                 onClick={() => setActiveTab('menu')}
                 className="w-full py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-slate-300 text-xs font-medium border border-slate-700/40 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <span>View Full Menu Catalog</span>
+                <span>View Full Menu</span>
                 <ArrowUpRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -528,7 +517,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
               <div className="w-8 h-8 rounded-lg bg-[#FF6422]/10 border border-[#FF6422]/20 text-[#FF6422] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                 <ShoppingBag className="w-4 h-4" />
               </div>
-              <span className="truncate">Open POS Terminal</span>
+              <span className="truncate">Billing Counter</span>
             </button>
 
             <button
@@ -539,7 +528,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
               <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                 <ChefHat className="w-4 h-4" />
               </div>
-              <span className="truncate">Kitchen KDS</span>
+              <span className="truncate">Kitchen Screen</span>
             </button>
 
             <button
@@ -561,7 +550,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
               <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                 <Package className="w-4 h-4" />
               </div>
-              <span className="truncate">Raw Stock</span>
+              <span className="truncate">Stock &amp; Inventory</span>
             </button>
           </div>
 
@@ -572,7 +561,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800">
                 <div className="flex items-center gap-2">
                   <Receipt className="w-4 h-4 text-slate-400" />
-                  <h2 className="text-sm font-semibold text-slate-100">Live Activity Feed</h2>
+                  <h2 className="text-sm font-semibold text-slate-100">Recent Orders &amp; Activity</h2>
                 </div>
 
                 {/* Filter buttons: 'orders' by default, plus 'refunds' and 'stock' */}

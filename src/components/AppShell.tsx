@@ -30,7 +30,7 @@ const CUSTOMER_NAV: { id: ScreenId; label: string; icon: string }[] = [
 
 const STAFF_NAV_MOBILE: { id: StaffScreenId; label: string; icon: string }[] = [
   { id: 'admin-dashboard', label: 'Dashboard', icon: 'dashboard' },
-  { id: 'pos-terminal', label: 'POS', icon: 'point_of_sale' },
+  { id: 'pos-terminal', label: 'Billing', icon: 'point_of_sale' },
   { id: 'kitchen-display-system', label: 'Kitchen', icon: 'countertops' },
   { id: 'order-management', label: 'Orders', icon: 'receipt_long' },
   { id: 'inventory-stock', label: 'Stock', icon: 'inventory_2' },
@@ -38,16 +38,16 @@ const STAFF_NAV_MOBILE: { id: StaffScreenId; label: string; icon: string }[] = [
 
 const STAFF_NAV_SIDEBAR: { id: StaffScreenId; label: string; icon: string }[] = [
   { id: 'admin-dashboard', label: 'Dashboard', icon: 'dashboard' },
-  { id: 'pos-terminal', label: 'POS Terminal', icon: 'point_of_sale' },
-  { id: 'kitchen-display-system', label: 'Kitchen KDS', icon: 'countertops' },
-  { id: 'order-management', label: 'Orders & Billing', icon: 'receipt_long' },
-  { id: 'inventory-stock', label: 'Inventory & Stock', icon: 'inventory_2' },
-  { id: 'crm-customers', label: 'Customers & CRM', icon: 'groups' },
-  { id: 'offers-campaigns', label: 'Offers & Campaigns', icon: 'local_offer' },
-  { id: 'loyalty-rewards', label: 'Loyalty & Rewards', icon: 'stars' },
-  { id: 'reports-analytics', label: 'Reports & Analytics', icon: 'insights' },
-  { id: 'staff-roles', label: 'Staff & Roles', icon: 'badge' },
-  { id: 'settings-cafe-profile', label: 'Settings', icon: 'settings' },
+  { id: 'pos-terminal', label: 'Billing Counter', icon: 'point_of_sale' },
+  { id: 'kitchen-display-system', label: 'Kitchen Screen', icon: 'countertops' },
+  { id: 'order-management', label: 'Orders & Bills', icon: 'receipt_long' },
+  { id: 'inventory-stock', label: 'Stock & Inventory', icon: 'inventory_2' },
+  { id: 'crm-customers', label: 'Customer List', icon: 'groups' },
+  { id: 'offers-campaigns', label: 'Offers & Discounts', icon: 'local_offer' },
+  { id: 'loyalty-rewards', label: 'Reward Points', icon: 'stars' },
+  { id: 'reports-analytics', label: 'Reports & Sales', icon: 'insights' },
+  { id: 'staff-roles', label: 'Staff & Team', icon: 'badge' },
+  { id: 'settings-cafe-profile', label: 'Cafe Settings', icon: 'settings' },
 ];
 
 const KITCHEN_NAV_SCREENS = new Set<StaffScreenId>([
@@ -62,24 +62,24 @@ const SCREEN_TITLES: Record<ScreenId, string> = {
   home: 'Home',
   menu: 'Menu',
   cart: 'Cart',
-  tracking: 'Order Tracking',
+  tracking: 'Order Status',
   rewards: 'Rewards',
-  profile: 'Personal Profile',
-  'staff-home': 'Owner Workspace',
-  'pos-terminal': 'POS Terminal',
-  'pos-orders': 'POS Orders',
-  'kitchen-display-system': 'Kitchen Display System',
+  profile: 'My Profile',
+  'staff-home': 'Staff Home',
+  'pos-terminal': 'Billing Counter',
+  'pos-orders': 'Billing Orders',
+  'kitchen-display-system': 'Kitchen Screen',
   'kitchen-tables': 'Kitchen Table Details',
-  'admin-dashboard': 'Live Operations & Mgmt',
+  'admin-dashboard': 'Admin Dashboard',
   'order-management': 'Order Management',
-  'reports-analytics': 'Reports & Analytics',
+  'reports-analytics': 'Reports & Sales',
   'table-layout': 'Table Management',
-  'inventory-stock': 'Inventory & Stock',
-  'crm-customers': 'CRM & Customers',
-  'loyalty-rewards': 'Loyalty & Rewards',
-  'offers-campaigns': 'Offers & Campaigns',
-  'staff-roles': 'Staff & Roles',
-  'settings-cafe-profile': 'Settings & Cafe Profile',
+  'inventory-stock': 'Stock & Inventory',
+  'crm-customers': 'Customer List',
+  'loyalty-rewards': 'Reward Points',
+  'offers-campaigns': 'Offers & Discounts',
+  'staff-roles': 'Staff & Team',
+  'settings-cafe-profile': 'Cafe Settings',
 };
 
 export const AppShell: React.FC<AppShellProps> = ({
@@ -391,7 +391,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                     </div>
                     <div className="p-2.5 rounded-lg bg-surface-container text-xs">
                       <p className="font-semibold text-on-surface">
-                        {liveKotCount} active KOT tickets in kitchen
+                        {liveKotCount} active orders in kitchen
                       </p>
                     </div>
                   </div>

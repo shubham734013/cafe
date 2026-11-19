@@ -39,6 +39,10 @@ const FALLBACK_BOOTSTRAP: CafeBootstrapState = {
   cafeSettings: INITIAL_CAFE_SETTINGS,
   menuItems: MENU_ITEMS,
   rewardPoints: 0,
+  stockMovements: [],
+  inventoryBatches: [],
+  purchaseOrders: [],
+  stockCounts: [],
   activityLog: [],
   updatedAt: new Date().toISOString(),
 };
@@ -346,6 +350,106 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
   const addIngredientMutation = useMutation({
     mutationFn: (payload: z.infer<typeof addIngredientSchema>) =>
       apiJson('/api/inventory', { method: 'POST', body: JSON.stringify(payload) }),
+    onSuccess: invalidate,
+  });
+
+  const receiveStockMutation = useMutation({
+    mutationFn: (payload: {
+      ingredientId: string;
+      quantity: number;
+      unitCost?: number;
+      supplier?: string;
+      batchNumber?: string;
+      expiryDate?: string;
+      note?: string;
+    }) =>
+      apiJson('/api/inventory/receive', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: invalidate,
+  });
+
+  const recordWasteMutation = useMutation({
+    mutationFn: (payload: {
+      ingredientId: string;
+      quantity: number;
+      reason: string;
+      batchId?: string;
+    }) =>
+      apiJson('/api/inventory/waste', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: invalidate,
+  });
+
+  const transferStockMutation = useMutation({
+    mutationFn: (payload: {
+      ingredientId: string;
+      quantity: number;
+      fromLocation: string;
+      toLocation: string;
+      note?: string;
+    }) =>
+      apiJson('/api/inventory/transfer', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: invalidate,
+  });
+
+  const createStockCountMutation = useMutation({
+    mutationFn: (payload: {
+      physicalCounts: Array<{
+        ingredientId: string;
+        physicalQuantity: number;
+        note?: string;
+      }>;
+      note?: string;
+    }) =>
+      apiJson('/api/inventory/count', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: invalidate,
+  });
+
+  const approveStockCountMutation = useMutation({
+    mutationFn: (countId: string) =>
+      apiJson(`/api/inventory/count/${encodeURIComponent(countId)}/approve`, {
+        method: 'POST',
+      }),
+    onSuccess: invalidate,
+  });
+
+  const createPurchaseOrderMutation = useMutation({
+    mutationFn: (payload: {
+      supplier: string;
+      note?: string;
+      lines: Array<{ ingredientId: string; quantity: number; unitCost: number }>;
+    }) =>
+      apiJson('/api/inventory/purchase-orders', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: invalidate,
+  });
+
+  const receivePurchaseOrderMutation = useMutation({
+    mutationFn: (payload: {
+      purchaseOrderId: string;
+      receivedLines: Array<{
+        ingredientId: string;
+        quantity: number;
+        batchNumber?: string;
+        expiryDate?: string;
+      }>;
+    }) =>
+      apiJson('/api/inventory/purchase-orders/receive', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
     onSuccess: invalidate,
   });
 

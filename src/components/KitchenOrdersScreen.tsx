@@ -127,11 +127,11 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
             </h1>
             <span className="px-2.5 py-0.5 rounded-full bg-[#FF6422]/15 text-[#FF6422] text-[11px] font-black inline-flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-[#FF6422] animate-pulse" />
-              Live KDS
+              Kitchen Screen
             </span>
           </div>
           <p className="text-xs text-on-surface-variant mt-0.5">
-            Synchronized live cooking queue · Zero duplicate tickets
+            Synchronized live cooking queue · Zero duplicate orders
           </p>
         </div>
 
@@ -169,7 +169,7 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by KOT, Table #, or dish name..."
+            placeholder="Search by order #, table, or dish name..."
             className="w-full pl-10 pr-4 py-2 bg-surface-container text-xs sm:text-sm text-on-surface placeholder:text-outline rounded-2xl border border-outline-variant/15 focus:outline-none focus:ring-2 focus:ring-[#FF6422]/50"
           />
         </div>
@@ -324,7 +324,7 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
                 <div className="mt-4 pt-2 flex items-center justify-between gap-3">
                   <div className="text-[11px] text-on-surface-variant font-medium">
                     <span>
-                      {phase.checkedCount}/{phase.totalCount} prepped
+                      {phase.checkedCount}/{phase.totalCount} items ready
                     </span>
                     <span className="mx-1.5">·</span>
                     <span className={isUrgent ? 'text-red-400 font-bold' : ''}>

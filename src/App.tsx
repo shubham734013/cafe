@@ -1396,7 +1396,7 @@ export default function App() {
               <span>Staff & Admin Workspace PIN</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-on-surface-variant">
-              Enter your 4-digit role PIN to unlock the Admin Dashboard, POS, and Kitchen KDS.
+              Enter your 4-digit PIN to access Admin Dashboard, Billing, and Kitchen Screen.
             </DialogDescription>
           </DialogHeader>
 

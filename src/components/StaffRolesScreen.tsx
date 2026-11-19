@@ -83,7 +83,7 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
   );
   const onFloorSummary = useMemo(() => {
     const active = roster.filter((s) => getStaffDutyStatus(s) === 'on_duty');
-    if (active.length === 0) return 'No active floor punches';
+    if (active.length === 0) return 'No staff on duty';
     const own = active.filter((s) => /owner|manager/i.test(s.role)).length;
     const kit = active.filter((s) => /barista|kitchen/i.test(s.role)).length;
     const srv = active.filter((s) => /server|steward/i.test(s.role)).length;
@@ -374,7 +374,7 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
           )}
         </div>
 
-        {/* Right Column: Reference Preview + Role Permissions Master */}
+        {/* Right Column: Reference Preview */}
         <div className="lg:col-span-5 space-y-4">
           <div className="rounded-xl bg-surface-container-low p-3 flex flex-col space-y-2">
             <div className="flex items-center justify-between">
@@ -396,116 +396,6 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
             </div>
           </div>
 
-          <div className="rounded-xl bg-surface-container p-4 flex flex-col space-y-3.5 shadow-md">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-primary-container/20 flex items-center justify-center text-primary-container">
-                <span className="material-symbols-outlined text-[18px]">lock_person</span>
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-on-surface">Role Permissions Master</h2>
-                <p className="text-xs text-on-surface-variant">
-                  Security tiers across POS and kitchen tablets
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-              <div className="p-2.5 rounded-lg bg-surface-container-low flex flex-col md:col-span-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-primary font-bold flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px]">shield_person</span>
-                    Owner &amp; Store Lead (PIN: 7777)
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-primary-container/20 text-primary text-[10px] font-bold">
-                    Full Admin &amp; POS
-                  </span>
-                </div>
-                <span className="text-on-surface-variant text-[11px] mt-1">
-                  Unified POS billing, counter checkout, live orders, reports, inventory, discounts &amp; store settings.
-                </span>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-surface-container-low flex flex-col">
-                <div className="flex items-center justify-between">
-                  <span className="text-on-surface font-bold flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px]">skillet</span>
-                    Kitchen / Barista (PIN: 3456)
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-secondary-container/20 text-secondary text-[10px] font-bold">
-                    KDS Station
-                  </span>
-                </div>
-                <span className="text-on-surface-variant text-[11px] mt-1">
-                  KOT queue display, bump tickets, cooking timers &amp; 86-inventory items.
-                </span>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-surface-container-low flex flex-col">
-                <div className="flex items-center justify-between">
-                  <span className="text-on-surface font-bold flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px]">table_bar</span>
-                    Server / Steward
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-surface-variant text-on-surface text-[10px] font-bold">
-                    Floor Service
-                  </span>
-                </div>
-                <span className="text-on-surface-variant text-[11px] mt-1">
-                  Table assignment, floor guest assistance &amp; handheld table ordering.
-                </span>
-              </div>
-            </div>
-
-            {/* PIN Safeguard Toggle */}
-            <div className="flex flex-wrap sm:flex-nowrap items-center justify-between p-3 rounded-lg bg-surface-container-high/60 gap-3">
-              <div className="flex items-start gap-2.5 min-w-0">
-                <span className="material-symbols-outlined text-primary text-[20px] shrink-0 mt-0.5">
-                  pin
-                </span>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-xs text-on-surface font-bold">
-                    Require Manager PIN for Bill Cancellation
-                  </span>
-                  <span className="text-[11px] text-on-surface-variant">
-                    Prevents unverified voids &amp; line cancellations
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0 ml-auto">
-                <button
-                  type="button"
-                  disabled={pinAuth.phase === 'submitting'}
-                  onClick={() => {
-                    if (pinAuth.phase === 'unlocked') {
-                      void handleLockPinSession();
-                      return;
-                    }
-                    pinForm.reset({ pin: '' });
-                    setPinModalOpen(true);
-                  }}
-                  className="px-2.5 py-1 rounded-md bg-surface-container-highest text-primary text-[11px] font-semibold hover:bg-surface-bright cursor-pointer disabled:opacity-50"
-                >
-                  {pinAuth.phase === 'submitting'
-                    ? 'Verifying...'
-                    : pinAuth.phase === 'unlocked'
-                      ? 'Lock PIN'
-                      : 'Verify PIN'}
-                </button>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={managerPinRequired}
-                  aria-label="Require Manager PIN for Bill Cancellation"
-                  onClick={() => onToggleManagerPin(!managerPinRequired)}
-                  className={`w-11 h-6 rounded-full flex items-center px-0.5 transition-colors shrink-0 cursor-pointer ${
-                    managerPinRequired ? 'bg-primary-container justify-end' : 'bg-surface-variant justify-start'
-                  }`}
-                >
-                  <span className="w-5 h-5 rounded-full bg-on-surface shadow-sm" />
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -597,7 +487,7 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
               Staff PIN Verification
             </DialogTitle>
             <DialogDescription className="text-xs text-on-surface-variant">
-              Enter your 4-digit role PIN to issue an HTTP-only staff session cookie for protected operations.
+              Enter your 4-digit PIN to unlock staff features for 12 hours.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleVerifyPin} className="space-y-4">

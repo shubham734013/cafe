@@ -77,6 +77,72 @@ export const restockIngredientSchema = z.object({
   addedQty: z.coerce.number().positive().optional(),
 });
 
+export const stockReceiptSchema = z.object({
+  ingredientId: z.string().trim().min(1),
+  quantity: z.coerce.number().positive(),
+  unitCost: z.coerce.number().nonnegative().optional().default(0),
+  supplier: z.string().trim().max(80).optional().default(''),
+  batchNumber: z.string().trim().max(80).optional().default(''),
+  expiryDate: z.string().trim().max(30).optional(),
+  note: z.string().trim().max(240).optional().default(''),
+});
+
+export const stockWasteSchema = z.object({
+  ingredientId: z.string().trim().min(1),
+  quantity: z.coerce.number().positive(),
+  reason: z.string().trim().min(2).max(240),
+  batchId: z.string().trim().max(80).optional(),
+});
+
+export const stockTransferSchema = z.object({
+  ingredientId: z.string().trim().min(1),
+  quantity: z.coerce.number().positive(),
+  fromLocation: z.string().trim().min(2).max(80),
+  toLocation: z.string().trim().min(2).max(80),
+  note: z.string().trim().max(240).optional().default(''),
+});
+
+export const stockCountSchema = z.object({
+  physicalCounts: z
+    .array(
+      z.object({
+        ingredientId: z.string().trim().min(1),
+        physicalQuantity: z.coerce.number().nonnegative(),
+        note: z.string().trim().max(240).optional(),
+      })
+    )
+    .min(1),
+  note: z.string().trim().max(240).optional().default(''),
+});
+
+export const purchaseOrderSchema = z.object({
+  supplier: z.string().trim().min(2).max(80),
+  note: z.string().trim().max(240).optional().default(''),
+  lines: z
+    .array(
+      z.object({
+        ingredientId: z.string().trim().min(1),
+        quantity: z.coerce.number().positive(),
+        unitCost: z.coerce.number().nonnegative(),
+      })
+    )
+    .min(1),
+});
+
+export const receivePurchaseOrderSchema = z.object({
+  purchaseOrderId: z.string().trim().min(1),
+  receivedLines: z
+    .array(
+      z.object({
+        ingredientId: z.string().trim().min(1),
+        quantity: z.coerce.number().positive(),
+        batchNumber: z.string().trim().max(80).optional(),
+        expiryDate: z.string().trim().max(30).optional(),
+      })
+    )
+    .min(1),
+});
+
 export const addTableSchema = z.object({
   id: z
     .string()

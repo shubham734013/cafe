@@ -14,7 +14,8 @@ export type DomainMachineName =
   | 'campaign'
   | 'staff_duty'
   | 'navigation'
-  | 'checkout';
+  | 'checkout'
+  | 'inventory';
 
 export class InvalidDomainTransitionError extends Error {
   public readonly domain: DomainMachineName;
@@ -78,7 +79,7 @@ export const ORDER_STATUS_META: Record<OrderStatus, OrderStepMeta> = {
     status: 'placed',
     stepIndex: 0,
     label: 'Placed',
-    kotBadgeLabel: 'New KOT',
+    kotBadgeLabel: 'New Order',
     kdsActionLabel: 'Accept & Prepare',
     kdsActionIcon: 'skillet',
     orderMgmtActionLabel: 'Accept Order',
@@ -112,9 +113,9 @@ export const ORDER_STATUS_META: Record<OrderStatus, OrderStepMeta> = {
     stepIndex: 3,
     label: 'Ready',
     kotBadgeLabel: 'Ready for Pickup',
-    kdsActionLabel: 'Dispatch / Served',
+    kdsActionLabel: 'Mark as Served',
     kdsActionIcon: 'done_all',
-    orderMgmtActionLabel: 'Mark Handover',
+    orderMgmtActionLabel: 'Mark Served',
     progressPercent: 75,
     trackingMessage: 'Your order is ready for pickup / serving!',
   },

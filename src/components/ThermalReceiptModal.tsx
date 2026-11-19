@@ -213,13 +213,13 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
                   <div className="flex justify-between">
                     <span>Payment Mode:</span>
                     <strong className="font-bold uppercase">
-                      {order.paymentMode === 'cash' ? 'CASH' : order.paymentMode === 'card' ? 'CARD / EDC' : 'UPI'}
+                      {order.paymentMode === 'cash' ? 'CASH' : order.paymentMode === 'card' ? 'CARD' : 'UPI'}
                     </strong>
                   </div>
                   <div className="flex justify-between">
                     <span>Payment Status:</span>
                     <strong className="font-bold text-emerald-800 uppercase">
-                      {order.paymentStatus === 'paid' ? 'PAID / SETTLED' : 'UNPAID / COUNTER'}
+                      {order.paymentStatus === 'paid' ? 'PAID' : 'PAY ON COUNTER'}
                     </strong>
                   </div>
                   {order.paymentRef && (

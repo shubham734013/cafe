@@ -217,7 +217,7 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
         <span className="text-base text-on-surface font-bold">Live Promotions</span>
         <button
           type="button"
-          onClick={() => onNotify('All promos synchronized with POS & table QR codes')}
+          onClick={() => onNotify('All offers active on billing counter & table QR codes')}
           className="text-xs text-primary flex items-center gap-1 font-medium cursor-pointer"
         >
           <span>Auto-sync enabled</span>

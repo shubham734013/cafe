@@ -177,7 +177,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* 86 Stock Management Toggle */}
+          {/* Stock Availability Toggle */}
           <button
             type="button"
             onClick={() => setManageStockMode(!manageStockMode)}
@@ -188,7 +188,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
             }`}
           >
             <span className="material-symbols-outlined text-[15px]">inventory</span>
-            <span>{manageStockMode ? 'Exit Stock Edit' : '86 Stock Toggle'}</span>
+            <span>{manageStockMode ? 'Done Editing' : 'Mark In/Out of Stock'}</span>
           </button>
 
           {/* Last Receipt Quick Print */}
@@ -199,7 +199,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
               className="px-3 py-1.5 rounded-lg bg-surface-container-high hover:bg-surface-bright text-primary text-xs font-bold flex items-center gap-1.5 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[15px]">print</span>
-              <span>Last Slip #{lastCompletedOrder.kotNumber} (F8)</span>
+              <span>Print Last Bill #{lastCompletedOrder.kotNumber} (F8)</span>
             </button>
           )}
         </div>
@@ -323,7 +323,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-black uppercase tracking-wider text-on-surface flex items-center gap-1.5">
               <span className="material-symbols-outlined text-primary text-[18px]">shopping_cart</span>
-              Current KOT Ticket
+              Current Order
             </h2>
             {posCart.length > 0 && (
               <button
@@ -472,17 +472,17 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
             </div>
           </div>
 
-          {/* Tender Type Selector */}
+          {/* Payment Method Selector */}
           <div className="flex flex-col gap-1.5 pt-1">
             <span className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
-              Tender Method:
+              Payment Mode:
             </span>
             <div className="grid grid-cols-3 gap-1.5">
               {(
                 [
                   ['cash', '💵 Cash'],
-                  ['card', '💳 EDC Card'],
-                  ['upi', '⚡ Dynamic UPI'],
+                  ['card', '💳 Card Swipe'],
+                  ['upi', '⚡ UPI QR'],
                 ] as const
               ).map(([mode, label]) => (
                 <button
@@ -510,12 +510,12 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
             className="h-12 w-full mt-1 rounded-xl bg-primary hover:brightness-110 text-xs font-black text-on-primary disabled:opacity-40 flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all"
           >
             {isSubmitting ? (
-              <span>Punching Order to Kitchen KDS...</span>
+              <span>Sending Order to Kitchen...</span>
             ) : (
               <span className="flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[18px]">local_shipping</span>
                 <span>
-                  Punch & Dispatch KOT · {tenderType.toUpperCase()} (F9)
+                  Send Order to Kitchen · {tenderType.toUpperCase()} (F9)
                 </span>
               </span>
             )}

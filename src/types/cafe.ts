@@ -68,7 +68,18 @@ export type MenuCategory =
 export type DateRangeKey = 'Today' | 'Last 7 Days' | 'Last 30 Days' | 'This Month' | 'Quarter to Date';
 export type ReportCategory = 'Sales Report' | 'Item Report' | 'Inventory Report' | 'Customer Report' | 'Staff Roster';
 
-export type InventoryTab = 'Inventory' | 'Low Stock' | 'Ingredients' | 'Stock In' | 'Stock Out' | 'Suppliers';
+export type InventoryTab =
+  | 'Inventory'
+  | 'Low Stock'
+  | 'Ingredients'
+  | 'Stock In'
+  | 'Stock Out'
+  | 'Suppliers'
+  | 'Movements'
+  | 'Purchase Orders'
+  | 'Batches'
+  | 'Waste'
+  | 'Stock Counts';
 export type InventoryStatus = 'Good' | 'Reorder Soon' | 'Critical';
 
 export type TableFloor = 'Floor 1 (Main Hall)' | 'Floor 2 (Rooftop)' | 'Outdoor Patio';
@@ -216,6 +227,84 @@ export interface InventoryIngredient {
   reorderRequested?: boolean;
   reorderRequestedAt?: string;
   reorderNote?: string;
+}
+
+export type StockMovementType =
+  | 'receipt'
+  | 'issue'
+  | 'sale'
+  | 'waste'
+  | 'transfer'
+  | 'stock_count'
+  | 'refund'
+  | 'adjustment';
+
+export interface StockMovement {
+  id: string;
+  ingredientId: string;
+  ingredientName: string;
+  type: StockMovementType;
+  quantityDelta: number;
+  beforeQuantity: number;
+  afterQuantity: number;
+  unit: string;
+  unitCost: number;
+  referenceId?: string;
+  note?: string;
+  actorName?: string;
+  createdAt: string;
+}
+
+export interface InventoryBatch {
+  id: string;
+  ingredientId: string;
+  ingredientName: string;
+  batchNumber: string;
+  quantity: number;
+  unit: string;
+  unitCost: number;
+  receivedAt: string;
+  expiryDate?: string;
+  supplier?: string;
+  status: 'active' | 'consumed' | 'expired';
+}
+
+export interface PurchaseOrderLine {
+  ingredientId: string;
+  ingredientName: string;
+  orderedQuantity: number;
+  receivedQuantity: number;
+  unit: string;
+  unitCost: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  supplier: string;
+  status: 'draft' | 'ordered' | 'partially_received' | 'received' | 'cancelled';
+  lines: PurchaseOrderLine[];
+  createdAt: string;
+  receivedAt?: string;
+  note?: string;
+}
+
+export interface StockCountLine {
+  ingredientId: string;
+  ingredientName: string;
+  systemQuantity: number;
+  physicalQuantity: number;
+  variance: number;
+  unit: string;
+  unitCost: number;
+}
+
+export interface StockCount {
+  id: string;
+  status: 'draft' | 'approved';
+  lines: StockCountLine[];
+  createdAt: string;
+  approvedAt?: string;
+  note?: string;
 }
 
 export interface CustomerProfile {

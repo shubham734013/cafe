@@ -14,12 +14,18 @@ import type {
   CafeTable,
   CustomerProfile,
   InventoryIngredient,
+  InventoryBatch,
   LoyaltyRule,
   MenuItem,
   OrderStatus,
   PointLedgerEntry,
   PromoCampaign,
   StaffMember,
+  StockCount,
+  StockCountLine,
+  StockMovement,
+  PurchaseOrder,
+  PurchaseOrderLine,
 } from '../types/cafe';
 import {
   calculateCartTotals,
@@ -47,6 +53,12 @@ import type {
   createCampaignSchema,
   createOrderSchema,
   reserveTableSchema,
+  stockReceiptSchema,
+  stockWasteSchema,
+  stockTransferSchema,
+  stockCountSchema,
+  purchaseOrderSchema,
+  receivePurchaseOrderSchema,
 } from '../shared/schemas';
 import {
   type CustomerSessionPayload,
@@ -68,6 +80,10 @@ export interface CafeBootstrapState {
   menuItems: MenuItem[];
   rewardPoints: number;
   activityLog?: CafeActivityLogItem[];
+  stockMovements: StockMovement[];
+  inventoryBatches: InventoryBatch[];
+  purchaseOrders: PurchaseOrder[];
+  stockCounts: StockCount[];
   updatedAt: string;
 }
 
@@ -640,6 +656,10 @@ export class CafeStore {
       recipes: clone(INITIAL_RECIPES),
       stockDeductedOrderIds: [],
       processedPaymentEvents: [],
+      stockMovements: [],
+      inventoryBatches: [],
+      purchaseOrders: [],
+      stockCounts: [],
     };
   }
 
@@ -1032,6 +1052,22 @@ export class CafeStore {
     return clone(this.state.inventory);
   }
 
+  public getStockMovements(): StockMovement[] {
+    return clone(this.state.stockMovements || []);
+  }
+
+  public getInventoryBatches(): InventoryBatch[] {
+    return clone(this.state.inventoryBatches || []);
+  }
+
+  public getPurchaseOrders(): PurchaseOrder[] {
+    return clone(this.state.purchaseOrders || []);
+  }
+
+  public getStockCounts(): StockCount[] {
+    return clone(this.state.stockCounts || []);
+  }
+
   public getOrder(orderId: string): CafeOrder | null {
     const order = this.ordersById.get(orderId);
     return order ? clone(order) : null;
@@ -1181,9 +1217,22 @@ export class CafeStore {
               this.state.inventory[ingIndex] = {
                 ...ing,
                 quantity: newQty,
-                status,
+                status: computeInventoryStatus(newQty, ing.minThreshold),
                 fillPct: Math.min(100, Math.round((newQty / ing.maxCapacity) * 100)),
               };
+              this.recordStockMovement({
+                ingredientId: ing.id,
+                ingredientName: ing.name,
+                type: 'refund',
+                quantityDelta: amount * item.quantity,
+                beforeQuantity: ing.quantity,
+                afterQuantity: newQty,
+                unit: ing.unit,
+                unitCost: ing.unitCost,
+                referenceId: order.id,
+                note: `Stock restored for refunded order ${order.id}`,
+                actorName: staffName || 'Manager',
+              });
             }
           });
         }
@@ -1469,9 +1518,22 @@ export class CafeStore {
             this.state.inventory[ingIndex] = {
               ...ing,
               quantity: newQty,
-              status,
+              status: computeInventoryStatus(newQty, ing.minThreshold),
               fillPct: Math.min(100, Math.round((newQty / ing.maxCapacity) * 100)),
             };
+            this.recordStockMovement({
+              ingredientId: ing.id,
+              ingredientName: ing.name,
+              type: 'sale',
+              quantityDelta: -(amount * item.quantity),
+              beforeQuantity: ing.quantity,
+              afterQuantity: newQty,
+              unit: ing.unit,
+              unitCost: ing.unitCost,
+              referenceId: order.id,
+              note: `Recipe consumption for order ${order.id}`,
+              actorName: 'CafeOS POS',
+            });
 
             if (newQty < ing.minThreshold) {
               lowStockAlerts.push(this.state.inventory[ingIndex]);
@@ -1856,12 +1918,317 @@ export class CafeStore {
     this.state.inventory = restockIngredientItem(this.state.inventory, id, addedQty);
     const updated = this.state.inventory.find((i) => i.id === id) ?? null;
     if (updated) {
+      // restockIngredientItem already applied the quantity change; record the stock movement.
+      const movementQty =
+        addedQty ??
+        (updated.unit === 'g' ? 1000 : updated.unit === 'pcs' ? 10 : 2.5);
+      this.recordStockMovement({
+        ingredientId: updated.id,
+        ingredientName: updated.name,
+        type: 'receipt',
+        quantityDelta: movementQty,
+        beforeQuantity: Math.max(0, updated.quantity - movementQty),
+        afterQuantity: updated.quantity,
+        unit: updated.unit,
+        unitCost: updated.unitCost,
+        note: 'Manual restock',
+        actorName: 'Inventory Manager',
+      });
       updated.reorderRequested = false;
       updated.reorderRequestedAt = undefined;
       updated.reorderNote = undefined;
     }
     this.touch();
     return updated ? clone(updated) : null;
+  }
+
+  private recordStockMovement(input: Omit<StockMovement, 'id' | 'createdAt'>): StockMovement {
+    if (!this.state.stockMovements) this.state.stockMovements = [];
+    const movement: StockMovement = {
+      ...input,
+      id: `stm-${crypto.randomUUID().slice(0, 12)}`,
+      createdAt: new Date().toISOString(),
+    };
+    this.state.stockMovements = [movement, ...this.state.stockMovements].slice(0, 5000);
+    return movement;
+  }
+
+  private updateIngredientQuantity(
+    ingredientId: string,
+    quantityDelta: number,
+    type: StockMovement['type'],
+    referenceId?: string,
+    note?: string,
+    actorName?: string
+  ): InventoryIngredient | null {
+    const index = this.state.inventory.findIndex((item) => item.id === ingredientId);
+    if (index === -1) return null;
+    const ingredient = this.state.inventory[index];
+    const afterQuantity = Math.max(
+      0,
+      Math.round((ingredient.quantity + quantityDelta) * 100) / 100
+    );
+    const updated: InventoryIngredient = {
+      ...ingredient,
+      quantity: afterQuantity,
+      status: computeInventoryStatus(afterQuantity, ingredient.minThreshold),
+      fillPct: Math.min(100, Math.round((afterQuantity / ingredient.maxCapacity) * 100)),
+      movementType: quantityDelta >= 0 ? 'in' : 'out',
+    };
+    this.state.inventory[index] = updated;
+    this.recordStockMovement({
+      ingredientId,
+      ingredientName: ingredient.name,
+      type,
+      quantityDelta,
+      beforeQuantity: ingredient.quantity,
+      afterQuantity,
+      unit: ingredient.unit,
+      unitCost: ingredient.unitCost,
+      referenceId,
+      note,
+      actorName,
+    });
+    return clone(updated);
+  }
+
+  public receiveStock(
+    input: z.infer<typeof stockReceiptSchema>,
+    actorName = 'Inventory Manager'
+  ): InventoryIngredient | null {
+    const item = this.updateIngredientQuantity(
+      input.ingredientId,
+      input.quantity,
+      'receipt',
+      undefined,
+      input.note || `Stock received${input.supplier ? ` from ${input.supplier}` : ''}`,
+      actorName
+    );
+    if (!item) return null;
+    if (!this.state.inventoryBatches) this.state.inventoryBatches = [];
+    const batch: InventoryBatch = {
+      id: `batch-${crypto.randomUUID().slice(0, 10)}`,
+      ingredientId: item.id,
+      ingredientName: item.name,
+      batchNumber: input.batchNumber || `REC-${Date.now()}`,
+      quantity: input.quantity,
+      unit: item.unit,
+      unitCost: input.unitCost,
+      receivedAt: new Date().toISOString(),
+      expiryDate: input.expiryDate || undefined,
+      supplier: input.supplier || item.supplier,
+      status: 'active',
+    };
+    this.state.inventoryBatches = [batch, ...this.state.inventoryBatches];
+    item.reorderRequested = false;
+    item.reorderRequestedAt = undefined;
+    item.reorderNote = undefined;
+    this.touch();
+    return clone(item);
+  }
+
+  public recordWaste(
+    input: z.infer<typeof stockWasteSchema>,
+    actorName = 'Kitchen Staff'
+  ): InventoryIngredient | null {
+    const item = this.updateIngredientQuantity(
+      input.ingredientId,
+      -input.quantity,
+      'waste',
+      input.batchId,
+      input.reason,
+      actorName
+    );
+    if (!item) return null;
+    if (input.batchId && this.state.inventoryBatches) {
+      this.state.inventoryBatches = this.state.inventoryBatches.map((batch) =>
+        batch.id === input.batchId
+          ? {
+              ...batch,
+              quantity: Math.max(0, batch.quantity - input.quantity),
+              status:
+                batch.quantity <= input.quantity
+                  ? 'consumed'
+                  : batch.status,
+            }
+          : batch
+      );
+    }
+    this.touch();
+    return clone(item);
+  }
+
+  public transferStock(
+    input: z.infer<typeof stockTransferSchema>,
+    actorName = 'Inventory Manager'
+  ): InventoryIngredient | null {
+    const item = this.updateIngredientQuantity(
+      input.ingredientId,
+      -input.quantity,
+      'transfer',
+      undefined,
+      `Transfer from ${input.fromLocation} to ${input.toLocation}${input.note ? ` - ${input.note}` : ''}`,
+      actorName
+    );
+    this.touch();
+    return item;
+  }
+
+  public createStockCount(
+    input: z.infer<typeof stockCountSchema>,
+    actorName = 'Inventory Manager'
+  ): StockCount {
+    const lines: StockCountLine[] = input.physicalCounts.map((entry) => {
+      const item = this.state.inventory.find((candidate) => candidate.id === entry.ingredientId);
+      if (!item) {
+        throw new InvalidDomainTransitionError({
+          domain: 'inventory',
+          fromState: 'unknown',
+          toState: 'counted',
+          action: 'create_stock_count',
+          message: `Ingredient ${entry.ingredientId} does not exist.`,
+          httpStatus: 404,
+        });
+      }
+      return {
+        ingredientId: item.id,
+        ingredientName: item.name,
+        systemQuantity: item.quantity,
+        physicalQuantity: entry.physicalQuantity,
+        variance: Math.round((entry.physicalQuantity - item.quantity) * 100) / 100,
+        unit: item.unit,
+        unitCost: item.unitCost,
+      };
+    });
+    const count: StockCount = {
+      id: `count-${crypto.randomUUID().slice(0, 10)}`,
+      status: 'draft',
+      lines,
+      createdAt: new Date().toISOString(),
+      note: input.note,
+    };
+    if (!this.state.stockCounts) this.state.stockCounts = [];
+    this.state.stockCounts = [count, ...this.state.stockCounts];
+    this.touch();
+    return clone(count);
+  }
+
+  public approveStockCount(countId: string, actorName = 'Inventory Manager'): StockCount | null {
+    const count = this.state.stockCounts?.find((entry) => entry.id === countId);
+    if (!count || count.status === 'approved') return count ? clone(count) : null;
+    for (const line of count.lines) {
+      if (line.variance !== 0) {
+        this.updateIngredientQuantity(
+          line.ingredientId,
+          line.variance,
+          'stock_count',
+          count.id,
+          count.note || 'Approved physical stock count',
+          actorName
+        );
+      }
+    }
+    count.status = 'approved';
+    count.approvedAt = new Date().toISOString();
+    this.touch();
+    return clone(count);
+  }
+
+  public createPurchaseOrder(
+    input: z.infer<typeof purchaseOrderSchema>,
+    actorName = 'Inventory Manager'
+  ): PurchaseOrder {
+    const lines: PurchaseOrderLine[] = input.lines.map((line) => {
+      const item = this.state.inventory.find((candidate) => candidate.id === line.ingredientId);
+      if (!item) {
+        throw new InvalidDomainTransitionError({
+          domain: 'inventory',
+          fromState: 'unknown',
+          toState: 'ordered',
+          action: 'create_purchase_order',
+          message: `Ingredient ${line.ingredientId} does not exist.`,
+          httpStatus: 404,
+        });
+      }
+      return {
+        ingredientId: item.id,
+        ingredientName: item.name,
+        orderedQuantity: line.quantity,
+        receivedQuantity: 0,
+        unit: item.unit,
+        unitCost: line.unitCost,
+      };
+    });
+    const purchaseOrder: PurchaseOrder = {
+      id: `PO-${Date.now().toString(36).toUpperCase()}`,
+      supplier: input.supplier,
+      status: 'ordered',
+      lines,
+      createdAt: new Date().toISOString(),
+      note: input.note,
+    };
+    if (!this.state.purchaseOrders) this.state.purchaseOrders = [];
+    this.state.purchaseOrders = [purchaseOrder, ...this.state.purchaseOrders];
+    this.recordActivity({
+      type: 'stock_updated',
+      title: `Purchase Order ${purchaseOrder.id} Created`,
+      description: `Ordered from ${input.supplier}. ${lines.length} ingredient SKU(s).`,
+      actorName,
+      severity: 'info',
+      amount: lines.reduce((sum, line) => sum + line.orderedQuantity * line.unitCost, 0),
+    });
+    this.touch();
+    return clone(purchaseOrder);
+  }
+
+  public receivePurchaseOrder(
+    input: z.infer<typeof receivePurchaseOrderSchema>,
+    actorName = 'Inventory Manager'
+  ): PurchaseOrder | null {
+    const purchaseOrder = this.state.purchaseOrders?.find(
+      (entry) => entry.id === input.purchaseOrderId
+    );
+    if (!purchaseOrder) return null;
+    let totalReceived = 0;
+    for (const receivedLine of input.receivedLines) {
+      const line = purchaseOrder.lines.find(
+        (candidate) => candidate.ingredientId === receivedLine.ingredientId
+      );
+      if (!line) continue;
+      const remaining = line.orderedQuantity - line.receivedQuantity;
+      const receivedQuantity = Math.min(receivedLine.quantity, remaining);
+      if (receivedQuantity <= 0) continue;
+      line.receivedQuantity += receivedQuantity;
+      totalReceived += receivedQuantity;
+      this.receiveStock(
+        {
+          ingredientId: line.ingredientId,
+          quantity: receivedQuantity,
+          unitCost: line.unitCost,
+          supplier: purchaseOrder.supplier,
+          batchNumber: receivedLine.batchNumber || `${purchaseOrder.id}-${line.ingredientId}`,
+          expiryDate: receivedLine.expiryDate,
+          note: `Received against ${purchaseOrder.id}`,
+        },
+        actorName
+      );
+    }
+    if (totalReceived <= 0) return clone(purchaseOrder);
+    const fullyReceived = purchaseOrder.lines.every(
+      (line) => line.receivedQuantity >= line.orderedQuantity
+    );
+    purchaseOrder.status = fullyReceived ? 'received' : 'partially_received';
+    if (fullyReceived) purchaseOrder.receivedAt = new Date().toISOString();
+    this.recordActivity({
+      type: 'stock_updated',
+      title: `Purchase Order ${purchaseOrder.id} Received`,
+      description: `${purchaseOrder.status === 'received' ? 'Fully' : 'Partially'} received from ${purchaseOrder.supplier}.`,
+      actorName,
+      severity: 'info',
+      amount: totalReceived,
+    });
+    this.touch();
+    return clone(purchaseOrder);
   }
 
   public requestIngredientReorder(

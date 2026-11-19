@@ -9,14 +9,14 @@ const STAFF_MODULES: Array<{
 }> = [
   {
     id: 'pos-terminal',
-    title: 'POS Terminal',
+    title: 'Billing Counter',
     description: 'Create and manage in-person orders.',
     icon: 'point_of_sale',
   },
   {
     id: 'kitchen-display-system',
-    title: 'Kitchen KOT',
-    description: 'Prepare and update kitchen tickets.',
+    title: 'Kitchen Screen',
+    description: 'Prepare and update kitchen orders.',
     icon: 'countertops',
   },
   {
@@ -33,7 +33,7 @@ const STAFF_MODULES: Array<{
   },
   {
     id: 'reports-analytics',
-    title: 'Reports & Analytics',
+    title: 'Reports & Sales',
     description: 'Review sales and performance reports.',
     icon: 'insights',
   },
@@ -45,37 +45,37 @@ const STAFF_MODULES: Array<{
   },
   {
     id: 'inventory-stock',
-    title: 'Inventory & Stock',
+    title: 'Stock & Inventory',
     description: 'Track ingredients and stock levels.',
     icon: 'inventory_2',
   },
   {
     id: 'crm-customers',
-    title: 'CRM & Customers',
+    title: 'Customer List',
     description: 'Manage customer profiles.',
     icon: 'groups',
   },
   {
     id: 'loyalty-rewards',
-    title: 'Loyalty & Rewards',
+    title: 'Reward Points',
     description: 'Configure loyalty rules and rewards.',
     icon: 'stars',
   },
   {
     id: 'offers-campaigns',
-    title: 'Offers & Campaigns',
+    title: 'Offers & Discounts',
     description: 'Manage cafe promotions.',
     icon: 'local_offer',
   },
   {
     id: 'staff-roles',
-    title: 'Staff & Roles',
+    title: 'Staff & Team',
     description: 'Manage team members and access.',
     icon: 'badge',
   },
   {
     id: 'settings-cafe-profile',
-    title: 'Settings & Profile',
+    title: 'Cafe Settings',
     description: 'Configure cafe profile and operations.',
     icon: 'settings',
   },

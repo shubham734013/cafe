@@ -497,7 +497,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
               </div>
               <div>
                 <span className="text-xs font-extrabold text-on-surface block">Pay at Counter</span>
-                <span className="text-[10px] text-on-surface-variant">Cash / Card / EDC</span>
+                <span className="text-[10px] text-on-surface-variant">Cash or Card at Counter</span>
               </div>
             </div>
             <div
@@ -551,7 +551,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
             <CoffeeBrewLoader
               size="md"
               title="Sending to Kitchen"
-              subtitle="Firing KOT & reserving ingredients..."
+              subtitle="Sending your order to the kitchen..."
             />
           </div>
         </div>

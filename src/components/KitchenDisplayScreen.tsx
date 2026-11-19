@@ -245,7 +245,7 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg sm:text-xl font-black text-on-surface tracking-tight">
-                  Kitchen Orders (KOT)
+                  Live Kitchen Orders
                 </h1>
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[11px] font-black">
                   <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-outline'}`} />
@@ -282,10 +282,10 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
 
             <button
               type="button"
-              aria-label={isMuted ? 'Unmute KOT chime audio alert' : 'Mute KOT chime audio alert'}
+              aria-label={isMuted ? 'Unmute order audio alert' : 'Mute order audio alert'}
               onClick={() => {
                 setIsMuted((m) => !m);
-                onNotify(isMuted ? 'KOT chime enabled' : 'KOT chime muted');
+                onNotify(isMuted ? 'Order bell sound enabled' : 'Order bell sound muted');
               }}
               className={`w-10 h-10 rounded-full bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 flex items-center justify-center transition-colors cursor-pointer ${
                 isMuted ? 'text-red-400' : 'text-on-surface-variant hover:text-[#FF6422]'
@@ -297,10 +297,10 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
             </button>
             <button
               type="button"
-              aria-label="Refresh KOT feed"
+              aria-label="Refresh orders feed"
               onClick={() => {
                 onRefresh?.();
-                onNotify('KOT feed refreshed');
+                onNotify('Kitchen orders refreshed');
               }}
               className="w-10 h-10 rounded-full bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 flex items-center justify-center text-on-surface-variant hover:text-[#FF6422] transition-colors cursor-pointer"
             >
@@ -360,7 +360,7 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
             <p className="text-base font-bold text-on-surface">Kitchen Queue Clear</p>
             <p className="text-xs text-on-surface-variant mt-1">
               All tickets in this filter have been dispatched. Place an order from POS or Customer
-              Menu to see live KOT tickets.
+              Menu to see incoming kitchen orders.
             </p>
           </motion.div>
         ) : (
@@ -492,7 +492,7 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
                             const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
                             return `${totalQty} ${totalQty === 1 ? 'item' : 'items'}`;
                           })()}{' '}
-                          · {cardPhase.checkedCount}/{cardPhase.totalCount} prepped
+                          · {cardPhase.checkedCount}/{cardPhase.totalCount} items ready
                         </span>
                       </div>
 

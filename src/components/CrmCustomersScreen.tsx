@@ -207,12 +207,12 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
         <div className="flex flex-col min-w-0">
           <div className="flex items-center gap-1.5">
             <h1 className="text-xl font-bold text-on-surface tracking-tight truncate">
-              Customers (CRM)
+              Customer Directory
             </h1>
             <span className="w-1.5 h-1.5 rounded-full bg-tertiary shrink-0" />
           </div>
           <p className="text-xs text-on-surface-variant truncate">
-            {crmKpis.total} Total Profiles • {crmKpis.retentionPct}% Returning
+            {crmKpis.total} Total Customers • {crmKpis.retentionPct}% Returning
           </p>
         </div>
 
@@ -287,7 +287,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
           <button
             type="button"
             aria-label="Sort by spend"
-            onClick={() => onNotify('Showing high-retention patron profiles first')}
+            onClick={() => onNotify('Showing top spending customers first')}
             className="w-10 h-10 flex items-center justify-center rounded-lg bg-surface-container-high text-on-surface-variant hover:text-primary shrink-0 transition-colors cursor-pointer"
           >
             <span className="material-symbols-outlined text-[20px]">tune</span>
@@ -339,7 +339,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
 
           <div className="flex flex-col min-w-0 p-3 rounded-lg bg-surface-container-low shadow-sm">
             <span className="text-[10px] text-outline uppercase tracking-wider font-semibold">
-              Avg LTV
+              Avg Spend
             </span>
             <div className="flex items-baseline mt-1">
               <span className="text-lg sm:text-xl text-on-surface font-bold tabular-nums truncate">
@@ -361,18 +361,18 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                 verified
               </span>
             </div>
-            <span className="text-[11px] text-on-surface-variant truncate">Repeat patrons</span>
+            <span className="text-[11px] text-on-surface-variant truncate">Repeat customers</span>
           </div>
         </div>
 
         <div className="lg:col-span-4 flex items-center gap-2 p-2.5 rounded-xl bg-surface-container-lowest shadow-inner">
           <button
             type="button"
-            onClick={() => onNotify(`Promo broadcast queued for ${visibleCustomers.length} patrons`)}
+            onClick={() => onNotify(`Promo message queued for ${visibleCustomers.length} customers`)}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface text-xs font-semibold transition-colors cursor-pointer"
           >
             <span className="material-symbols-outlined text-[16px] text-primary">campaign</span>
-            <span className="truncate">Broadcast</span>
+            <span className="truncate">Send Offer</span>
           </button>
           <button
             type="button"
@@ -578,7 +578,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
               Add Customer Profile
             </DialogTitle>
             <DialogDescription className="text-xs text-on-surface-variant">
-              Store patron preferences with DPDP-compliant consent tracking.
+              Save customer preferences and contact details.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveCustomer} className="space-y-4">
@@ -652,7 +652,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                   {...form.register('dpdpConsent')}
                   className="rounded accent-primary"
                 />
-                <span>Patron consented to DPDP profile &amp; loyalty storage</span>
+                <span>Customer agreed to receive SMS/WhatsApp offers</span>
               </label>
             </div>
             <div className="flex gap-2">

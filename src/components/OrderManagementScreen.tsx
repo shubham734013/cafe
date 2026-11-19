@@ -383,7 +383,7 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
               </h3>
             </div>
             <p className="text-xs text-on-surface-variant">
-              Confirm refunding <strong className="text-on-surface">{formatINR(refundTargetOrder.total)}</strong> for KOT #{refundTargetOrder.kotNumber}. This will update the order status to REFUNDED, log an audit event, and release any active kitchen ticket.
+              Confirm refund of <strong className="text-on-surface">{formatINR(refundTargetOrder.total)}</strong> for Order #{refundTargetOrder.kotNumber}. This will mark the order as Refunded and cancel kitchen preparation.
             </p>
 
             <div className="flex flex-col gap-1.5 pt-1">

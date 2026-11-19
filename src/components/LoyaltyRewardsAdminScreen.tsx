@@ -140,7 +140,7 @@ export const LoyaltyRewardsAdminScreen: React.FC<LoyaltyRewardsAdminScreenProps>
             <span className="text-2xl font-bold text-primary-fixed-dim tabular-nums">
               {loyaltyKpis.pointsIssued.toLocaleString('en-IN')}
             </span>
-            <span className="text-[11px] text-on-surface-variant">Ledger</span>
+            <span className="text-[11px] text-on-surface-variant">Total given</span>
           </div>
         </div>
 
@@ -155,7 +155,7 @@ export const LoyaltyRewardsAdminScreen: React.FC<LoyaltyRewardsAdminScreenProps>
             <span className="text-2xl font-bold text-on-surface tabular-nums">
               {loyaltyKpis.redemptions.toLocaleString('en-IN')}
             </span>
-            <span className="text-[11px] text-on-surface-variant">pts claimed</span>
+            <span className="text-[11px] text-on-surface-variant">pts used</span>
           </div>
         </div>
 
@@ -172,7 +172,7 @@ export const LoyaltyRewardsAdminScreen: React.FC<LoyaltyRewardsAdminScreenProps>
             <span className="text-2xl font-bold text-tertiary tabular-nums">
               {formatINR(loyaltyKpis.activeCreditPoolInr)}
             </span>
-            <span className="text-[11px] text-on-surface-variant">credit pool</span>
+            <span className="text-[11px] text-on-surface-variant">points value</span>
           </div>
         </div>
       </div>

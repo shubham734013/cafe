@@ -260,7 +260,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
             </span>
           </div>
           <p className="text-xs text-on-surface-variant truncate">
-            {items.length} Raw Ingredients • Live Depletion Active
+            {items.length} Items • Auto Stock Deduction Active
           </p>
         </div>
 
@@ -345,7 +345,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
             <button
               type="button"
               aria-label="Scan barcode"
-              onClick={() => onNotify('Barcode scanner ready — hold SKU label near camera')}
+              onClick={() => onNotify('Barcode scanner ready — hold item barcode near camera')}
               className="absolute inset-y-0 right-0 pr-3 flex items-center text-primary hover:text-primary-container transition-colors cursor-pointer"
             >
               <span className="material-symbols-outlined text-[20px]">barcode_scanner</span>
@@ -359,14 +359,14 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
               <span className="material-symbols-outlined text-[15px] text-primary shrink-0">
                 account_balance_wallet
               </span>
-              <span className="text-[11px] truncate">Valuation</span>
+              <span className="text-[11px] truncate">Stock Value</span>
             </div>
             <span className="text-base sm:text-lg font-bold text-on-surface tracking-tight tabular-nums">
               {valuationLabel}
             </span>
             <span className="text-[11px] text-tertiary mt-0.5 flex items-center gap-0.5 tabular-nums truncate">
               <span className="material-symbols-outlined text-[12px] shrink-0">inventory</span>
-              {items.length} SKUs
+              {items.length} items
             </span>
           </div>
 

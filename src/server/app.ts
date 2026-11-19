@@ -23,6 +23,12 @@ import {
   orderFeedbackSchema,
   orderRefundSchema,
   requestReorderSchema,
+  stockReceiptSchema,
+  stockWasteSchema,
+  stockTransferSchema,
+  stockCountSchema,
+  purchaseOrderSchema,
+  receivePurchaseOrderSchema,
 } from '../shared/schemas';
 import {
   assertAuthSecretConfigured,
@@ -1505,6 +1511,147 @@ export function createCafeServer(
         }
         emitSync('inventory:updated', { item });
         res.json({ item });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/inventory/receive',
+    requireRoles(['owner', 'manager', 'cashier']),
+    (req, res, next) => {
+      try {
+        const input = parseBody(stockReceiptSchema, req.body);
+        const staff = getStaffSession(req);
+        const item = store.receiveStock(input, staff?.staffName);
+        if (!item) {
+          res.status(404).json({ error: 'Ingredient not found' });
+          return;
+        }
+        emitSync('inventory:updated', { inventory: store.getInventory() });
+        emitSync('activity:updated', {});
+        res.status(201).json({ item });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/inventory/waste',
+    requireRoles(['owner', 'manager', 'barista', 'kitchen']),
+    (req, res, next) => {
+      try {
+        const input = parseBody(stockWasteSchema, req.body);
+        const staff = getStaffSession(req);
+        const item = store.recordWaste(input, staff?.staffName);
+        if (!item) {
+          res.status(404).json({ error: 'Ingredient not found' });
+          return;
+        }
+        emitSync('inventory:updated', { inventory: store.getInventory() });
+        emitSync('activity:updated', {});
+        res.status(201).json({ item });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/inventory/transfer',
+    requireRoles(['owner', 'manager', 'barista', 'kitchen']),
+    (req, res, next) => {
+      try {
+        const input = parseBody(stockTransferSchema, req.body);
+        const staff = getStaffSession(req);
+        const item = store.transferStock(input, staff?.staffName);
+        if (!item) {
+          res.status(404).json({ error: 'Ingredient not found' });
+          return;
+        }
+        emitSync('inventory:updated', { inventory: store.getInventory() });
+        emitSync('activity:updated', {});
+        res.status(201).json({ item });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/inventory/count',
+    requireRoles(['owner', 'manager']),
+    (req, res, next) => {
+      try {
+        const input = parseBody(stockCountSchema, req.body);
+        const count = store.createStockCount(input, getStaffSession(req)?.staffName);
+        emitSync('inventory:updated', { inventory: store.getInventory() });
+        res.status(201).json({ count });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/inventory/count/:id/approve',
+    requireRoles(['owner', 'manager']),
+    (req, res, next) => {
+      try {
+        const count = store.approveStockCount(
+          String(req.params.id),
+          getStaffSession(req)?.staffName
+        );
+        if (!count) {
+          res.status(404).json({ error: 'Stock count not found' });
+          return;
+        }
+        emitSync('inventory:updated', { inventory: store.getInventory() });
+        emitSync('activity:updated', {});
+        res.json({ count });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/inventory/purchase-orders',
+    requireRoles(['owner', 'manager', 'cashier']),
+    (req, res, next) => {
+      try {
+        const input = parseBody(purchaseOrderSchema, req.body);
+        const purchaseOrder = store.createPurchaseOrder(
+          input,
+          getStaffSession(req)?.staffName
+        );
+        emitSync('activity:updated', {});
+        res.status(201).json({ purchaseOrder });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/inventory/purchase-orders/receive',
+    requireRoles(['owner', 'manager', 'cashier']),
+    (req, res, next) => {
+      try {
+        const input = parseBody(receivePurchaseOrderSchema, req.body);
+        const purchaseOrder = store.receivePurchaseOrder(
+          input,
+          getStaffSession(req)?.staffName
+        );
+        if (!purchaseOrder) {
+          res.status(404).json({ error: 'Purchase order not found' });
+          return;
+        }
+        emitSync('inventory:updated', { inventory: store.getInventory() });
+        emitSync('activity:updated', {});
+        res.json({ purchaseOrder });
       } catch (err) {
         next(err);
       }
