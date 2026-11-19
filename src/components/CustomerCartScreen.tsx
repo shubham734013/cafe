@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { CafeTable, CartItem, PaymentMode, PromoCampaign, ServiceMode } from '../types/cafe';
+import type { CustomerAuthSession } from '../lib/supabaseClient';
 import { calculateCartTotals, formatINR } from '../utils/cafeLogic';
 import { CafeImage } from './CafeImage';
 import { CoffeeBrewLoader } from './CoffeeBrewLoader';
@@ -13,6 +14,8 @@ interface CustomerCartScreenProps {
   availablePoints?: number;
   couponCode: string;
   cookingNote: string;
+  customerSession?: CustomerAuthSession | null;
+  onNavigateLogin?: () => void;
   onServiceModeChange?: (mode: ServiceMode) => void;
   onTableChange?: (table: string) => void;
   onUpdateQty: (menuItemId: string, delta: number) => void;
@@ -34,6 +37,8 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
   availablePoints = 0,
   couponCode,
   cookingNote,
+  customerSession,
+  onNavigateLogin,
   onServiceModeChange,
   onTableChange: _onTableChange,
   onUpdateQty,
@@ -74,6 +79,11 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
 
   const handleCheckout = async () => {
     if (cart.length === 0 || isSubmitting) return;
+    if (!customerSession) {
+      setCheckoutError('Please sign in with your Name, Mobile & Email before placing your order.');
+      onNavigateLogin?.();
+      return;
+    }
     setCheckoutState('submitting');
     setCheckoutError('');
     try {
@@ -446,6 +456,66 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
         </div>
       </div>
 
+      {/* Customer Account & Authentication Card */}
+      {customerSession ? (
+        <div className="p-4 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#FF6422]/15 text-[#FF6422] font-black text-sm flex items-center justify-center shrink-0 border border-[#FF6422]/20">
+              {customerSession.name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-black text-on-surface">
+                  Ordering as {customerSession.name}
+                </span>
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  <span className="material-symbols-outlined text-[11px]">verified</span>
+                  Signed In
+                </span>
+              </div>
+              <p className="text-[11px] text-on-surface-variant font-medium mt-0.5">
+                {customerSession.phone || customerSession.email}
+              </p>
+            </div>
+          </div>
+          {onNavigateLogin && (
+            <button
+              type="button"
+              onClick={onNavigateLogin}
+              className="text-[11px] font-bold text-on-surface-variant hover:text-[#FF6422] underline cursor-pointer"
+            >
+              Switch
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="p-4 rounded-3xl bg-amber-500/10 border border-amber-500/30 text-amber-200 shadow-sm space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+              <span className="material-symbols-outlined text-[22px]">lock</span>
+            </div>
+            <div className="flex-1">
+              <h4 className="text-xs sm:text-sm font-black text-amber-300">
+                Sign in required to place order
+              </h4>
+              <p className="text-[11px] sm:text-xs text-amber-200/80 mt-0.5 leading-relaxed">
+                Order place karne se pehle please sign in karein. Aapka Name, Mobile & Email order ke sath link hoga.
+              </p>
+            </div>
+          </div>
+          {onNavigateLogin && (
+            <button
+              type="button"
+              onClick={onNavigateLogin}
+              className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-[#FF6422] to-amber-500 hover:brightness-110 text-white font-extrabold text-xs sm:text-sm tracking-wide shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
+            >
+              <span className="material-symbols-outlined text-[18px]">login</span>
+              <span>Sign In / Create Account to Order</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Payment Options Card */}
       <div className="p-4 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-2.5">
         <span className="text-xs font-extrabold text-on-surface tracking-tight uppercase block">
@@ -517,31 +587,44 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
 
       {/* Place Order CTA Button */}
       <div className="pt-1">
-        <button
-          type="button"
-          disabled={isSubmitting}
-          onClick={() => void handleCheckout()}
-          className="w-full py-4 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white text-sm sm:text-base font-black tracking-wide shadow-[0_8px_24px_rgba(255,100,34,0.35)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {isSubmitting ? (
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[20px] animate-spin">
-                progress_activity
-              </span>
-              <span>Placing your order...</span>
-            </div>
-          ) : paymentMode === 'upi' ? (
-            <>
-              <span className="material-symbols-outlined text-[20px]">bolt</span>
-              <span>Proceed to Pay • ₹{totals.total}</span>
-            </>
-          ) : (
-            <>
-              <span className="material-symbols-outlined text-[20px]">check_circle</span>
-              <span>Place Order • ₹{totals.total} (Pay on Counter)</span>
-            </>
-          )}
-        </button>
+        {!customerSession ? (
+          <button
+            type="button"
+            onClick={onNavigateLogin}
+            className="w-full py-4 rounded-full bg-surface-container-highest hover:bg-surface-variant text-on-surface text-sm sm:text-base font-black tracking-wide border border-[#FF6422]/40 transition-all cursor-pointer active:scale-[0.98] flex items-center justify-center gap-2 group shadow-lg"
+          >
+            <span className="material-symbols-outlined text-[20px] text-[#FF6422] group-hover:scale-110 transition-transform">
+              lock
+            </span>
+            <span>Sign In to Place Order • ₹{totals.total}</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={isSubmitting}
+            onClick={() => void handleCheckout()}
+            className="w-full py-4 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white text-sm sm:text-base font-black tracking-wide shadow-[0_8px_24px_rgba(255,100,34,0.35)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {isSubmitting ? (
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[20px] animate-spin">
+                  progress_activity
+                </span>
+                <span>Placing your order...</span>
+              </div>
+            ) : paymentMode === 'upi' ? (
+              <>
+                <span className="material-symbols-outlined text-[20px]">bolt</span>
+                <span>Proceed to Pay • ₹{totals.total}</span>
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                <span>Place Order • ₹{totals.total} (Pay on Counter)</span>
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Brewing Order Full-Screen Overlay while Submitting */}

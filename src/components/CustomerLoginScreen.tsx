@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   registerCustomer,
   loginCustomer,
   loginWithGoogle,
   getLocalCustomerSession,
+  syncSupabaseCustomerSession,
+  subscribeToSupabaseAuth,
   logoutCustomer,
   isLiveSupabase,
   type CustomerAuthSession,
@@ -13,12 +15,16 @@ interface CustomerLoginScreenProps {
   onNotify: (message: string) => void;
   onSuccess?: () => void;
   onBrowseMenu: () => void;
+  hasCartItems?: boolean;
+  onReturnToCart?: () => void;
 }
 
 export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
   onNotify,
   onSuccess,
   onBrowseMenu,
+  hasCartItems = false,
+  onReturnToCart,
 }) => {
   const [activeTab, setActiveTab] = useState<'register' | 'login'>('register');
   const [name, setName] = useState('');
@@ -30,6 +36,27 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [currentSession, setCurrentSession] = useState<CustomerAuthSession | null>(getLocalCustomerSession);
   const [statusBanner, setStatusBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    // Check if user session already exists or returning from Supabase OAuth
+    void syncSupabaseCustomerSession().then((session) => {
+      if (session) {
+        setCurrentSession(session);
+      }
+    });
+    const unsubscribe = subscribeToSupabaseAuth((session) => {
+      setCurrentSession(session);
+      if (session) {
+        setStatusBanner({
+          type: 'success',
+          message: `Signed in as ${session.name}!`,
+        });
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,7 +148,12 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
     setStatusBanner(null);
     try {
       const result = await loginWithGoogle();
-      if (result.session) {
+      if (result.redirecting) {
+        setStatusBanner({
+          type: 'success',
+          message: 'Redirecting to Google Sign-In with Supabase...',
+        });
+      } else if (result.session) {
         setCurrentSession(result.session);
         setStatusBanner({
           type: 'success',
@@ -192,6 +224,17 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
           </div>
 
           <div className="space-y-2 pt-2">
+            {hasCartItems && onReturnToCart && (
+              <button
+                type="button"
+                onClick={onReturnToCart}
+                className="w-full h-11 rounded-xl bg-[#FF6422] hover:bg-[#E55518] text-white font-bold text-xs shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
+              >
+                <span className="material-symbols-outlined text-[18px]">shopping_bag</span>
+                <span>Return to Cart &amp; Place Order</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onBrowseMenu}
@@ -507,6 +550,16 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
               )}
             </button>
           </form>
+        )}
+
+        {/* Real Supabase Auth Status Notice */}
+        {!isLiveSupabase && (
+          <div className="p-3 rounded-2xl bg-surface-container border border-outline-variant/20 text-on-surface-variant text-[11px] leading-relaxed flex items-start gap-2">
+            <span className="material-symbols-outlined text-[16px] text-primary shrink-0 mt-0.5">verified_user</span>
+            <div>
+              <span className="font-bold text-on-surface">Real Supabase Auth:</span> Live authentication requires <code className="px-1 py-0.5 bg-surface-container-highest rounded text-[10px] text-primary font-mono">VITE_SUPABASE_URL</code> and <code className="px-1 py-0.5 bg-surface-container-highest rounded text-[10px] text-primary font-mono">VITE_SUPABASE_ANON_KEY</code> in <code className="px-1 py-0.5 bg-surface-container-highest rounded text-[10px] text-primary font-mono">.env</code>.
+            </div>
+          </div>
         )}
 
         {/* Continue as Guest */}

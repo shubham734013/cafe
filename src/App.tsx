@@ -35,6 +35,12 @@ import {
   formatStaffRoleLabel,
   getDefaultStaffScreenForRole,
 } from './utils/rbac';
+import {
+  getLocalCustomerSession,
+  syncSupabaseCustomerSession,
+  subscribeToSupabaseAuth,
+  type CustomerAuthSession,
+} from './lib/supabaseClient';
 
 const PosTerminalScreen = lazy(() =>
   import('./components/PosTerminalScreen').then((m) => ({ default: m.PosTerminalScreen }))
@@ -220,6 +226,19 @@ export default function App() {
   const customerAttemptKeyRef = useRef<{ signature: string; key: string } | null>(null);
   const posAttemptKeyRef = useRef<{ signature: string; key: string } | null>(null);
   const pendingStaffScreenRef = useRef<StaffScreenId | null>(null);
+  const [customerSession, setCustomerSession] = useState<CustomerAuthSession | null>(getLocalCustomerSession);
+
+  useEffect(() => {
+    void syncSupabaseCustomerSession().then((session) => {
+      if (session) setCustomerSession(session);
+    });
+    const unsubscribe = subscribeToSupabaseAuth((session) => {
+      setCustomerSession(session);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const {
     orders,
@@ -400,6 +419,11 @@ export default function App() {
 
   const handleCustomerCheckout = useCallback(
     async (selectedPaymentMode: PaymentMode = 'upi') => {
+      if (!customerSession) {
+        showToast('Please sign in with your Name, Mobile & Email before placing your order.');
+        handleNavigate('login', 'customer');
+        return;
+      }
       if (customerCart.length === 0 || checkoutInFlightRef.current) return;
       checkoutInFlightRef.current = true;
       try {
@@ -409,6 +433,7 @@ export default function App() {
           selectedTable: table,
           couponCode,
           paymentMode: selectedPaymentMode,
+          customerId: customerSession.id,
           items: customerCart.map((i) => `${i.menuItemId}:${i.quantity}`),
         });
         const idempotencyKey = getStableAttemptKey(customerAttemptKeyRef, 'cust', signature);
@@ -422,6 +447,7 @@ export default function App() {
           cookingNote: cookingNote.trim(),
           isPosTerminal: false,
           paymentMode: selectedPaymentMode,
+          customerId: customerSession.id,
           idempotencyKey,
         });
         customerAttemptKeyRef.current = null;
@@ -452,7 +478,9 @@ export default function App() {
       couponCode,
       createOrderMutation,
       customerCart,
+      customerSession,
       data.outletId,
+      handleNavigate,
       handleStartPayment,
       navigate,
       selectedTable,
@@ -1262,6 +1290,8 @@ export default function App() {
             availablePoints={rewardPoints}
             couponCode={couponCode}
             cookingNote={cookingNote}
+            customerSession={customerSession}
+            onNavigateLogin={() => handleNavigate('login', 'customer')}
             onServiceModeChange={setServiceMode}
             onTableChange={setSelectedTable}
             onUpdateQty={updateCustomerQty}
@@ -1319,7 +1349,16 @@ export default function App() {
         <Suspense fallback={<ScreenFallback />}>
           <CustomerLoginScreen
             onNotify={showToast}
-            onSuccess={() => handleNavigate('profile', 'customer')}
+            hasCartItems={customerCart.length > 0}
+            onReturnToCart={() => handleNavigate('cart', 'customer')}
+            onSuccess={() => {
+              if (customerCart.length > 0) {
+                showToast('Signed in successfully! You can now place your order.');
+                handleNavigate('cart', 'customer');
+              } else {
+                handleNavigate('profile', 'customer');
+              }
+            }}
             onBrowseMenu={() => handleNavigate('menu', 'customer')}
           />
         </Suspense>

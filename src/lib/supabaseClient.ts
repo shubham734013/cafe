@@ -21,10 +21,11 @@ export const isLiveSupabase = Boolean(
   !envUrl.includes('xyzcompany')
 );
 
-const fallbackUrl = isLiveSupabase ? envUrl : 'https://placeholder.supabase.co';
-const fallbackKey = isLiveSupabase ? envKey : 'placeholder-anon-key-seth-sawariya';
+// Safe client instantiation
+const supabaseUrl = isLiveSupabase ? envUrl : 'https://placeholder.supabase.co';
+const supabaseKey = isLiveSupabase ? envKey : 'placeholder-anon-key-seth-sawariya';
 
-export const supabase = createClient(fallbackUrl, fallbackKey);
+export const supabase = createClient(supabaseUrl, supabaseKey);
 
 export interface CustomerAuthSession {
   id: string;
@@ -38,22 +39,24 @@ export interface CustomerAuthSession {
 }
 
 const CUSTOMER_SESSION_STORAGE_KEY = 'cafeos_supabase_customer_session';
+let memoryCustomerSession: CustomerAuthSession | null = null;
 
 export function getLocalCustomerSession(): CustomerAuthSession | null {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined') return memoryCustomerSession;
   try {
     const raw = window.localStorage.getItem(CUSTOMER_SESSION_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    return raw ? JSON.parse(raw) : memoryCustomerSession;
   } catch {
-    return null;
+    return memoryCustomerSession;
   }
 }
 
 export function saveLocalCustomerSession(session: CustomerAuthSession): void {
+  memoryCustomerSession = session;
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(CUSTOMER_SESSION_STORAGE_KEY, JSON.stringify(session));
-    // Also sync to personal customer profile
+    // Also sync to customer profile
     const existing = window.localStorage.getItem('cafeos_customer_profile');
     const prev = existing ? JSON.parse(existing) : {};
     window.localStorage.setItem(
@@ -71,6 +74,7 @@ export function saveLocalCustomerSession(session: CustomerAuthSession): void {
 }
 
 export function clearLocalCustomerSession(): void {
+  memoryCustomerSession = null;
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.removeItem(CUSTOMER_SESSION_STORAGE_KEY);
@@ -79,8 +83,32 @@ export function clearLocalCustomerSession(): void {
   }
 }
 
+function extractCustomerSessionFromUser(user: SupabaseUser, defaultProvider: 'email' | 'google' = 'email'): CustomerAuthSession {
+  const metadata = user.user_metadata || {};
+  const name =
+    metadata.full_name ||
+    metadata.name ||
+    user.email?.split('@')[0] ||
+    'Customer';
+  const phone = metadata.phone || '';
+  const provider =
+    (user.app_metadata?.provider as 'email' | 'google') || defaultProvider;
+  const avatarUrl = metadata.avatar_url || metadata.picture;
+
+  return {
+    id: user.id,
+    name,
+    email: user.email || '',
+    phone,
+    provider,
+    confirmed: Boolean(user.email_confirmed_at || user.confirmed_at),
+    avatarUrl,
+    createdAt: user.created_at || new Date().toISOString(),
+  };
+}
+
 /**
- * Register a customer via Supabase Auth + Trigger Brevo confirmation
+ * Register customer via real Supabase Auth + Trigger Brevo confirmation email
  */
 export async function registerCustomer(params: {
   name: string;
@@ -88,28 +116,32 @@ export async function registerCustomer(params: {
   email: string;
   password?: string;
 }): Promise<{ session: CustomerAuthSession; emailSent: boolean; message: string }> {
+  if (!isLiveSupabase) {
+    throw new Error(
+      'Supabase Auth is not configured. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file to enable real customer accounts.'
+    );
+  }
+
   const { name, phone, email, password = 'CustomerPassword@123' } = params;
 
-  let authUserId = `cust_${Date.now()}`;
-
-  if (isLiveSupabase) {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          name,
-          phone,
-          full_name: name,
-        },
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        name,
+        phone,
+        full_name: name,
       },
-    });
-    if (error) {
-      throw new Error(error.message);
-    }
-    if (data.user) {
-      authUserId = data.user.id;
-    }
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data.user) {
+    throw new Error('Registration failed: No user returned from Supabase Auth.');
   }
 
   // Trigger Brevo confirmation email via our backend route
@@ -132,15 +164,10 @@ export async function registerCustomer(params: {
     console.warn('Brevo confirmation request failed:', err);
   }
 
-  const session: CustomerAuthSession = {
-    id: authUserId,
-    name,
-    email,
-    phone,
-    provider: 'email',
-    confirmed: true,
-    createdAt: new Date().toISOString(),
-  };
+  const session = extractCustomerSessionFromUser(data.user, 'email');
+  // Ensure the explicitly provided name & phone are persisted even if user metadata is deferred
+  session.name = name;
+  session.phone = phone;
 
   saveLocalCustomerSession(session);
 
@@ -149,96 +176,133 @@ export async function registerCustomer(params: {
     emailSent,
     message: emailSent
       ? `Account created! Brevo confirmation email dispatched to ${email}.`
-      : 'Account created and confirmed.',
+      : 'Account created with Supabase Auth.',
   };
 }
 
 /**
- * Sign in existing customer with email and password
+ * Sign in existing customer with email and password via real Supabase Auth
  */
 export async function loginCustomer(params: {
   email: string;
   password?: string;
 }): Promise<{ session: CustomerAuthSession }> {
+  if (!isLiveSupabase) {
+    throw new Error(
+      'Supabase Auth is not configured. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file to enable real customer login.'
+    );
+  }
+
   const { email, password = 'CustomerPassword@123' } = params;
 
-  if (isLiveSupabase) {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error) {
-      throw new Error(error.message);
-    }
-    const user = data.user;
-    const session: CustomerAuthSession = {
-      id: user.id,
-      name: (user.user_metadata?.name || user.user_metadata?.full_name || email.split('@')[0]) as string,
-      email: user.email || email,
-      phone: (user.user_metadata?.phone || '') as string,
-      provider: 'email',
-      confirmed: Boolean(user.email_confirmed_at || user.confirmed_at),
-      createdAt: user.created_at,
-    };
-    saveLocalCustomerSession(session);
-    return { session };
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    throw new Error(error.message);
   }
 
-  // Local fallback mode
-  const local = getLocalCustomerSession();
-  const session: CustomerAuthSession = {
-    id: local?.id || `cust_${Date.now()}`,
-    name: local?.email === email ? local.name : email.split('@')[0] || 'Customer',
-    email,
-    phone: local?.email === email ? local.phone : '',
-    provider: 'email',
-    confirmed: true,
-    createdAt: new Date().toISOString(),
-  };
+  if (!data.user) {
+    throw new Error('Login failed: No user returned from Supabase Auth.');
+  }
+
+  const session = extractCustomerSessionFromUser(data.user, 'email');
   saveLocalCustomerSession(session);
   return { session };
 }
 
 /**
- * Sign in with Google (Supabase OAuth or local simulated fallback)
+ * Sign in with Google via real Supabase OAuth (redirects to Google)
  */
 export async function loginWithGoogle(): Promise<{ session?: CustomerAuthSession; redirecting?: boolean }> {
-  if (isLiveSupabase) {
-    const redirectUrl =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}/customer/login`
-        : undefined;
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: redirectUrl,
-      },
-    });
-    if (error) {
-      throw new Error(error.message);
-    }
-    return { redirecting: true };
+  if (!isLiveSupabase) {
+    throw new Error(
+      'Supabase Auth is not configured. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file to enable real Google authentication.'
+    );
   }
 
-  // Local simulated Google OAuth for development / tests
-  const session: CustomerAuthSession = {
-    id: `google_${Date.now()}`,
-    name: 'Google Customer',
-    email: 'customer.google@gmail.com',
-    phone: '+91 98765 43210',
-    provider: 'google',
-    confirmed: true,
-    avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-    createdAt: new Date().toISOString(),
-  };
+  const redirectUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/customer/login`
+      : undefined;
 
-  saveLocalCustomerSession(session);
-  return { session };
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: redirectUrl,
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return { redirecting: true };
 }
 
 /**
- * Logout customer
+ * Synchronize Supabase active session on page boot or OAuth redirect
+ */
+export async function syncSupabaseCustomerSession(): Promise<CustomerAuthSession | null> {
+  if (!isLiveSupabase) return getLocalCustomerSession();
+
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (!error && data.session?.user) {
+      const session = extractCustomerSessionFromUser(
+        data.session.user,
+        (data.session.user.app_metadata?.provider as 'email' | 'google') || 'email'
+      );
+      saveLocalCustomerSession(session);
+      return session;
+    }
+  } catch (err) {
+    console.warn('Failed to sync Supabase session:', err);
+  }
+
+  return getLocalCustomerSession();
+}
+
+/**
+ * Subscribe to Supabase Auth state changes
+ */
+export function subscribeToSupabaseAuth(
+  callback: (session: CustomerAuthSession | null) => void
+): () => void {
+  if (!isLiveSupabase) {
+    return () => {};
+  }
+
+  try {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
+        const customerSession = extractCustomerSessionFromUser(
+          session.user,
+          (session.user.app_metadata?.provider as 'email' | 'google') || 'email'
+        );
+        saveLocalCustomerSession(customerSession);
+        callback(customerSession);
+      } else if (event === 'SIGNED_OUT') {
+        clearLocalCustomerSession();
+        callback(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  } catch (err) {
+    console.warn('Could not register Supabase auth subscription:', err);
+    return () => {};
+  }
+}
+
+/**
+ * Logout customer from Supabase Auth & purge local storage
  */
 export async function logoutCustomer(): Promise<void> {
   if (isLiveSupabase) {
