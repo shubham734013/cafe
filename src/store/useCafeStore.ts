@@ -51,6 +51,11 @@ function getInitialFromUrl(): {
     storedOrder = window.localStorage.getItem('cafeos_tracked_order')?.trim() || '';
   } catch {}
   const trackedOrderId = orderFromUrl || storedOrder || '';
+  if (orderFromUrl) {
+    try {
+      window.localStorage.setItem('cafeos_tracked_order', orderFromUrl);
+    } catch {}
+  }
   const route = resolveCafeRoute(window.location.pathname, window.location.search);
   return { ...route, table, trackedOrderId };
 }

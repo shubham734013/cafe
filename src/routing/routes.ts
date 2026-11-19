@@ -49,6 +49,12 @@ const PATH_TO_SCREEN = new Map<string, ScreenId>(
     ...Object.entries(STAFF_PATHS),
     ...Object.entries(KITCHEN_PATHS),
     ...Object.entries(MANAGER_PATHS),
+    ['tracking', '/tracking'],
+    ['home', '/home'],
+    ['menu', '/menu'],
+    ['cart', '/cart'],
+    ['rewards', '/rewards'],
+    ['profile', '/profile'],
     ['staff-home', '/staff'],
     ['pos-terminal', '/staff/pos'],
     ['pos-orders', '/staff/pos-orders'],
@@ -93,6 +99,8 @@ export function resolveCafeRoute(pathname: string, search = ''): CafeRoute {
     const legacyScreen = params.get('screen');
     if (legacyScreen && CUSTOMER_SCREEN_IDS.has(legacyScreen as ScreenId)) {
       screen = legacyScreen as ScreenId;
+    } else if (params.get('orderId')?.trim()) {
+      screen = 'tracking';
     } else if (params.get('table')?.trim()) {
       screen = 'menu';
     } else if (params.get('autostart') === '1') {

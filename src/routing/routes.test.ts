@@ -98,6 +98,26 @@ test('legacy QR links and invalid paths resolve safely', () => {
     screen: 'menu',
     mode: 'customer',
   });
+  assert.deepEqual(resolveCafeRoute('/tracking'), {
+    screen: 'tracking',
+    mode: 'customer',
+  });
+  assert.deepEqual(resolveCafeRoute('/tracking', '?orderId=SSCB100'), {
+    screen: 'tracking',
+    mode: 'customer',
+  });
+  assert.deepEqual(resolveCafeRoute('/', '?orderId=SSCB100'), {
+    screen: 'tracking',
+    mode: 'customer',
+  });
+  assert.deepEqual(resolveCafeRoute('/menu'), {
+    screen: 'menu',
+    mode: 'customer',
+  });
+  assert.deepEqual(resolveCafeRoute('/cart'), {
+    screen: 'cart',
+    mode: 'customer',
+  });
   assert.deepEqual(resolveCafeRoute('/', '?screen=admin-dashboard'), {
     screen: 'splash',
     mode: 'customer',

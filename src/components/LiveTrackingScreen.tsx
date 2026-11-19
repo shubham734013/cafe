@@ -272,6 +272,35 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
         </div>
       </div>
 
+      {/* Payment Confirmed Banner */}
+      {activeOrder.paymentStatus === 'paid' && (
+        <div className="p-4 rounded-3xl bg-emerald-500/10 border border-emerald-500/30 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[22px]">check_circle</span>
+            </div>
+            <div>
+              <h3 className="text-xs sm:text-sm font-bold text-on-surface">
+                Payment Confirmed · ₹{activeOrder.total} Paid
+              </h3>
+              <p className="text-[11px] text-on-surface-variant mt-0.5">
+                Your payment is verified and your order is active in the kitchen.
+              </p>
+            </div>
+          </div>
+          {onBackToMenu && (
+            <button
+              type="button"
+              onClick={onBackToMenu}
+              className="px-5 py-2.5 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white text-xs font-black shadow-md transition-all active:scale-95 cursor-pointer inline-flex items-center justify-center gap-1.5 shrink-0"
+            >
+              <span className="material-symbols-outlined text-[16px]">restaurant_menu</span>
+              <span>Order More</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Online UPI Awaiting Payment Action Banner */}
       {activeOrder.paymentMode === 'upi' && activeOrder.paymentStatus !== 'paid' && (
         <div className="p-4 rounded-3xl bg-blue-500/10 border border-blue-500/30 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -407,8 +436,8 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
         <p className="text-xs text-red-400 bg-red-950/40 p-3 rounded-2xl">{paymentError}</p>
       )}
 
-      {/* Action Buttons: Invoice & Help */}
-      <div className="grid grid-cols-2 gap-3 pt-1">
+      {/* Action Buttons: Invoice & Help & Order More */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-1">
         <button
           type="button"
           onClick={() => setInvoiceOpen(true)}
@@ -426,6 +455,17 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
           <span className="material-symbols-outlined text-[18px]">support_agent</span>
           <span>Call Steward</span>
         </button>
+
+        {onBackToMenu && (
+          <button
+            type="button"
+            onClick={onBackToMenu}
+            className="col-span-2 sm:col-span-1 py-3 px-4 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
+          >
+            <span className="material-symbols-outlined text-[18px]">restaurant_menu</span>
+            <span>Order More</span>
+          </button>
+        )}
       </div>
 
       {/* Star Rating & Review Experience (Active once order is served) */}
