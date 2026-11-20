@@ -13,6 +13,7 @@ import type {
   CafeSettings,
   CafeTable,
   CustomerProfile,
+  CustomerReview,
   InventoryIngredient,
   InventoryBatch,
   LoyaltyRule,
@@ -80,6 +81,7 @@ export interface CafeBootstrapState {
   staffRoster: StaffMember[];
   cafeSettings: CafeSettings;
   menuItems: MenuItem[];
+  customerReviews: CustomerReview[];
   rewardPoints: number;
   activityLog?: CafeActivityLogItem[];
   stockMovements: StockMovement[];
@@ -455,6 +457,7 @@ export class CafeStore {
             updatedAt: snapshot.updatedAt,
             nextOrderSeq: snapshot.nextOrderSeq,
             recipes: snapshot.recipes || {},
+            customerReviews: snapshot.customerReviews.slice(0, 500),
           },
         },
       ],
@@ -500,12 +503,14 @@ export class CafeStore {
       updatedAt: string;
       nextOrderSeq: number;
       recipes?: Record<string, Array<{ ingredientId: string; amount: number }>>;
+      customerReviews?: CustomerReview[];
     }>(11);
     const settings = await readSingleton<CafeSettings>(10);
 
     const idempotencyEntries = await readRecords<{ key: string; orderId: string }>(9);
     return {
       ...state,
+      customerReviews: state.customerReviews ?? [],
       cafeSettings: settings,
       orders: await readRecords<CafeOrder>(0),
       tables: await readRecords<CafeTable>(1),
@@ -656,6 +661,7 @@ export class CafeStore {
       staffRoster: [],
       cafeSettings: clone(INITIAL_CAFE_SETTINGS),
       menuItems: clone(MENU_ITEMS),
+      customerReviews: [],
       rewardPoints: 0,
       activityLog: [],
       updatedAt: new Date().toISOString(),
@@ -737,6 +743,9 @@ export class CafeStore {
       ...persisted,
       orders,
       menuItems: base.menuItems,
+      customerReviews: Array.isArray(parsed.customerReviews)
+        ? parsed.customerReviews.slice(0, 500)
+        : base.customerReviews,
       activityLog: Array.isArray(parsed.activityLog) ? parsed.activityLog : base.activityLog,
       idempotencyOrderIds: parsed.idempotencyOrderIds ?? {},
       nextOrderSeq:
@@ -999,7 +1008,8 @@ export class CafeStore {
         upiPayeeName: publicState.cafeSettings.cafeName,
       },
       rewardPoints: scopedOrders.reduce(
-        (total, order) => total + (order.loyaltyPointsAwarded ?? 0),
+        (total, order) =>
+          total + (order.loyaltyPointsAwarded ?? 0) - (order.pointsRedeemed ?? 0),
         0
       ),
     });
@@ -1050,6 +1060,20 @@ export class CafeStore {
 
   public getOrders(): CafeOrder[] {
     return clone(this.state.orders);
+  }
+
+  private getCustomerRewardPoints(customerId?: string): number {
+    if (!customerId) return 0;
+    return Math.max(
+      0,
+      this.state.orders
+        .filter((order) => order.customerId === customerId)
+        .reduce(
+          (total, order) =>
+            total + (order.loyaltyPointsAwarded ?? 0) - (order.pointsRedeemed ?? 0),
+          0
+        )
+    );
   }
 
   public getInventory(): InventoryIngredient[] {
@@ -1146,7 +1170,25 @@ export class CafeStore {
     return clone(this.state.activityLog || []);
   }
 
-  public recordCustomerFeedback(feedback: CustomerFeedbackInput): void {
+  public recordCustomerFeedback(feedback: CustomerFeedbackInput): CustomerReview {
+    const review: CustomerReview = {
+      id: `review-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      customerName: feedback.customerName,
+      rating: feedback.rating,
+      comment: feedback.comment,
+      tags: feedback.tags,
+      dishName: feedback.dishName,
+      diningMode: feedback.diningMode,
+      isVerified: false,
+      dateLabel: new Date().toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      }),
+    };
+    this.state.customerReviews.unshift(review);
+    this.state.customerReviews = this.state.customerReviews.slice(0, 500);
+
     const details = [
       feedback.dishName ? `Item: ${feedback.dishName}` : '',
       feedback.diningMode ? `Service: ${feedback.diningMode}` : '',
@@ -1162,6 +1204,7 @@ export class CafeStore {
       actorRole: 'Customer',
       severity: feedback.rating <= 2 ? 'warning' : 'info',
     });
+    return clone(review);
   }
 
   public markOrderPaidAtCounter(
@@ -1392,6 +1435,20 @@ export class CafeStore {
       this.state.campaigns,
       input.redeemPoints || 0
     );
+
+    const availablePoints = input.isPosTerminal
+      ? this.state.rewardPoints || 0
+      : this.getCustomerRewardPoints(input.customerId);
+    if ((input.redeemPoints || 0) > availablePoints) {
+      throw new InvalidDomainTransitionError({
+        domain: 'order_status',
+        fromState: 'insufficient_reward_points',
+        toState: 'order_placed',
+        action: 'redeem_points',
+        message: 'You do not have enough Beans for this redemption.',
+        httpStatus: 400,
+      });
+    }
 
     if (input.couponCode?.trim() && totals.couponError) {
       throw new InvalidDomainTransitionError({
@@ -1751,6 +1808,7 @@ export class CafeStore {
     const pointsAwarded = alreadyReviewed ? 0 : 25;
     if (pointsAwarded > 0) {
       this.state.rewardPoints = (this.state.rewardPoints || 0) + pointsAwarded;
+      order.loyaltyPointsAwarded = pointsAwarded;
 
       let customerName = 'Guest Customer';
       if (feedback.customerPhone || order.customerId) {

@@ -1380,10 +1380,10 @@ export function createCafeServer(
   app.post('/api/customer-feedback', customerFeedbackLimiter, async (req, res, next) => {
     try {
       const input = parseBody(customerFeedbackSchema, req.body);
-      store.recordCustomerFeedback(input);
+      const review = store.recordCustomerFeedback(input);
       await store.flushToPersistence();
       emitSync('activity:updated', {});
-      res.status(201).json({ ok: true });
+      res.status(201).json({ ok: true, review });
     } catch (err) {
       next(err);
     }

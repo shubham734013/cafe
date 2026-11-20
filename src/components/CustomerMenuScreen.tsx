@@ -92,7 +92,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
     <div className="w-full max-w-7xl mx-auto space-y-5 sm:space-y-6 pb-20 pt-1">
       {/* Top Header Row: "Menu" title on Left, "Cart" button on Right */}
       <div className="flex items-center justify-between gap-4">
-        <h1 className="font-serif font-black text-2xl sm:text-4xl text-[#221A15] tracking-tight">
+        <h1 className="font-sans font-black text-2xl sm:text-4xl text-[#221A15] tracking-tight">
           Menu
         </h1>
 
@@ -163,7 +163,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
           <div className="w-16 h-16 rounded-full bg-[#FAF7F2] border border-[#EDE4D9] text-[#7B7166] mx-auto flex items-center justify-center mb-3">
             <span className="material-symbols-outlined text-[28px]">search_off</span>
           </div>
-          <h3 className="font-serif font-bold text-base text-[#251E18]">No items found</h3>
+          <h3 className="font-sans font-bold text-base text-[#251E18]">No items found</h3>
           <p className="text-xs text-[#7B7166] mt-1">
             Try searching for another dish or select a different category.
           </p>
@@ -207,11 +207,11 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                       )}
                     </div>
 
-                    <h3 className="font-serif font-bold text-base text-[#201914] tracking-tight leading-snug">
+                    <h3 className="font-sans font-bold text-base text-[#201914] tracking-tight leading-snug">
                       {item.name}
                     </h3>
 
-                    <div className="font-serif font-bold text-base text-[#221A15] mt-1">
+                    <div className="font-sans font-bold text-base text-[#221A15] mt-1">
                       ₹{item.price}
                     </div>
 
@@ -343,7 +343,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                       onClick={() => setDetailItem(item)}
                       className="cursor-pointer space-y-0.5"
                     >
-                      <h3 className="font-serif font-bold text-base sm:text-lg text-[#201914] tracking-tight group-hover:text-[#244130] transition-colors">
+                      <h3 className="font-sans font-bold text-base sm:text-lg text-[#201914] tracking-tight group-hover:text-[#244130] transition-colors">
                         {item.name}
                       </h3>
                       <p className="text-xs text-[#7B7166] line-clamp-1 leading-relaxed">
@@ -353,7 +353,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
 
                     {/* Price & Add to Cart Bottom Action */}
                     <div className="mt-4 flex items-center justify-between pt-1">
-                      <span className="font-serif font-bold text-lg sm:text-xl text-[#221A15]">
+                      <span className="font-sans font-bold text-lg sm:text-xl text-[#221A15]">
                         ₹{item.price}
                       </span>
 

@@ -252,6 +252,7 @@ export default function App() {
     cafeSettings,
     rewardPoints,
     menuItems,
+    customerReviews,
     activityLog,
     stockMovements,
     inventoryBatches,
@@ -418,7 +419,7 @@ export default function App() {
   };
 
   const handleCustomerCheckout = useCallback(
-    async (selectedPaymentMode: PaymentMode = 'upi') => {
+    async (selectedPaymentMode: PaymentMode = 'upi', redeemPoints = 0) => {
       if (!customerSession) {
         showToast('Please sign in with your Name, Mobile & Email before placing your order.');
         handleNavigate('login', 'customer');
@@ -433,6 +434,7 @@ export default function App() {
           selectedTable: table,
           couponCode,
           paymentMode: selectedPaymentMode,
+          redeemPoints,
           customerId: customerSession.id,
           items: customerCart.map((i) => `${i.menuItemId}:${i.quantity}`),
         });
@@ -447,6 +449,7 @@ export default function App() {
           cookingNote: cookingNote.trim(),
           isPosTerminal: false,
           paymentMode: selectedPaymentMode,
+          redeemPoints,
           customerId: customerSession.id,
           idempotencyKey,
         });
@@ -634,14 +637,13 @@ export default function App() {
   );
 
   const handleSubmitFeedback = useCallback(
-    async (orderId: string, rating: number, tags: string[], comment: string) => {
-      await submitOrderFeedbackMutation.mutateAsync({
+    (orderId: string, rating: number, tags: string[], comment: string) =>
+      submitOrderFeedbackMutation.mutateAsync({
         orderId,
         rating,
         tags,
         comment,
-      });
-    },
+      }),
     [submitOrderFeedbackMutation]
   );
 
@@ -1231,6 +1233,7 @@ export default function App() {
             tables={tables}
             cartCount={customerTotals.itemCount}
             orders={orders}
+            customerReviews={customerReviews}
             menuItems={menuItems}
             onSelectServiceAndTable={(mode, table) => {
               setServiceMode(mode);

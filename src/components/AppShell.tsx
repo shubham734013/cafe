@@ -181,10 +181,10 @@ export const AppShell: React.FC<AppShellProps> = ({
               <div className="w-14 h-14 rounded-full bg-[#244130] flex items-center justify-center text-white shadow-sm mb-2.5">
                 <span className="material-symbols-outlined text-[28px]">local_cafe</span>
               </div>
-              <h2 className="font-serif font-bold text-[#231B15] text-base leading-tight tracking-tight">
+              <h2 className="font-sans font-bold text-[#231B15] text-base leading-tight tracking-tight">
                 Seth Sawariya
               </h2>
-              <span className="font-serif font-bold text-[#231B15] text-base leading-tight">
+              <span className="font-sans font-bold text-[#231B15] text-base leading-tight">
                 Cafe
               </span>
             </div>

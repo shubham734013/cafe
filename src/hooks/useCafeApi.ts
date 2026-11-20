@@ -21,7 +21,14 @@ import type {
   reserveTableSchema,
   orderFeedbackSchema,
 } from '../shared/schemas';
-import type { AuthSessionState, CafeOrder, CafeTable, MenuItem, PaymentMode } from '../types/cafe';
+import type {
+  AuthSessionState,
+  CafeOrder,
+  CafeTable,
+  CustomerReview,
+  MenuItem,
+  PaymentMode,
+} from '../types/cafe';
 
 export const BOOTSTRAP_QUERY_KEY = ['cafeos', 'route-data'] as const;
 export const AUTH_SESSION_QUERY_KEY = ['cafeos', 'auth-session'] as const;
@@ -38,6 +45,7 @@ const FALLBACK_BOOTSTRAP: CafeBootstrapState = {
   staffRoster: [],
   cafeSettings: INITIAL_CAFE_SETTINGS,
   menuItems: MENU_ITEMS,
+  customerReviews: [],
   rewardPoints: 0,
   stockMovements: [],
   inventoryBatches: [],
@@ -296,7 +304,7 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
 
   const submitCustomerFeedbackMutation = useMutation({
     mutationFn: (payload: CustomerFeedbackInput) =>
-      apiJson<{ ok: boolean }>('/api/customer-feedback', {
+      apiJson<{ ok: boolean; review: CustomerReview }>('/api/customer-feedback', {
         method: 'POST',
         body: JSON.stringify(payload),
       }),

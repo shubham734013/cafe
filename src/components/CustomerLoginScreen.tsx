@@ -265,7 +265,7 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#C59B67]/15 border border-[#C59B67]/30 text-[#C59B67] text-[10px] font-bold tracking-widest uppercase">
             <span>Seth Sawariya Cafe</span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-black text-on-surface tracking-tight font-serif">
+          <h1 className="text-xl sm:text-2xl font-black text-on-surface tracking-tight font-sans">
             {activeTab === 'register' ? 'Join Our Cafe Club' : 'Welcome Back'}
           </h1>
           <p className="text-xs text-on-surface-variant">

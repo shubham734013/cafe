@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CafeOrder, CafeTable, MenuCategory, MenuItem, ServiceMode } from '../types/cafe';
+import {
+  CafeOrder,
+  CafeTable,
+  CustomerReview,
+  MenuCategory,
+  MenuItem,
+  ServiceMode,
+} from '../types/cafe';
 import { CafeImage } from './CafeImage';
 import { CustomerReviewsSection } from './CustomerReviewsSection';
 import { FoodDetailsModal } from './FoodDetailsModal';
@@ -19,6 +26,7 @@ interface CustomerHomeScreenProps {
   tables: CafeTable[];
   cartCount: number;
   orders?: CafeOrder[];
+  customerReviews?: CustomerReview[];
   menuItems: MenuItem[];
   onSelectServiceAndTable: (mode: ServiceMode, table: string) => void;
   onNavigateMenu: (category?: MenuCategory) => void;
@@ -37,6 +45,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
   tables,
   cartCount,
   orders = [],
+  customerReviews = [],
   menuItems,
   onSelectServiceAndTable,
   onNavigateMenu,
@@ -381,11 +390,11 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                           )}
                         </div>
 
-                        <h3 className="font-serif font-bold text-base text-[#201914] tracking-tight leading-snug">
+                        <h3 className="font-sans font-bold text-base text-[#201914] tracking-tight leading-snug">
                           {dish.name}
                         </h3>
 
-                        <div className="font-serif font-bold text-base text-[#221A15] mt-1">
+                        <div className="font-sans font-bold text-base text-[#221A15] mt-1">
                           ₹{dish.price}
                         </div>
 
@@ -495,7 +504,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                           onClick={() => setDetailItem(dish)}
                           className="cursor-pointer space-y-0.5"
                         >
-                          <h3 className="font-serif font-bold text-base sm:text-lg text-[#201914] tracking-tight group-hover:text-[#244130] transition-colors">
+                          <h3 className="font-sans font-bold text-base sm:text-lg text-[#201914] tracking-tight group-hover:text-[#244130] transition-colors">
                             {dish.name}
                           </h3>
                           <p className="text-xs text-[#7B7166] line-clamp-1 leading-relaxed">
@@ -505,7 +514,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
 
                         {/* Bottom Row */}
                         <div className="mt-4 flex items-center justify-between pt-1">
-                          <span className="font-serif font-bold text-lg sm:text-xl text-[#221A15]">
+                          <span className="font-sans font-bold text-lg sm:text-xl text-[#221A15]">
                             ₹{dish.price}
                           </span>
 
@@ -535,6 +544,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
       {!hasSearchQuery && (
         <CustomerReviewsSection
           orders={orders}
+          customerReviews={customerReviews}
           menuItems={menuItems}
           onSelectDish={(dish) => setDetailItem(dish)}
           onSubmitFeedback={onSubmitFeedback}

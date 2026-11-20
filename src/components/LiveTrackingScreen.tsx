@@ -22,7 +22,7 @@ interface LiveTrackingScreenProps {
     rating: number,
     tags: string[],
     comment: string
-  ) => Promise<void>;
+  ) => Promise<{ pointsAwarded: number }>;
   onPrintThermalReceipt?: (order: CafeOrder) => void;
   onNotify: (msg: string) => void;
   onBackToMenu: () => void;
@@ -477,7 +477,7 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
                 How Was Your Food?
               </h3>
               <p className="text-[11px] text-on-surface-variant mt-0.5">
-                Leave a rating to earn <strong className="text-[#FF6422]">+25 Loyalty Points</strong>
+                Leave a rating to earn <strong className="text-[#FF6422]">+25 Beans</strong>
               </p>
             </div>
             {feedbackSubmitted && (
@@ -553,9 +553,18 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
               if (!onSubmitFeedback) return;
               setIsSubmittingFeedback(true);
               try {
-                await onSubmitFeedback(activeOrder.id, rating, selectedTags, feedbackComment);
+                const result = await onSubmitFeedback(
+                  activeOrder.id,
+                  rating,
+                  selectedTags,
+                  feedbackComment
+                );
                 setFeedbackSubmitted(true);
-                onNotify('Thank you for rating! 25 bonus loyalty points awarded 🌟');
+                onNotify(
+                  result.pointsAwarded > 0
+                    ? `Thank you! ${result.pointsAwarded} Beans added to your account.`
+                    : 'Your rating was updated. Beans are awarded once per order.'
+                );
               } catch (e) {
                 onNotify(e instanceof Error ? e.message : 'Could not submit review');
               } finally {

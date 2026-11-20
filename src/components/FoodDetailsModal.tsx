@@ -76,7 +76,7 @@ export const FoodDetailsModal: React.FC<FoodDetailsModalProps> = ({
             <span className="material-symbols-outlined text-[20px]">arrow_back</span>
           </button>
 
-          <h2 className="font-serif font-bold text-base text-[#251E18] tracking-tight">
+          <h2 className="font-sans font-bold text-base text-[#251E18] tracking-tight">
             Dish Details
           </h2>
 
@@ -134,10 +134,10 @@ export const FoodDetailsModal: React.FC<FoodDetailsModalProps> = ({
         <div className="p-5 sm:p-6 space-y-5 bg-white">
           <div>
             <div className="flex items-baseline justify-between gap-3">
-              <h1 className="font-serif font-black text-xl sm:text-2xl text-[#221A15] tracking-tight">
+              <h1 className="font-sans font-black text-xl sm:text-2xl text-[#221A15] tracking-tight">
                 {item.name}
               </h1>
-              <span className="font-serif font-black text-2xl text-[#221A15] shrink-0">
+              <span className="font-sans font-black text-2xl text-[#221A15] shrink-0">
                 ₹{unitPrice}
               </span>
             </div>

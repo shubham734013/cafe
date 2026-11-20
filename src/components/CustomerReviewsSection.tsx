@@ -4,6 +4,7 @@ import type { CustomerFeedbackInput } from '../shared/schemas';
 
 interface CustomerReviewsSectionProps {
   orders?: CafeOrder[];
+  customerReviews?: CustomerReview[];
   menuItems: MenuItem[];
   onSelectDish?: (item: MenuItem) => void;
   onSubmitFeedback: (feedback: CustomerFeedbackInput) => Promise<void>;
@@ -12,6 +13,7 @@ interface CustomerReviewsSectionProps {
 
 export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
   orders = [],
+  customerReviews = [],
   menuItems,
   onSelectDish,
   onSubmitFeedback,
@@ -52,8 +54,8 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
       }
     });
 
-    return liveOrderReviews;
-  }, [menuItems, orders]);
+    return [...customerReviews, ...liveOrderReviews];
+  }, [customerReviews, menuItems, orders]);
 
   const handleDishClick = (dishName?: string) => {
     if (!dishName || !onSelectDish) return;
@@ -172,6 +174,9 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
+            <p className="text-xs text-on-surface-variant">
+              Rate a served order in Order Tracking to earn 25 Beans for a future order.
+            </p>
 
             <form onSubmit={handleSubmitReview} className="space-y-3">
               <div>

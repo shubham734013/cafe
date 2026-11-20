@@ -22,7 +22,7 @@ interface CustomerCartScreenProps {
   onRemoveItem: (menuItemId: string) => void;
   onCouponChange: (code: string) => void;
   onCookingNoteChange: (note: string) => void;
-  onCheckout: (paymentMode: PaymentMode) => void | Promise<void>;
+  onCheckout: (paymentMode: PaymentMode, redeemPoints: number) => void | Promise<void>;
   onBrowseMenu: () => void;
 }
 
@@ -87,7 +87,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
     setCheckoutState('submitting');
     setCheckoutError('');
     try {
-      await onCheckout(paymentMode);
+      await onCheckout(paymentMode, pointsToRedeem);
       setCheckoutState('idle');
     } catch (error) {
       setCheckoutState('error');
@@ -362,10 +362,10 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
             <span className="material-symbols-outlined text-amber-400 text-[22px]">stars</span>
             <div>
               <span className="text-xs font-extrabold text-on-surface block">
-                Redeem Loyalty Points
+                Redeem Beans
               </span>
               <span className="text-[11px] text-on-surface-variant">
-                {availablePoints} pts available · Save up to ₹
+                {availablePoints} Beans available · Save up to ₹
                 {Math.floor(Math.min(availablePoints, 200) * 0.5)}
               </span>
             </div>
@@ -411,7 +411,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
 
         {totals.pointsDiscount ? (
           <div className="flex justify-between text-xs text-amber-400 font-bold">
-            <span>Loyalty Discount ({totals.pointsRedeemed} pts)</span>
+            <span>Bean Discount ({totals.pointsRedeemed} Beans)</span>
             <span className="tabular-nums">-{formatBillingAmount(totals.pointsDiscount)}</span>
           </div>
         ) : null}

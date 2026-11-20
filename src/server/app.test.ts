@@ -726,6 +726,130 @@ test('customer order feedback records review and awards loyalty points', async (
   assert.equal(latestEntry.orderId, targetOrder.id);
 });
 
+test('customers earn Beans once per order and redeem them on a later order', async (t) => {
+  const gateway = new TestUpiGateway();
+  const { baseUrl, store, close } = await startTestServer(gateway);
+  t.after(close);
+
+  const createCustomerOrder = (redeemPoints = 0) =>
+    fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        outletId: 'seth-sawariya-main',
+        serviceMode: 'takeaway',
+        paymentMode: 'cash',
+        isPosTerminal: false,
+        redeemPoints,
+        items: [
+          {
+            menuItemId: 'cappuccino',
+            name: 'Cappuccino',
+            price: 0,
+            quantity: 1,
+            note: '',
+            imageUrl: '',
+            station: 'Barista',
+          },
+        ],
+      }),
+    });
+
+  const firstOrderResponse = await createCustomerOrder();
+  assert.equal(firstOrderResponse.status, 201);
+  const firstCookie = getCookieHeader(firstOrderResponse);
+  const firstOrderBody = (await firstOrderResponse.json()) as {
+    order: { id: string };
+  };
+  store.updateOrderStatus(firstOrderBody.order.id, 'served');
+
+  const feedbackResponse = await fetch(
+    `${baseUrl}/api/orders/${firstOrderBody.order.id}/feedback`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: firstCookie },
+      body: JSON.stringify({ rating: 5, comment: 'Great coffee!' }),
+    }
+  );
+  assert.equal(feedbackResponse.status, 200);
+  assert.equal(
+    ((await feedbackResponse.json()) as { pointsAwarded: number }).pointsAwarded,
+    25
+  );
+
+  const duplicateFeedbackResponse = await fetch(
+    `${baseUrl}/api/orders/${firstOrderBody.order.id}/feedback`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: firstCookie },
+      body: JSON.stringify({ rating: 4, comment: 'Updated rating' }),
+    }
+  );
+  assert.equal(duplicateFeedbackResponse.status, 200);
+  assert.equal(
+    ((await duplicateFeedbackResponse.json()) as { pointsAwarded: number }).pointsAwarded,
+    0
+  );
+
+  const nextOrderResponse = await fetch(`${baseUrl}/api/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: firstCookie },
+    body: JSON.stringify({
+      outletId: 'seth-sawariya-main',
+      serviceMode: 'takeaway',
+      paymentMode: 'cash',
+      isPosTerminal: false,
+      redeemPoints: 20,
+      items: [
+        {
+          menuItemId: 'cappuccino',
+          name: 'Cappuccino',
+          price: 0,
+          quantity: 1,
+          note: '',
+          imageUrl: '',
+          station: 'Barista',
+        },
+      ],
+    }),
+  });
+  assert.equal(nextOrderResponse.status, 201);
+  const nextOrderBody = (await nextOrderResponse.json()) as {
+    order: { pointsRedeemed: number };
+  };
+  assert.equal(nextOrderBody.order.pointsRedeemed, 20);
+
+  const bootstrapResponse = await fetch(`${baseUrl}/api/bootstrap?screen=cart`, {
+    headers: { Cookie: getCookieHeader(nextOrderResponse) },
+  });
+  const bootstrap = (await bootstrapResponse.json()) as { rewardPoints: number };
+  assert.equal(bootstrap.rewardPoints, 5);
+
+  const overBalanceResponse = await fetch(`${baseUrl}/api/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: getCookieHeader(nextOrderResponse) },
+    body: JSON.stringify({
+      outletId: 'seth-sawariya-main',
+      serviceMode: 'takeaway',
+      paymentMode: 'cash',
+      isPosTerminal: false,
+      redeemPoints: 10,
+      items: [
+        {
+          menuItemId: 'cappuccino',
+          name: 'Cappuccino',
+          price: 0,
+          quantity: 1,
+          note: '',
+          imageUrl: '',
+          station: 'Barista',
+        },
+      ],
+    }),
+  });
+  assert.equal(overBalanceResponse.status, 400);
+});
+
 test('customer feedback is validated and recorded for the cafe team', async (t) => {
   const gateway = new TestUpiGateway();
   const { baseUrl, store, close } = await startTestServer(gateway);
@@ -745,7 +869,22 @@ test('customer feedback is validated and recorded for the cafe team', async (t) 
   });
 
   assert.equal(feedbackRes.status, 201);
-  assert.deepEqual(await feedbackRes.json(), { ok: true });
+  const feedbackBody = (await feedbackRes.json()) as {
+    ok: boolean;
+    review: { customerName: string; rating: number; comment: string; dishName: string };
+  };
+  assert.equal(feedbackBody.ok, true);
+  assert.equal(feedbackBody.review.customerName, 'Asha Patel');
+  assert.equal(feedbackBody.review.rating, 2);
+  assert.equal(feedbackBody.review.dishName, 'Margherita Pizza');
+  assert.equal(store.getBootstrap().customerReviews[0]?.comment, 'The service was quick, but my meal was too cold.');
+  const customerBootstrapRes = await fetch(`${baseUrl}/api/bootstrap?screen=home`);
+  assert.equal(customerBootstrapRes.status, 200);
+  const customerBootstrap = (await customerBootstrapRes.json()) as {
+    customerReviews: Array<{ customerName: string; comment: string }>;
+  };
+  assert.equal(customerBootstrap.customerReviews[0]?.customerName, 'Asha Patel');
+
   const activity = store.getActivityLog()[0];
   assert.ok(activity);
   assert.equal(activity.type, 'feedback_received');
