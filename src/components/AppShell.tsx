@@ -159,77 +159,83 @@ export const AppShell: React.FC<AppShellProps> = ({
     !isKitchenRoute && visibleStaffNav.length > visibleMobileStaffTabs.length;
 
   return (
-    <div className="min-h-screen w-full overflow-x-hidden bg-surface text-on-surface flex flex-col md:flex-row">
+    <div
+      className={`min-h-screen w-full overflow-x-hidden flex flex-col md:flex-row ${
+        !isStaffWorkspace
+          ? 'bg-[#FAF7F2] text-[#221A15]'
+          : 'bg-surface text-on-surface'
+      }`}
+    >
       {/* Desktop Left Workspace Rail */}
-      <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-surface-container-lowest z-40 p-4 justify-between shadow-[1px_0_12px_rgba(0,0,0,0.3)]">
-        <div className="space-y-6 overflow-y-auto no-scrollbar">
+      <aside
+        className={`hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 z-40 p-4 justify-between ${
+          !isStaffWorkspace
+            ? 'bg-[#F4EFEA] border-r border-[#E5DDD2] text-[#221A15]'
+            : 'bg-surface-container-lowest shadow-[1px_0_12px_rgba(0,0,0,0.3)]'
+        }`}
+      >
+        <div className="space-y-4 overflow-y-auto no-scrollbar">
           {/* Brand */}
-          <div className="flex items-center gap-2.5 px-1">
-            <div className="w-10 h-10 rounded-xl bg-surface-container-high p-1.5 flex items-center justify-center shrink-0">
-              <CafeBrandEmblem className="w-full h-full" />
+          {!isStaffWorkspace ? (
+            <div className="flex flex-col items-center text-center pt-2 px-1">
+              <div className="w-14 h-14 rounded-full bg-[#244130] flex items-center justify-center text-white shadow-sm mb-2.5">
+                <span className="material-symbols-outlined text-[28px]">local_cafe</span>
+              </div>
+              <h2 className="font-serif font-bold text-[#231B15] text-base leading-tight tracking-tight">
+                Seth Sawariya
+              </h2>
+              <span className="font-serif font-bold text-[#231B15] text-base leading-tight">
+                Cafe
+              </span>
             </div>
-            <div className="min-w-0">
-              <div className="text-sm font-bold text-primary truncate">{cafeName}</div>
+          ) : (
+            <div className="flex items-center gap-2.5 px-1">
+              <div className="w-10 h-10 rounded-xl bg-surface-container-high p-1.5 flex items-center justify-center shrink-0">
+                <CafeBrandEmblem className="w-full h-full" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-primary truncate">{cafeName}</div>
+              </div>
             </div>
-          </div>
+          )}
 
           {!isStaffWorkspace && (
             <div className="space-y-1">
-              <p className="px-2.5 text-[11px] font-semibold uppercase tracking-wider text-outline mb-1.5">
-                Customer App
-              </p>
-              {CUSTOMER_NAV.map((item) => {
+              <div className="w-full border-t border-[#E3DBD2] my-3" />
+              {[
+                { id: 'home', label: 'Home', icon: 'home' },
+                { id: 'menu', label: 'Menu', icon: 'search' },
+                { id: 'tracking', label: 'Orders', icon: 'receipt_long' },
+                { id: 'profile', label: 'Account', icon: 'person' },
+              ].map((item) => {
                 const active = activeScreen === item.id;
                 return (
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => onNavigate(item.id, 'customer')}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm transition-colors cursor-pointer ${
+                    onClick={() => onNavigate(item.id as ScreenId, 'customer')}
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-sm transition-all cursor-pointer ${
                       active
-                        ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
-                        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low font-medium'
+                        ? 'bg-[#D5E2D0] text-[#1B3625] font-bold shadow-xs'
+                        : 'text-[#4D453D] hover:bg-[#EAE2D8] hover:text-[#251E18] font-medium'
                     }`}
                   >
-                    <span className="flex items-center gap-2.5">
-                      <span
-                        className={`material-symbols-outlined text-[20px] ${
-                          active ? 'icon-filled' : ''
-                        }`}
-                      >
-                        {item.icon}
-                      </span>
-                      <span>{item.label}</span>
+                    <span className="material-symbols-outlined text-[20px]">
+                      {item.icon}
                     </span>
-                    {item.id === 'cart' && cartCount > 0 && (
-                      <span
-                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums ${
-                          active
-                            ? 'bg-on-primary/20 text-on-primary'
-                            : 'bg-primary/20 text-primary'
-                        }`}
-                      >
-                        {cartCount}
-                      </span>
-                    )}
+                    <span>{item.label}</span>
                   </button>
                 );
               })}
 
-              <div className="pt-3 border-t border-outline-variant/15 space-y-1">
-                <p className="px-2.5 text-[11px] font-semibold uppercase tracking-wider text-outline mb-1.5">
-                  Management
-                </p>
+              <div className="pt-4 mt-4 border-t border-[#E3DBD2]">
                 <button
                   type="button"
                   onClick={() => onNavigate('admin-dashboard', 'staff')}
-                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-sm bg-[#FF6422]/10 hover:bg-[#FF6422]/20 text-[#FF6422] font-bold border border-[#FF6422]/20 transition-all cursor-pointer"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-[#3B342C] hover:bg-[#EAE2D8] hover:text-[#1B3625] transition-colors cursor-pointer"
                 >
-                  <span className="flex items-center gap-2.5">
-                    <span className="material-symbols-outlined text-[20px]">admin_panel_settings</span>
-                    <span>Admin Panel</span>
-                  </span>
-                  <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                  <span className="material-symbols-outlined text-[20px]">verified_user</span>
+                  <span>Admin Panel</span>
                 </button>
               </div>
             </div>
@@ -301,7 +307,11 @@ export const AppShell: React.FC<AppShellProps> = ({
       {/* Main Content Column */}
       <div className="flex-1 flex flex-col md:pl-64 min-h-screen w-full min-w-0">
         {/* Top Header */}
-        <header className="fixed top-0 left-0 right-0 md:left-64 z-30 pt-safe bg-surface/85 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.25)]">
+        <header
+          className={`fixed top-0 left-0 right-0 md:left-64 z-30 pt-safe bg-surface/85 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.25)] ${
+            !isStaffWorkspace ? 'md:hidden' : ''
+          }`}
+        >
           <div className="h-14 md:h-16 px-4 max-w-7xl mx-auto flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
               {isStaffWorkspace ? (
@@ -438,7 +448,13 @@ export const AppShell: React.FC<AppShellProps> = ({
         </header>
 
         {/* Main Stage */}
-        <main className="flex-1 w-full max-w-7xl mx-auto pt-[4.5rem] md:pt-20 pb-24 md:pb-10 px-4 min-w-0">
+        <main
+          className={`flex-1 w-full max-w-7xl mx-auto px-4 min-w-0 ${
+            !isStaffWorkspace
+              ? 'pt-4 md:pt-8 pb-24 md:pb-12'
+              : 'pt-[4.5rem] md:pt-20 pb-24 md:pb-10'
+          }`}
+        >
           {isSyncError && (
             <div
               role="alert"
@@ -516,35 +532,33 @@ export const AppShell: React.FC<AppShellProps> = ({
               </button>}
             </div>
           ) : (
-            <div className="flex items-center justify-around h-16 px-1">
-              {CUSTOMER_NAV.map((tab) => {
+            <div className="flex items-center justify-around h-16 px-2 bg-[#F4EFEA]/95 backdrop-blur-xl border-t border-[#E5DDD2]">
+              {[
+                { id: 'home', label: 'Home', icon: 'home' },
+                { id: 'menu', label: 'Menu', icon: 'search' },
+                { id: 'tracking', label: 'Orders', icon: 'receipt_long' },
+                { id: 'profile', label: 'Account', icon: 'person' },
+              ].map((tab) => {
                 const active = activeScreen === tab.id;
                 return (
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => onNavigate(tab.id, 'customer')}
-                    className={`relative flex flex-col items-center justify-center min-w-[56px] min-h-[44px] px-2 py-1 rounded-2xl transition-all cursor-pointer ${
-                      active
-                        ? 'text-[#FF6422] font-black scale-105'
-                        : 'text-on-surface-variant hover:text-on-surface font-semibold'
+                    onClick={() => onNavigate(tab.id as ScreenId, 'customer')}
+                    className={`flex flex-col items-center justify-center min-w-[54px] py-1 transition-all cursor-pointer ${
+                      active ? 'text-[#1B3625] font-bold' : 'text-[#6C6359] font-medium'
                     }`}
                   >
-                    <span className="relative inline-flex items-center justify-center">
-                      <span
-                        className={`material-symbols-outlined text-[24px] ${
-                          active ? 'icon-filled text-[#FF6422]' : ''
-                        }`}
-                      >
+                    <div
+                      className={`px-3 py-1 rounded-xl transition-all ${
+                        active ? 'bg-[#D5E2D0]' : ''
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[20px]">
                         {tab.icon}
                       </span>
-                      {tab.id === 'cart' && cartCount > 0 && (
-                        <span className="absolute -top-1 -right-2.5 w-4 h-4 rounded-full bg-[#FF6422] text-white text-[9px] font-black flex items-center justify-center tabular-nums shadow-md">
-                          {cartCount}
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-[11px] tracking-tight mt-0.5">{tab.label}</span>
+                    </div>
+                    <span className="text-[10px] mt-0.5">{tab.label}</span>
                   </button>
                 );
               })}

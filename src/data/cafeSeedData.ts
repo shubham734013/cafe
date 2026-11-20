@@ -62,7 +62,7 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 'margherita-pizza',
     name: 'Margherita Pizza',
-    description: 'Fresh mozzarella, tomatoes, basil and our homemade sauce.',
+    description: 'Mozzarella, tomato & basil',
     price: 249,
     category: 'Pizza',
     rating: 4.8,
@@ -77,7 +77,7 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 'classic-cheeseburger',
     name: 'Classic Burger',
-    description: 'Juicy herb grilled patty, cheddar melt, crisp lettuce & house sauce.',
+    description: 'Grilled patty, cheddar & house sauce',
     price: 189,
     category: 'Burger',
     rating: 4.8,
@@ -92,7 +92,7 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 'creamy-alfredo-pasta',
     name: 'Pasta Alfredo',
-    description: 'Penne in rich parmesan cream sauce, roasted garlic & fresh herbs.',
+    description: 'Parmesan cream, garlic & herbs',
     price: 219,
     category: 'Pasta',
     rating: 4.7,
@@ -107,7 +107,7 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 'mediterranean-salad',
     name: 'Fresh Salad',
-    description: 'Crisp garden greens, kalamata olives, cherry tomatoes & feta.',
+    description: 'Garden greens, olives & feta',
     price: 169,
     category: 'Salad',
     rating: 4.6,
@@ -121,7 +121,7 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 'citrus-sunrise-drink',
     name: 'Citrus Drink',
-    description: 'Freshly pressed orange citrus, mint leaves, crushed ice & splash of grenadine.',
+    description: 'Fresh citrus, mint & crushed ice',
     price: 129,
     category: 'Drink',
     rating: 4.9,
@@ -136,7 +136,7 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 'berry-cheesecake',
     name: 'Dessert Cake',
-    description: 'Velvety New York baked cheesecake topped with wild strawberry compote.',
+    description: 'Baked cheesecake & berry compote',
     price: 199,
     category: 'Dessert',
     rating: 4.9,

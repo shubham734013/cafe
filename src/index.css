@@ -54,6 +54,7 @@
   --color-inverse-primary: #FF6422;
 
   --font-sans: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-serif: "Playfair Display", Georgia, Cambria, "Times New Roman", serif;
   --font-display: "Plus Jakarta Sans", sans-serif;
   --font-label: "Inter", sans-serif;
 }
