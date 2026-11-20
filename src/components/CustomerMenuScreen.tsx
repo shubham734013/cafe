@@ -89,17 +89,17 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-6 pb-20 pt-1">
+    <div className="w-full max-w-7xl mx-auto space-y-5 sm:space-y-6 pb-20 pt-1">
       {/* Top Header Row: "Menu" title on Left, "Cart" button on Right */}
       <div className="flex items-center justify-between gap-4">
-        <h1 className="font-serif font-black text-3xl sm:text-4xl text-[#221A15] tracking-tight">
+        <h1 className="font-serif font-black text-2xl sm:text-4xl text-[#221A15] tracking-tight">
           Menu
         </h1>
 
         <button
           type="button"
           onClick={onNavigateCart}
-          className="border border-[#DFD7CD] rounded-xl px-4 py-2 flex items-center gap-2 text-xs sm:text-sm font-semibold text-[#251F1A] bg-white/80 hover:bg-white shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
+          className="border border-[#DFD7CD] rounded-xl px-3.5 sm:px-4 py-2 flex items-center gap-2 text-xs sm:text-sm font-semibold text-[#251F1A] bg-white/80 hover:bg-white shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
         >
           <span className="material-symbols-outlined text-[19px] text-[#251F1A]">
             shopping_bag
@@ -123,7 +123,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search menu..."
-          className="w-full pl-11 pr-10 py-3 bg-white text-sm text-[#251F1A] placeholder:text-[#9A9085] rounded-xl border border-[#E5DDD2] focus:outline-none focus:ring-1 focus:ring-[#244130] shadow-xs transition-all"
+          className="w-full pl-11 pr-10 py-2.5 sm:py-3 bg-white text-xs sm:text-sm text-[#251F1A] placeholder:text-[#9A9085] rounded-xl border border-[#E5DDD2] focus:outline-none focus:ring-1 focus:ring-[#244130] shadow-xs transition-all"
         />
         {searchQuery && (
           <button
@@ -137,7 +137,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
       </div>
 
       {/* Horizontal Category Filter Pills: All, Pizza, Burger, Pasta, Salad, Drink, Dessert */}
-      <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar py-1">
+      <div className="flex items-center gap-2 sm:gap-2.5 overflow-x-auto no-scrollbar py-1">
         {CATEGORY_TABS.map((cat) => {
           const isActive = activeCategory === cat;
           return (
@@ -145,7 +145,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
               key={cat}
               type="button"
               onClick={() => onCategoryChange(cat)}
-              className={`px-4 py-1.5 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap transition-all cursor-pointer active:scale-95 ${
+              className={`px-3.5 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap transition-all cursor-pointer active:scale-95 ${
                 isActive
                   ? 'bg-[#D5E2D0] text-[#1B3625] font-bold shadow-xs border border-transparent'
                   : 'bg-white/90 border border-[#E2DAD0] text-[#423A32] hover:bg-white hover:border-[#D5CDC2]'
@@ -157,9 +157,9 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
         })}
       </div>
 
-      {/* Food Cards Grid: 3-column layout matching reference design */}
+      {/* Empty State */}
       {visibleItems.length === 0 ? (
-        <div className="p-12 text-center bg-white rounded-3xl border border-[#EDE4D9] text-[#7B7166] text-sm shadow-xs">
+        <div className="p-10 sm:p-12 text-center bg-white rounded-3xl border border-[#EDE4D9] text-[#7B7166] text-sm shadow-xs">
           <div className="w-16 h-16 rounded-full bg-[#FAF7F2] border border-[#EDE4D9] text-[#7B7166] mx-auto flex items-center justify-center mb-3">
             <span className="material-symbols-outlined text-[28px]">search_off</span>
           </div>
@@ -179,107 +179,223 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-          {visibleItems.map((item) => {
-            const isFav = favorites.has(item.id);
-            const qtyInCart = getQuantityInCart(item.id);
+        <>
+          {/* MOBILE DEDICATED DISH CARD DESIGN (< 640px) */}
+          <div className="sm:hidden space-y-3">
+            {visibleItems.map((item) => {
+              const isFav = favorites.has(item.id);
+              const qtyInCart = getQuantityInCart(item.id);
 
-            return (
-              <div
-                key={item.id}
-                className="bg-white rounded-2xl overflow-hidden border border-[#EDE4D9] shadow-xs hover:shadow-md transition-all duration-200 flex flex-col group"
-              >
-                {/* Food Image Container */}
+              return (
                 <div
-                  onClick={() => setDetailItem(item)}
-                  className="relative w-full h-44 sm:h-48 overflow-hidden bg-[#F2EDE7] cursor-pointer"
+                  key={`mobile-${item.id}`}
+                  className="bg-white rounded-2xl p-3.5 border border-[#EDE4D9] shadow-xs hover:shadow-sm transition-all flex items-start justify-between gap-3 relative"
                 >
-                  <CafeImage
-                    src={item.imageUrl ?? ''}
-                    alt={item.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    fallbackIcon="restaurant"
-                  />
-
-                  {/* Heart Favorite Button */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFavorite(item.id);
-                    }}
-                    aria-label={`Mark ${item.name} as favorite`}
-                    className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/95 shadow-md flex items-center justify-center text-[#3B332B] hover:text-red-500 hover:scale-110 transition-all cursor-pointer"
-                  >
-                    <span
-                      className={`material-symbols-outlined text-[18px] transition-colors ${
-                        isFav ? 'text-red-500 fill-current' : 'text-[#3B332B]'
-                      }`}
-                      style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
-                    >
-                      favorite
-                    </span>
-                  </button>
-                </div>
-
-                {/* Food Card Body */}
-                <div className="p-4 flex flex-col flex-1 justify-between">
+                  {/* Left Column: Veg badge, Title, Price, Description */}
                   <div
                     onClick={() => setDetailItem(item)}
-                    className="cursor-pointer space-y-0.5"
+                    className="flex-1 min-w-0 pr-1 cursor-pointer"
                   >
-                    <h3 className="font-serif font-bold text-base sm:text-lg text-[#201914] tracking-tight group-hover:text-[#244130] transition-colors">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="w-3.5 h-3.5 border border-emerald-600 p-0.5 rounded flex items-center justify-center shrink-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 block" />
+                      </span>
+                      {item.isBestSeller && (
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-500/10 px-1.5 py-0.2 rounded">
+                          Bestseller
+                        </span>
+                      )}
+                    </div>
+
+                    <h3 className="font-serif font-bold text-base text-[#201914] tracking-tight leading-snug">
                       {item.name}
                     </h3>
-                    <p className="text-xs text-[#7B7166] line-clamp-1 leading-relaxed">
+
+                    <div className="font-serif font-bold text-base text-[#221A15] mt-1">
+                      ₹{item.price}
+                    </div>
+
+                    <p className="text-xs text-[#7B7166] line-clamp-2 mt-1 leading-relaxed">
                       {item.description}
                     </p>
                   </div>
 
-                  {/* Price & Add to Cart Bottom Action */}
-                  <div className="mt-4 flex items-center justify-between pt-1">
-                    <span className="font-serif font-bold text-lg sm:text-xl text-[#221A15]">
-                      ₹{item.price}
-                    </span>
+                  {/* Right Column: Square Photo with Overlapping + Add CTA & Heart */}
+                  <div className="relative shrink-0 flex flex-col items-center pb-2.5">
+                    <div
+                      onClick={() => setDetailItem(item)}
+                      className="w-28 h-24 rounded-2xl overflow-hidden bg-[#F2EDE7] border border-[#EDE4D9] cursor-pointer"
+                    >
+                      <CafeImage
+                        src={item.imageUrl ?? ''}
+                        alt={item.name}
+                        className="w-full h-full object-cover"
+                        fallbackIcon="restaurant"
+                      />
+                    </div>
 
-                    {qtyInCart === 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => onAddToCart(item, 1)}
-                        className="px-4 py-1.5 rounded-xl bg-[#D5E2D0] hover:bg-[#244130] text-[#1B3625] hover:text-white font-semibold text-xs sm:text-sm flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs"
+                    {/* Heart Favorite Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFavorite(item.id);
+                      }}
+                      aria-label={`Favorite ${item.name}`}
+                      className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/95 shadow-sm flex items-center justify-center text-[#3B332B] hover:text-red-500 transition-all cursor-pointer"
+                    >
+                      <span
+                        className={`material-symbols-outlined text-[16px] ${
+                          isFav ? 'text-red-500 fill-current' : 'text-[#3B332B]'
+                        }`}
+                        style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
                       >
-                        <span className="material-symbols-outlined text-[16px]">add</span>
-                        <span>Add</span>
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-2.5 bg-[#244130] text-white px-2.5 py-1 rounded-xl shadow-xs">
+                        favorite
+                      </span>
+                    </button>
+
+                    {/* + Add CTA or Quantity Stepper at the bottom of the photo */}
+                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
+                      {qtyInCart === 0 ? (
                         <button
                           type="button"
-                          onClick={() => onUpdateQty(item.id, -1)}
-                          className="w-5 h-5 flex items-center justify-center rounded-lg hover:bg-white/20 transition-colors text-white font-bold cursor-pointer"
-                          aria-label="Decrease quantity"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">remove</span>
-                        </button>
-                        <span className="text-xs sm:text-sm font-bold min-w-[14px] text-center tabular-nums">
-                          {qtyInCart}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => onUpdateQty(item.id, 1)}
-                          className="w-5 h-5 flex items-center justify-center rounded-lg hover:bg-white/20 transition-colors text-white font-bold cursor-pointer"
-                          aria-label="Increase quantity"
+                          onClick={() => onAddToCart(item, 1)}
+                          className="px-3.5 py-1 rounded-xl bg-[#D5E2D0] hover:bg-[#244130] text-[#1B3625] hover:text-white font-bold text-xs flex items-center gap-1 shadow-sm border border-white/70 transition-all active:scale-95 cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-[14px]">add</span>
+                          <span>Add</span>
                         </button>
-                      </div>
-                    )}
+                      ) : (
+                        <div className="flex items-center gap-2 bg-[#244130] text-white px-2 py-0.5 rounded-xl shadow-md border border-white/50 text-xs font-bold">
+                          <button
+                            type="button"
+                            onClick={() => onUpdateQty(item.id, -1)}
+                            className="w-4 h-4 flex items-center justify-center text-white cursor-pointer"
+                            aria-label="Decrease quantity"
+                          >
+                            <span className="material-symbols-outlined text-[12px]">remove</span>
+                          </button>
+                          <span className="tabular-nums min-w-[12px] text-center">{qtyInCart}</span>
+                          <button
+                            type="button"
+                            onClick={() => onUpdateQty(item.id, 1)}
+                            className="w-4 h-4 flex items-center justify-center text-white cursor-pointer"
+                            aria-label="Increase quantity"
+                          >
+                            <span className="material-symbols-outlined text-[12px]">add</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+
+          {/* TABLET & DESKTOP 3-COLUMN GRID DESIGN (>= 640px) */}
+          <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+            {visibleItems.map((item) => {
+              const isFav = favorites.has(item.id);
+              const qtyInCart = getQuantityInCart(item.id);
+
+              return (
+                <div
+                  key={`desktop-${item.id}`}
+                  className="bg-white rounded-2xl overflow-hidden border border-[#EDE4D9] shadow-xs hover:shadow-md transition-all duration-200 flex flex-col group"
+                >
+                  {/* Food Image Container */}
+                  <div
+                    onClick={() => setDetailItem(item)}
+                    className="relative w-full h-44 sm:h-48 overflow-hidden bg-[#F2EDE7] cursor-pointer"
+                  >
+                    <CafeImage
+                      src={item.imageUrl ?? ''}
+                      alt={item.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      fallbackIcon="restaurant"
+                    />
+
+                    {/* Heart Favorite Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFavorite(item.id);
+                      }}
+                      aria-label={`Mark ${item.name} as favorite`}
+                      className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/95 shadow-md flex items-center justify-center text-[#3B332B] hover:text-red-500 hover:scale-110 transition-all cursor-pointer"
+                    >
+                      <span
+                        className={`material-symbols-outlined text-[18px] transition-colors ${
+                          isFav ? 'text-red-500 fill-current' : 'text-[#3B332B]'
+                        }`}
+                        style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
+                      >
+                        favorite
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Food Card Body */}
+                  <div className="p-4 flex flex-col flex-1 justify-between">
+                    <div
+                      onClick={() => setDetailItem(item)}
+                      className="cursor-pointer space-y-0.5"
+                    >
+                      <h3 className="font-serif font-bold text-base sm:text-lg text-[#201914] tracking-tight group-hover:text-[#244130] transition-colors">
+                        {item.name}
+                      </h3>
+                      <p className="text-xs text-[#7B7166] line-clamp-1 leading-relaxed">
+                        {item.description}
+                      </p>
+                    </div>
+
+                    {/* Price & Add to Cart Bottom Action */}
+                    <div className="mt-4 flex items-center justify-between pt-1">
+                      <span className="font-serif font-bold text-lg sm:text-xl text-[#221A15]">
+                        ₹{item.price}
+                      </span>
+
+                      {qtyInCart === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => onAddToCart(item, 1)}
+                          className="px-4 py-1.5 rounded-xl bg-[#D5E2D0] hover:bg-[#244130] text-[#1B3625] hover:text-white font-semibold text-xs sm:text-sm flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">add</span>
+                          <span>Add</span>
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-2.5 bg-[#244130] text-white px-2.5 py-1 rounded-xl shadow-xs">
+                          <button
+                            type="button"
+                            onClick={() => onUpdateQty(item.id, -1)}
+                            className="w-5 h-5 flex items-center justify-center rounded-lg hover:bg-white/20 transition-colors text-white font-bold cursor-pointer"
+                            aria-label="Decrease quantity"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">remove</span>
+                          </button>
+                          <span className="text-xs sm:text-sm font-bold min-w-[14px] text-center tabular-nums">
+                            {qtyInCart}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => onUpdateQty(item.id, 1)}
+                            className="w-5 h-5 flex items-center justify-center rounded-lg hover:bg-white/20 transition-colors text-white font-bold cursor-pointer"
+                            aria-label="Increase quantity"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">add</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
 
       {/* Modal for detailed food view */}

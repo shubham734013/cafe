@@ -348,74 +348,87 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
           )}
         </div>
 
-        {/* Dish Cards Grid (matches exact reference design) */}
+        {/* Dish Cards (Responsive: Mobile Ergonomic Horizontal vs Desktop 3-Col Grid) */}
         <div>
           {popularDishes.length === 0 ? (
             <div className="p-8 text-center bg-white rounded-2xl border border-[#EDE4D9] text-[#7B7166] text-xs">
               No items match "{searchQuery.trim()}".
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {visibleDishes.map((dish) => {
-                const isFav = favorites.has(dish.id);
-                return (
-                  <div
-                    key={dish.id}
-                    className="bg-white rounded-2xl overflow-hidden border border-[#EDE4D9] shadow-xs hover:shadow-md transition-all duration-200 flex flex-col group"
-                  >
-                    {/* Left Dish Photo */}
+            <>
+              {/* MOBILE COMPACT HORIZONTAL DISH CARDS (< 640px) */}
+              <div className="sm:hidden space-y-3">
+                {visibleDishes.map((dish) => {
+                  const isFav = favorites.has(dish.id);
+                  return (
                     <div
-                      onClick={() => setDetailItem(dish)}
-                      className="relative w-full h-44 sm:h-48 overflow-hidden bg-[#F2EDE7] cursor-pointer"
+                      key={`mobile-home-${dish.id}`}
+                      className="bg-white rounded-2xl p-3.5 border border-[#EDE4D9] shadow-xs hover:shadow-sm transition-all flex items-start justify-between gap-3 relative"
                     >
-                      <CafeImage
-                        src={dish.imageUrl}
-                        alt={dish.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        fallbackIcon="restaurant"
-                      />
-
-                      {/* Floating Heart Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleFavorite(dish.id);
-                        }}
-                        aria-label="Favorite"
-                        className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/95 shadow-md flex items-center justify-center text-[#3B332B] hover:text-red-500 hover:scale-110 transition-all cursor-pointer"
-                      >
-                        <span
-                          className={`material-symbols-outlined text-[18px] transition-colors ${
-                            isFav ? 'text-red-500 fill-current' : 'text-[#3B332B]'
-                          }`}
-                          style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
-                        >
-                          favorite
-                        </span>
-                      </button>
-                    </div>
-
-                    {/* Middle Info */}
-                    <div className="p-4 flex flex-col flex-1 justify-between">
+                      {/* Left: Info */}
                       <div
                         onClick={() => setDetailItem(dish)}
-                        className="cursor-pointer space-y-0.5"
+                        className="flex-1 min-w-0 pr-1 cursor-pointer"
                       >
-                        <h3 className="font-serif font-bold text-base sm:text-lg text-[#201914] tracking-tight group-hover:text-[#244130] transition-colors">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="w-3.5 h-3.5 border border-emerald-600 p-0.5 rounded flex items-center justify-center shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 block" />
+                          </span>
+                          {dish.isBestSeller && (
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-500/10 px-1.5 py-0.2 rounded">
+                              Bestseller
+                            </span>
+                          )}
+                        </div>
+
+                        <h3 className="font-serif font-bold text-base text-[#201914] tracking-tight leading-snug">
                           {dish.name}
                         </h3>
-                        <p className="text-xs text-[#7B7166] line-clamp-1 leading-relaxed">
+
+                        <div className="font-serif font-bold text-base text-[#221A15] mt-1">
+                          ₹{dish.price}
+                        </div>
+
+                        <p className="text-xs text-[#7B7166] line-clamp-2 mt-1 leading-relaxed">
                           {dish.description}
                         </p>
                       </div>
 
-                      {/* Bottom Row */}
-                      <div className="mt-4 flex items-center justify-between pt-1">
-                        <span className="font-serif font-bold text-lg sm:text-xl text-[#221A15]">
-                          ₹{dish.price}
-                        </span>
+                      {/* Right: Square Photo with Overlapping + Add CTA & Heart */}
+                      <div className="relative shrink-0 flex flex-col items-center pb-2.5">
+                        <div
+                          onClick={() => setDetailItem(dish)}
+                          className="w-28 h-24 rounded-2xl overflow-hidden bg-[#F2EDE7] border border-[#EDE4D9] cursor-pointer"
+                        >
+                          <CafeImage
+                            src={dish.imageUrl}
+                            alt={dish.name}
+                            className="w-full h-full object-cover"
+                            fallbackIcon="restaurant"
+                          />
+                        </div>
 
+                        {/* Heart Favorite Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(dish.id);
+                          }}
+                          aria-label="Favorite"
+                          className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/95 shadow-sm flex items-center justify-center text-[#3B332B] hover:text-red-500 transition-all cursor-pointer"
+                        >
+                          <span
+                            className={`material-symbols-outlined text-[16px] ${
+                              isFav ? 'text-red-500 fill-current' : 'text-[#3B332B]'
+                            }`}
+                            style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
+                          >
+                            favorite
+                          </span>
+                        </button>
+
+                        {/* Add Button */}
                         <button
                           type="button"
                           onClick={(e) => {
@@ -423,17 +436,98 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                             onAddToCart(dish);
                             onNotify(`Added ${dish.name} to cart`);
                           }}
-                          className="px-4 py-1.5 rounded-xl bg-[#D5E2D0] hover:bg-[#244130] text-[#1B3625] hover:text-white font-semibold text-xs sm:text-sm flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs"
+                          className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-3.5 py-1 rounded-xl bg-[#D5E2D0] hover:bg-[#244130] text-[#1B3625] hover:text-white font-bold text-xs flex items-center gap-1 shadow-sm border border-white/70 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
                         >
-                          <span className="material-symbols-outlined text-[16px]">add</span>
+                          <span className="material-symbols-outlined text-[14px]">add</span>
                           <span>Add</span>
                         </button>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+
+              {/* DESKTOP/TABLET 3-COLUMN GRID (>= 640px) */}
+              <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {visibleDishes.map((dish) => {
+                  const isFav = favorites.has(dish.id);
+                  return (
+                    <div
+                      key={`desktop-home-${dish.id}`}
+                      className="bg-white rounded-2xl overflow-hidden border border-[#EDE4D9] shadow-xs hover:shadow-md transition-all duration-200 flex flex-col group"
+                    >
+                      {/* Left Dish Photo */}
+                      <div
+                        onClick={() => setDetailItem(dish)}
+                        className="relative w-full h-44 sm:h-48 overflow-hidden bg-[#F2EDE7] cursor-pointer"
+                      >
+                        <CafeImage
+                          src={dish.imageUrl}
+                          alt={dish.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          fallbackIcon="restaurant"
+                        />
+
+                        {/* Floating Heart Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(dish.id);
+                          }}
+                          aria-label="Favorite"
+                          className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/95 shadow-md flex items-center justify-center text-[#3B332B] hover:text-red-500 hover:scale-110 transition-all cursor-pointer"
+                        >
+                          <span
+                            className={`material-symbols-outlined text-[18px] transition-colors ${
+                              isFav ? 'text-red-500 fill-current' : 'text-[#3B332B]'
+                            }`}
+                            style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
+                          >
+                            favorite
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* Middle Info */}
+                      <div className="p-4 flex flex-col flex-1 justify-between">
+                        <div
+                          onClick={() => setDetailItem(dish)}
+                          className="cursor-pointer space-y-0.5"
+                        >
+                          <h3 className="font-serif font-bold text-base sm:text-lg text-[#201914] tracking-tight group-hover:text-[#244130] transition-colors">
+                            {dish.name}
+                          </h3>
+                          <p className="text-xs text-[#7B7166] line-clamp-1 leading-relaxed">
+                            {dish.description}
+                          </p>
+                        </div>
+
+                        {/* Bottom Row */}
+                        <div className="mt-4 flex items-center justify-between pt-1">
+                          <span className="font-serif font-bold text-lg sm:text-xl text-[#221A15]">
+                            ₹{dish.price}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onAddToCart(dish);
+                              onNotify(`Added ${dish.name} to cart`);
+                            }}
+                            className="px-4 py-1.5 rounded-xl bg-[#D5E2D0] hover:bg-[#244130] text-[#1B3625] hover:text-white font-semibold text-xs sm:text-sm flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">add</span>
+                            <span>Add</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       </div>
