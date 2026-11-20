@@ -590,6 +590,7 @@ test('legacy persisted gateway fields are dropped during cafe-state loading', as
         orders: [
           {
             ...firstOrder,
+            rating: 5,
             paymentProvider: 'youpi-pg',
             paymentId: 'legacy-payment-id',
             paymentUtr: '123456789012',
@@ -610,6 +611,7 @@ test('legacy persisted gateway fields are dropped during cafe-state loading', as
     assert.equal('paymentId' in migratedOrder, false);
     assert.equal('paymentUtr' in migratedOrder, false);
     assert.equal('preferredUpiApp' in migratedOrder, false);
+    assert.equal(migratedOrder.loyaltyPointsAwarded, 25);
 
     migratedStore.flushToDiskSync();
     const persisted = JSON.parse(readFileSync(snapshotPath, 'utf8')) as Record<string, unknown>;
@@ -776,6 +778,11 @@ test('customers earn Beans once per order and redeem them on a later order', asy
     ((await feedbackResponse.json()) as { pointsAwarded: number }).pointsAwarded,
     25
   );
+  const earnedBootstrapResponse = await fetch(`${baseUrl}/api/bootstrap?screen=tracking`, {
+    headers: { Cookie: firstCookie },
+  });
+  const earnedBootstrap = (await earnedBootstrapResponse.json()) as { rewardPoints: number };
+  assert.equal(earnedBootstrap.rewardPoints, 25);
 
   const duplicateFeedbackResponse = await fetch(
     `${baseUrl}/api/orders/${firstOrderBody.order.id}/feedback`,

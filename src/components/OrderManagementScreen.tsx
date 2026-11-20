@@ -182,91 +182,129 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {visibleOrders.slice(0, visibleLimit).map((order) => (
-            <article key={order.id} className="flex flex-col gap-3 rounded-xl bg-surface-container p-4 shadow-sm">
-              <button
-                type="button"
-                onClick={() => setSelectedOrder(order)}
-                className="flex items-start justify-between gap-3 text-left"
+        <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
+          {visibleOrders.slice(0, visibleLimit).map((order) => {
+            const isDineIn = order.serviceMode === 'dine-in';
+            const isDelivery = order.serviceMode === 'delivery';
+
+            return (
+              <article
+                key={order.id}
+                className="flex flex-col justify-between gap-3.5 rounded-2xl bg-surface-container-low hover:bg-surface-container border border-outline-variant/15 hover:border-outline-variant/30 p-4 sm:p-5 shadow-md hover:shadow-lg transition-all"
               >
-                <span>
-                  <span className="block font-bold text-on-surface">#{order.id}</span>
-                  <span className="text-xs text-on-surface-variant">
-                    {order.serviceMode === 'dine-in'
-                      ? order.tableNumber
-                        ? `Dine-In · ${order.tableNumber}`
-                        : 'Dine-In'
-                      : order.serviceMode === 'delivery'
-                        ? `Delivery · ${order.deliveryPartner ?? 'Direct'}`
-                        : 'Takeaway'}
-                    {' · '}{order.createdAtLabel}
-                  </span>
-                </span>
-                <span className="text-right">
-                  <span className="block font-bold text-primary">{formatINR(order.total)}</span>
-                  <div className="flex items-center justify-end gap-1.5 mt-0.5">
-                    {order.paymentStatus === 'refunded' ? (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/25 text-amber-300 border border-amber-500/40">
-                        REFUNDED
-                      </span>
-                    ) : order.paymentStatus === 'paid' ? (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400">PAID</span>
-                    ) : order.paymentMode === 'cash' || order.paymentChannelLabel === 'Pay on Counter' ? (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400">COUNTER</span>
-                    ) : (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-400">UPI PENDING</span>
-                    )}
-                    <span className="text-xs text-on-surface-variant">
-                      {ORDER_STATUS_META[order.status].kotBadgeLabel}
-                    </span>
-                  </div>
-                </span>
-              </button>
-              <div className="flex flex-col gap-1 border-t border-outline-variant/30 pt-2 text-xs text-on-surface-variant">
-                {order.items.map((item) => (
-                  <div key={item.menuItemId} className="flex justify-between gap-2">
-                    <span>{item.quantity} × {item.name}</span>
-                    <span>{formatINR(item.price * item.quantity)}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex justify-end gap-2">
+                {/* Header Row */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedOrder(order);
-                    onNotify(`Order #${order.id} details opened`);
-                  }}
-                  className="rounded-lg bg-surface-container-high px-3 py-2 text-xs font-semibold text-on-surface"
+                  onClick={() => setSelectedOrder(order)}
+                  className="flex items-start justify-between gap-3 text-left w-full cursor-pointer"
                 >
-                  Details
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-11 h-11 rounded-xl bg-surface-container-high flex items-center justify-center shrink-0 border border-outline-variant/10">
+                      <span className="material-symbols-outlined text-[20px] text-primary">
+                        {isDineIn ? 'restaurant' : isDelivery ? 'delivery_dining' : 'takeout_dining'}
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <span className="block font-bold text-sm sm:text-base text-on-surface truncate">
+                        #{order.id}
+                      </span>
+                      <span className="text-xs text-on-surface-variant flex items-center gap-1 mt-0.5">
+                        <span>
+                          {isDineIn
+                            ? order.tableNumber
+                              ? `Dine-In · ${order.tableNumber}`
+                              : 'Dine-In'
+                            : isDelivery
+                              ? `Delivery · ${order.deliveryPartner ?? 'Direct'}`
+                              : 'Takeaway'}
+                        </span>
+                        <span>·</span>
+                        <span className="tabular-nums">{order.createdAtLabel}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="block font-black text-base text-primary tabular-nums">
+                      {formatINR(order.total)}
+                    </span>
+                    <div className="flex items-center justify-end gap-1.5 mt-1">
+                      {order.paymentStatus === 'refunded' ? (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/25 text-amber-300 border border-amber-500/40">
+                          REFUNDED
+                        </span>
+                      ) : order.paymentStatus === 'paid' ? (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          PAID
+                        </span>
+                      ) : order.paymentMode === 'cash' || order.paymentChannelLabel === 'Pay on Counter' ? (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                          COUNTER
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                          UPI PENDING
+                        </span>
+                      )}
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-surface-container-high text-on-surface-variant">
+                        {ORDER_STATUS_META[order.status].kotBadgeLabel}
+                      </span>
+                    </div>
+                  </div>
                 </button>
-                {order.paymentStatus !== 'paid' && onPayCounterOrder && (
+
+                {/* Items Inset Sub-Card */}
+                <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-3 space-y-1 text-xs text-on-surface-variant">
+                  {order.items.map((item) => (
+                    <div key={item.menuItemId} className="flex justify-between gap-2 py-0.5">
+                      <span className="truncate text-on-surface font-medium">
+                        <span className="text-primary font-bold">{item.quantity}×</span> {item.name}
+                      </span>
+                      <span className="tabular-nums font-semibold text-on-surface shrink-0">
+                        {formatINR(item.price * item.quantity)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Footer Action Buttons */}
+                <div className="flex items-center justify-end gap-2 pt-1">
                   <button
                     type="button"
-                    onClick={async () => {
-                      await onPayCounterOrder(order.id);
-                      onNotify(`Order #${order.id} marked as PAID`);
+                    onClick={() => {
+                      setSelectedOrder(order);
+                      onNotify(`Order #${order.id} details opened`);
                     }}
-                    className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-2 text-xs font-bold text-white flex items-center gap-1 shadow-sm cursor-pointer"
+                    className="rounded-xl bg-surface-container-high hover:bg-surface-bright px-3.5 py-2 text-xs font-semibold text-on-surface transition-colors cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[14px]">payments</span>
-                    <span>Mark Paid</span>
+                    Details
                   </button>
-                )}
-                {order.status !== 'served' && (
-                  <button
-                    type="button"
-                    onClick={() => onAdvanceOrderStatus(order.id)}
-                    className="rounded-lg bg-primary px-3 py-2 text-xs font-bold text-on-primary"
-                  >
-                    Advance Order
-                  </button>
-                )}
-              </div>
-            </article>
-          ))}
+                  {order.paymentStatus !== 'paid' && onPayCounterOrder && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await onPayCounterOrder(order.id);
+                        onNotify(`Order #${order.id} marked as PAID`);
+                      }}
+                      className="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-3.5 py-2 text-xs font-bold text-white flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">payments</span>
+                      <span>Mark Paid</span>
+                    </button>
+                  )}
+                  {order.status !== 'served' && (
+                    <button
+                      type="button"
+                      onClick={() => onAdvanceOrderStatus(order.id)}
+                      className="rounded-xl bg-primary hover:brightness-110 px-3.5 py-2 text-xs font-bold text-on-primary shadow-sm active:scale-95 transition-all cursor-pointer"
+                    >
+                      Advance Order
+                    </button>
+                  )}
+                </div>
+              </article>
+            );
+          })}
           {visibleLimit < visibleOrders.length && (
             <button
               type="button"

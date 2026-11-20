@@ -725,9 +725,12 @@ export class CafeStore {
 
   private mergePersistedState(parsed: Partial<PersistedEnvelope>): PersistedEnvelope {
     const base = this.createSeedState();
-    const orders = (Array.isArray(parsed.orders) ? parsed.orders : base.orders).map(
-      stripLegacyGatewayFields
-    );
+    const orders = (Array.isArray(parsed.orders) ? parsed.orders : base.orders).map((order) => {
+      const migratedOrder = stripLegacyGatewayFields(order);
+      return migratedOrder.rating && migratedOrder.loyaltyPointsAwarded === undefined
+        ? { ...migratedOrder, loyaltyPointsAwarded: 25 }
+        : migratedOrder;
+    });
     const {
       youpiPayments: _legacyPayments,
       youpiWebhookDeliveries: _legacyDeliveries,

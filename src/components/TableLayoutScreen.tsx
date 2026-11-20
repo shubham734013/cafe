@@ -310,7 +310,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {visibleTables.map((table) => {
             const effective = resolveEffectiveTableState(table, orders);
           const activeOrder = effective.activeOrder;
@@ -327,39 +327,46 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
           return (
             <div
               key={table.id}
-              className={`rounded-xl p-3 flex flex-col justify-between shadow-sm relative overflow-hidden gap-2 ${
-                isOccupied ? 'bg-surface-container-high' : 'bg-surface-container-low'
-              } ${isSelected ? 'ring-1 ring-primary/50' : ''}`}
+              className={`rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between shadow-md hover:shadow-lg transition-all border relative overflow-hidden space-y-3 ${
+                isOccupied
+                  ? 'bg-surface-container-low border-error/30'
+                  : 'bg-surface-container-low border-outline-variant/15 hover:border-outline-variant/30'
+              } ${isSelected ? 'ring-2 ring-primary/60' : ''}`}
             >
-              <div className={`absolute top-0 left-0 w-full h-1 ${accentBarColor}`} />
+              <div className={`absolute top-0 left-0 w-full h-1.5 ${accentBarColor}`} />
 
-              <div className="flex items-start justify-between gap-1 pt-0.5">
+              {/* Header: Table ID, Seats & QR/Status */}
+              <div className="flex items-start justify-between gap-1.5 pt-1">
                 <div>
-                  <span className="text-lg font-bold text-on-surface">{table.id}</span>
-                  <p className="text-[11px] text-on-surface-variant">{table.seats}-Seater</p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base sm:text-lg font-black text-on-surface">{table.id}</span>
+                  </div>
+                  <p className="text-[11px] text-on-surface-variant font-medium">{table.seats}-Seater</p>
                 </div>
 
                 <div className="flex items-center gap-1">
-                  {!readOnly && <button
-                    type="button"
-                    aria-label={`Show QR for Table ${table.id}`}
-                    onClick={() => setQrTableId(table.id)}
-                    className="w-7 h-7 rounded-lg bg-surface-container-highest/80 hover:bg-surface-bright text-primary flex items-center justify-center transition-colors cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[15px]">qr_code_2</span>
-                  </button>}
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      aria-label={`Show QR for Table ${table.id}`}
+                      onClick={() => setQrTableId(table.id)}
+                      className="w-7 h-7 rounded-lg bg-surface-container-high hover:bg-surface-bright text-primary flex items-center justify-center transition-colors cursor-pointer border border-outline-variant/10"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">qr_code_2</span>
+                    </button>
+                  )}
                   {isOccupied ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-error-container/40 text-error text-[11px] font-semibold tabular-nums">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-error-container/40 text-error text-[10px] font-bold tabular-nums">
                       <span className="w-1.5 h-1.5 rounded-full bg-error animate-pulse" />
                       {table.elapsedLabel || `${activeOrder?.elapsedMinutes ?? 12}m`}
                     </span>
                   ) : isReserved ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container/20 text-primary text-[11px] font-semibold">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container/20 text-primary text-[10px] font-bold">
                       <span className="w-1.5 h-1.5 rounded-full bg-primary" />
                       {table.reservedTime || '7:30 PM'}
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-tertiary-container/20 text-tertiary text-[11px] font-semibold">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-tertiary-container/20 text-tertiary text-[10px] font-bold">
                       <span className="w-1.5 h-1.5 rounded-full bg-tertiary" />
                       Free
                     </span>
@@ -367,13 +374,14 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
                 </div>
               </div>
 
+              {/* Middle Metrics Inset Sub-Card */}
               {isOccupied ? (
-                <div className="py-1 flex flex-col gap-0.5">
-                  <span className="text-[11px] text-secondary font-semibold">
+                <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-2.5 flex flex-col gap-1">
+                  <span className="text-[11px] text-on-surface-variant font-medium truncate">
                     #{activeOrder?.id || table.activeOrderId || (readOnly ? 'Order unavailable' : 'SSCB421')}
                   </span>
-                  <div className="flex items-center justify-between text-on-surface">
-                    <span className="text-xs text-on-surface-variant">
+                  <div className="flex items-center justify-between text-on-surface pt-0.5">
+                    <span className="text-xs text-on-surface-variant font-medium">
                       {(() => {
                         const cnt = activeOrder
                           ? activeOrder.items.reduce((s, i) => s + i.quantity, 0)
@@ -381,29 +389,31 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
                         return `${cnt} ${cnt === 1 ? 'item' : 'items'}`;
                       })()}
                     </span>
-                    <span className="text-xs font-bold text-primary tabular-nums">
+                    <span className="text-xs font-black text-primary tabular-nums">
                       {activeOrder ? `₹${activeOrder.total}` : readOnly ? '' : '₹228'}
                     </span>
                   </div>
                 </div>
               ) : isReserved ? (
-                <div className="py-1 flex flex-col">
-                  <span className="text-xs text-on-surface font-medium truncate">
+                <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-2.5 flex flex-col">
+                  <span className="text-xs text-on-surface font-bold truncate">
                     {readOnly ? 'Reserved' : table.reservedBy}
                   </span>
                   {!readOnly && (
-                    <span className="text-[11px] text-on-surface-variant truncate">
+                    <span className="text-[11px] text-on-surface-variant truncate mt-0.5">
                       Party of {table.reservedPartySize ?? 4}
                     </span>
                   )}
                 </div>
               ) : (
-                <div className="py-2">
-                  <p className="text-xs text-on-surface-variant truncate">{table.zone}</p>
+                <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-2.5 flex flex-col justify-center">
+                  <p className="text-xs text-on-surface-variant font-medium truncate">{table.zone}</p>
+                  <p className="text-[10px] text-tertiary font-bold mt-0.5">Ready for guests</p>
                 </div>
               )}
 
-              <div className="flex flex-col gap-1.5">
+              {/* Action Button */}
+              <div className="flex flex-col gap-1.5 pt-0.5">
                 {isOccupied ? (
                   <button
                     type="button"
@@ -415,10 +425,10 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
                       }
                     }}
                     disabled={readOnly && !activeOrder}
-                    className={`w-full py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                    className={`w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer ${
                       table.billReady
-                        ? 'bg-primary-container text-on-primary font-bold shadow-md hover:opacity-90'
-                        : 'bg-secondary-container/30 text-secondary hover:bg-secondary-container/50'
+                        ? 'bg-primary text-on-primary shadow-md hover:brightness-110'
+                        : 'bg-surface-container-high hover:bg-surface-bright text-on-surface border border-outline-variant/20'
                     }`}
                   >
                     <span className="material-symbols-outlined text-[16px]">
@@ -427,7 +437,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
                     <span>{readOnly ? 'View Order Details' : table.billReady ? 'Bill Ready' : 'View Order'}</span>
                   </button>
                 ) : readOnly ? (
-                  <p className="py-2 text-center text-xs text-on-surface-variant">
+                  <p className="py-2 text-center text-xs text-on-surface-variant font-medium">
                     {isReserved ? 'Reserved table' : 'No active order'}
                   </p>
                 ) : isReserved ? (
@@ -435,7 +445,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
                     type="button"
                     disabled={pendingCheckInId === table.id}
                     onClick={() => void handleCheckIn(table.id)}
-                    className="w-full py-1.5 rounded-lg bg-surface-container-highest text-primary text-xs font-semibold flex items-center justify-center gap-1 hover:bg-surface-bright transition-colors cursor-pointer disabled:opacity-50"
+                    className="w-full py-2 rounded-xl bg-surface-container-high hover:bg-surface-bright border border-outline-variant/20 text-primary text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
                   >
                     <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
                     <span>{pendingCheckInId === table.id ? 'Checking in...' : 'Check-in'}</span>

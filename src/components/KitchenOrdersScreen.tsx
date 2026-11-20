@@ -228,37 +228,44 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
               <div
                 key={order.id}
                 onClick={() => setSelectedOrderId(order.id)}
-                className={`group rounded-3xl bg-surface-container hover:bg-surface-container-high border transition-all cursor-pointer shadow-sm hover:shadow-md flex flex-col justify-between p-4 sm:p-5 ${
+                className={`group rounded-2xl bg-surface-container-low hover:bg-surface-container border transition-all cursor-pointer shadow-md hover:shadow-lg flex flex-col justify-between p-4 sm:p-5 space-y-3.5 ${
                   isUrgent && !isServed
-                    ? 'border-red-500/40 ring-1 ring-red-500/20'
+                    ? 'border-error/50 ring-1 ring-error/30'
                     : isReady
-                      ? 'border-emerald-500/30'
-                      : 'border-outline-variant/15'
+                      ? 'border-emerald-500/40 ring-1 ring-emerald-500/20'
+                      : 'border-outline-variant/15 hover:border-outline-variant/30'
                 }`}
               >
                 {/* Header: KOT Number, Channel, Status Badge */}
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-base text-on-surface group-hover:text-[#FF6422] transition-colors">
-                          KOT {order.kotNumber}
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-surface-container-high flex items-center justify-center shrink-0 border border-outline-variant/10">
+                        <span className="material-symbols-outlined text-[20px] text-primary">
+                          soup_kitchen
                         </span>
-                        {isUrgent && !isServed && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 text-[10px] font-black animate-pulse">
-                            URGENT
-                          </span>
-                        )}
                       </div>
-                      <p className="text-xs text-on-surface-variant font-medium mt-0.5">
-                        {order.tableNumber ? `Table ${order.tableNumber.replace('T', '')}` : 'Counter'}{' '}
-                        · <span className="capitalize">{order.serviceMode}</span>
-                      </p>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-sm sm:text-base text-on-surface group-hover:text-primary transition-colors">
+                            KOT #{order.kotNumber}
+                          </span>
+                          {isUrgent && !isServed && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-error/20 text-error text-[9px] font-black tracking-wider uppercase animate-pulse">
+                              URGENT
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-on-surface-variant font-medium">
+                          {order.tableNumber ? `Table ${order.tableNumber.replace('T', '')}` : 'Counter'}{' '}
+                          · <span className="capitalize">{order.serviceMode}</span>
+                        </p>
+                      </div>
                     </div>
 
                     {/* Status Badge */}
                     <span
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-black capitalize shrink-0 ${
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 ${
                         isServed
                           ? 'bg-surface-container-highest text-on-surface-variant'
                           : isReady
@@ -270,8 +277,8 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
                     </span>
                   </div>
 
-                  {/* Items Checklist */}
-                  <div className="space-y-1.5 py-2 border-t border-b border-outline-variant/10">
+                  {/* Items Checklist Inset Container */}
+                  <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-2.5 space-y-1">
                     {order.items.map((item) => (
                       <div
                         key={item.menuItemId}
@@ -279,14 +286,14 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
                           e.stopPropagation();
                           onToggleKotItem?.(order.id, item.menuItemId);
                         }}
-                        className="flex items-center justify-between gap-2 py-1 px-1.5 rounded-xl hover:bg-surface-variant/40 transition-colors text-xs"
+                        className="flex items-center justify-between gap-2 py-1.5 px-2 rounded-lg hover:bg-surface-container-high/60 transition-colors text-xs cursor-pointer"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <span
-                            className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 text-[12px] font-bold transition-all ${
+                            className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 text-[11px] font-bold transition-all ${
                               item.checked
                                 ? 'bg-emerald-500 text-white'
-                                : 'border border-outline-variant text-transparent hover:border-[#FF6422]'
+                                : 'border border-outline-variant text-transparent hover:border-primary'
                             }`}
                           >
                             ✓
@@ -294,7 +301,7 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
                           <span
                             className={`font-semibold truncate ${
                               item.checked
-                                ? 'line-through text-on-surface-variant opacity-70'
+                                ? 'line-through text-on-surface-variant opacity-60'
                                 : 'text-on-surface'
                             }`}
                           >
@@ -302,7 +309,7 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
                           </span>
                         </div>
                         {item.note && (
-                          <span className="text-[10px] text-amber-400/90 truncate shrink-0 max-w-[90px]">
+                          <span className="text-[10px] text-amber-400/90 truncate shrink-0 max-w-[100px] bg-amber-500/10 px-1.5 py-0.5 rounded">
                             {item.note}
                           </span>
                         )}
@@ -311,21 +318,23 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
                   </div>
 
                   {order.cookingNote && (
-                    <div className="mt-2 p-2 rounded-xl bg-[#FF6422]/10 border border-[#FF6422]/20 text-[11px] text-[#FF6422] font-semibold">
-                      Chef Note: {order.cookingNote}
+                    <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/20 text-xs text-primary font-semibold flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[15px] shrink-0">restaurant</span>
+                      <span className="truncate">Chef Note: {order.cookingNote}</span>
                     </div>
                   )}
                 </div>
 
                 {/* Footer Row: Progress & Action Button */}
-                <div className="mt-4 pt-2 flex items-center justify-between gap-3">
-                  <div className="text-[11px] text-on-surface-variant font-medium">
-                    <span>
-                      {phase.checkedCount}/{phase.totalCount} items ready
-                    </span>
-                    <span className="mx-1.5">·</span>
-                    <span className={isUrgent ? 'text-red-400 font-bold' : ''}>
+                <div className="pt-2 border-t border-outline-variant/10 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs text-on-surface-variant">
+                    <span className="material-symbols-outlined text-[14px] text-outline">schedule</span>
+                    <span className={isUrgent && !isServed ? 'text-error font-bold' : ''}>
                       {order.elapsedMinutes}m ago
+                    </span>
+                    <span>·</span>
+                    <span>
+                      {phase.checkedCount}/{phase.totalCount} ready
                     </span>
                   </div>
 
@@ -335,7 +344,7 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
                       type="button"
                       disabled={advancingId === order.id}
                       onClick={(e) => handleAdvance(e, order)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-bold text-white shadow-sm transition-all active:scale-95 cursor-pointer flex items-center gap-1 shrink-0 ${
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold text-white shadow-sm transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 shrink-0 ${
                         isReady
                           ? 'bg-blue-600 hover:bg-blue-500'
                           : order.status === 'preparing'

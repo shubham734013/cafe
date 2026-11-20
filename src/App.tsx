@@ -1312,6 +1312,7 @@ export default function App() {
           <LiveTrackingScreen
             activeOrder={activeTrackedOrder}
             allOrders={orders}
+            availableBeans={rewardPoints}
             onSelectOrder={setTrackedOrderId}
             onDownloadInvoicePdf={handleDownloadInvoicePdf}
             onStartPayment={handleStartPayment}

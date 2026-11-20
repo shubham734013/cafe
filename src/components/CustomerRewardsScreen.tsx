@@ -19,7 +19,7 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
       <div className="pt-1 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-on-surface">Rewards</h1>
-          <p className="text-xs text-on-surface-variant">Your available loyalty points and current offers</p>
+          <p className="text-xs text-on-surface-variant">Earn Beans with order reviews and use them on future orders.</p>
         </div>
       </div>
 
@@ -28,11 +28,16 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
         <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-primary-container/15 blur-2xl pointer-events-none" />
         <div>
           <span className="text-xs text-on-surface-variant uppercase tracking-wider font-medium">
-            Available points
+            Available Beans
           </span>
           <div className="text-3xl font-bold text-primary mt-1 tabular-nums">{points}</div>
         </div>
       </div>
+
+      <p className="rounded-xl bg-surface-container p-4 text-sm text-on-surface-variant">
+        Rate each served order to earn 25 Beans. Every 2 Beans gives ₹1 off, up to 50% of your
+        order subtotal.
+      </p>
 
       <section className="space-y-3">
         <h2 className="text-base font-bold text-on-surface">Active offers</h2>

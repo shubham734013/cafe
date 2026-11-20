@@ -249,16 +249,16 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
           </div>
 
           {/* Menu Items Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {visibleItems.map((item) => {
               const isAvailable = item.isAvailable !== false;
               return (
                 <div
                   key={item.id}
-                  className={`relative overflow-hidden rounded-xl bg-surface-container text-left shadow-sm transition-all border ${
+                  className={`group relative overflow-hidden rounded-2xl bg-surface-container-low hover:bg-surface-container text-left shadow-sm hover:shadow-md transition-all border flex flex-col justify-between ${
                     !isAvailable
-                      ? 'border-red-500/40 opacity-75 grayscale-[20%]'
-                      : 'border-outline-variant/20 hover:border-primary/50'
+                      ? 'border-error/40 opacity-75 grayscale-[20%]'
+                      : 'border-outline-variant/15 hover:border-primary/40'
                   }`}
                 >
                   <button
@@ -271,31 +271,35 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                         onAddPosItem(item);
                       }
                     }}
-                    className="w-full text-left cursor-pointer"
+                    className="w-full text-left cursor-pointer flex flex-col flex-1"
                   >
-                    <div className="h-24 bg-surface-container-low relative">
-                      <CafeImage src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                    <div className="h-28 bg-surface-container relative overflow-hidden">
+                      <CafeImage
+                        src={item.imageUrl}
+                        alt={item.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
                       {!isAvailable && (
-                        <div className="absolute inset-0 bg-red-950/70 backdrop-blur-[1px] flex flex-col items-center justify-center p-1 text-center">
-                          <span className="material-symbols-outlined text-red-300 text-lg">block</span>
-                          <span className="text-[10px] font-black tracking-wider text-red-200 uppercase">
+                        <div className="absolute inset-0 bg-red-950/75 backdrop-blur-[1px] flex flex-col items-center justify-center p-1 text-center">
+                          <span className="material-symbols-outlined text-red-300 text-xl">block</span>
+                          <span className="text-[10px] font-black tracking-wider text-red-200 uppercase mt-0.5">
                             86 · SOLD OUT
                           </span>
                         </div>
                       )}
                       {item.isBestSeller && isAvailable && (
-                        <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-amber-500 text-neutral-950 text-[9px] font-black uppercase">
+                        <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-amber-500 text-neutral-950 text-[10px] font-black uppercase shadow-sm">
                           Hot
                         </div>
                       )}
                     </div>
-                    <div className="p-2.5 flex flex-col justify-between gap-1">
-                      <span className="block truncate text-xs font-bold text-on-surface">
+                    <div className="p-3 flex flex-col justify-between flex-1 gap-2">
+                      <span className="block truncate text-xs sm:text-sm font-bold text-on-surface">
                         {item.name}
                       </span>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black text-primary">₹{item.price}</span>
-                        <span className="text-[10px] text-on-surface-variant font-medium">
+                      <div className="flex items-center justify-between rounded-lg bg-surface-container-lowest/80 border border-outline-variant/10 px-2 py-1.5">
+                        <span className="text-xs sm:text-sm font-black text-primary">₹{item.price}</span>
+                        <span className="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider">
                           {item.station}
                         </span>
                       </div>
@@ -307,7 +311,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                     <button
                       type="button"
                       onClick={() => onToggleItemAvailability(item.id)}
-                      className={`w-full py-1 text-[10px] font-black uppercase border-t flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                      className={`w-full py-1.5 text-[10px] font-black uppercase border-t flex items-center justify-center gap-1 cursor-pointer transition-all ${
                         isAvailable
                           ? 'bg-red-500/10 text-red-600 hover:bg-red-500/20 border-red-500/30'
                           : 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border-emerald-500/30'
@@ -326,10 +330,10 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
         </section>
 
         {/* Right Column: Order Bill & Tender Panel (5 Cols) */}
-        <section className="lg:col-span-5 flex flex-col gap-3 rounded-xl bg-surface-container-low p-4 shadow-md border border-outline-variant/20">
+        <section className="lg:col-span-5 flex flex-col gap-3.5 rounded-2xl bg-surface-container-low p-4 sm:p-5 shadow-lg border border-outline-variant/20">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-black uppercase tracking-wider text-on-surface flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-primary text-[18px]">shopping_cart</span>
+            <h2 className="text-sm font-black uppercase tracking-wider text-on-surface flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-[20px]">shopping_cart</span>
               Current Order
             </h2>
             {posCart.length > 0 && (
@@ -380,22 +384,22 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
             </div>
 
             {matchedCustomer ? (
-              <div className="flex items-center justify-between text-xs pt-1 border-t border-outline-variant/20">
+              <div className="flex items-center justify-between text-xs pt-2 mt-2 border-t border-outline-variant/15">
                 <div className="min-w-0">
-                  <span className="font-bold text-on-surface truncate block">
+                  <span className="font-bold text-on-surface truncate block text-xs sm:text-sm">
                     {matchedCustomer.name}
                   </span>
-                  <span className="text-[10px] text-on-surface-variant">
-                    {matchedCustomer.visits} visits · Total spent: {formatINR(matchedCustomer.totalSpent)}
+                  <span className="text-[11px] text-on-surface-variant">
+                    {matchedCustomer.visits} visits · Total: {formatINR(matchedCustomer.totalSpent)}
                   </span>
                 </div>
                 <div className="text-primary font-black whitespace-nowrap text-right">
-                  <div>⭐ {matchedCustomer.loyaltyPoints || 0} pts</div>
-                  <div className="text-[9px] text-emerald-600 font-bold">+10 pts on order</div>
+                  <div className="text-xs">⭐ {matchedCustomer.loyaltyPoints || 0} pts</div>
+                  <div className="text-[9px] text-emerald-400 font-bold">+10 pts on order</div>
                 </div>
               </div>
             ) : phoneQuery.trim().length >= 8 ? (
-              <div className="flex items-center justify-between text-xs pt-1 border-t border-outline-variant/20 text-on-surface-variant">
+              <div className="flex items-center justify-between text-xs pt-2 mt-2 border-t border-outline-variant/15 text-on-surface-variant">
                 <span className="text-[11px]">Unregistered Mobile</span>
                 {onQuickAddCustomer && (
                   <button
@@ -413,24 +417,24 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
 
           {/* Cart Items List */}
           {posCart.length === 0 ? (
-            <div className="py-8 text-center text-xs text-on-surface-variant bg-surface-container/50 rounded-xl border border-dashed border-outline-variant/30 flex flex-col items-center gap-1">
+            <div className="py-8 text-center text-xs text-on-surface-variant bg-surface-container-lowest/60 rounded-2xl border border-dashed border-outline-variant/30 flex flex-col items-center gap-1.5">
               <span className="material-symbols-outlined text-2xl text-outline">point_of_sale</span>
-              <span>Tap menu items on the left to add to bill</span>
+              <span className="font-semibold text-on-surface">Tap menu items on the left to add to bill</span>
               <span className="text-[10px] text-outline">Supports Dine-In, Takeaway, and Delivery</span>
             </div>
           ) : (
-            <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1">
+            <div className="flex flex-col gap-2 max-h-56 overflow-y-auto pr-1">
               {posCart.map((item) => (
                 <div
                   key={item.menuItemId}
-                  className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-container border border-outline-variant/20"
+                  className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-surface-container-lowest/80 border border-outline-variant/15 hover:border-outline-variant/30 transition-all"
                 >
                   <div className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-bold text-on-surface">
                       {item.name}
                     </span>
-                    <span className="text-[10px] text-primary font-bold">
-                      ₹{item.price * item.quantity} (₹{item.price} ea)
+                    <span className="text-[11px] text-primary font-bold tabular-nums">
+                      ₹{item.price * item.quantity} <span className="text-outline font-normal">({formatINR(item.price)} ea)</span>
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -438,16 +442,16 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                       type="button"
                       aria-label={`Decrease ${item.name}`}
                       onClick={() => onUpdatePosQty(item.menuItemId, -1)}
-                      className="grid h-6 w-6 place-items-center rounded bg-surface-container-high hover:bg-surface-bright text-xs font-bold cursor-pointer"
+                      className="grid h-7 w-7 place-items-center rounded-lg bg-surface-container-high hover:bg-surface-bright text-xs font-bold cursor-pointer transition-colors"
                     >
                       −
                     </button>
-                    <span className="w-5 text-center text-xs font-black">{item.quantity}</span>
+                    <span className="w-5 text-center text-xs font-black tabular-nums">{item.quantity}</span>
                     <button
                       type="button"
                       aria-label={`Increase ${item.name}`}
                       onClick={() => onUpdatePosQty(item.menuItemId, 1)}
-                      className="grid h-6 w-6 place-items-center rounded bg-primary text-on-primary text-xs font-bold cursor-pointer"
+                      className="grid h-7 w-7 place-items-center rounded-lg bg-primary text-on-primary text-xs font-bold cursor-pointer hover:brightness-110 transition-all"
                     >
                       +
                     </button>
@@ -457,25 +461,25 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
             </div>
           )}
 
-          {/* Pricing Totals Breakdown */}
-          <div className="flex flex-col gap-1 border-t border-outline-variant/30 pt-2 text-xs">
+          {/* Pricing Totals Breakdown Inset Sub-Card */}
+          <div className="flex flex-col gap-1.5 rounded-xl bg-surface-container-lowest/80 border border-outline-variant/15 p-3 text-xs">
             <div className="flex justify-between text-on-surface-variant">
               <span>Subtotal:</span>
-              <span className="font-semibold text-on-surface">{formatINR(totals.subtotal)}</span>
+              <span className="font-semibold text-on-surface tabular-nums">{formatINR(totals.subtotal)}</span>
             </div>
             {totals.discount > 0 && (
-              <div className="flex justify-between text-emerald-600">
+              <div className="flex justify-between text-emerald-400">
                 <span>Dine-In POS Discount:</span>
-                <span className="font-bold">- {formatINR(totals.discount)}</span>
+                <span className="font-bold tabular-nums">- {formatINR(totals.discount)}</span>
               </div>
             )}
             <div className="flex justify-between text-on-surface-variant text-[11px]">
               <span>Taxes (5% GST):</span>
-              <span>{formatINR(totals.tax)}</span>
+              <span className="tabular-nums">{formatINR(totals.tax)}</span>
             </div>
-            <div className="flex items-center justify-between font-black text-on-surface pt-1 border-t border-outline-variant/20">
-              <span className="text-sm">Payable Amount</span>
-              <span className="text-xl text-primary font-black">{formatINR(totals.total)}</span>
+            <div className="flex items-center justify-between font-black text-on-surface pt-1.5 border-t border-outline-variant/15">
+              <span className="text-sm font-bold">Payable Amount</span>
+              <span className="text-xl text-primary font-black tabular-nums">{formatINR(totals.total)}</span>
             </div>
           </div>
 

@@ -602,27 +602,35 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
           ))}
         </div>
       ) : activeTab === 'Purchase Orders' ? (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {purchaseOrders.length === 0 ? (
-            <p className="p-6 rounded-xl bg-surface-container-low text-sm text-on-surface-variant text-center">
+            <p className="p-8 rounded-2xl bg-surface-container-low border border-outline-variant/15 text-sm text-on-surface-variant text-center">
               No purchase orders yet.
             </p>
           ) : purchaseOrders.map((purchaseOrder) => (
-            <div key={purchaseOrder.id} className="p-3.5 rounded-xl bg-surface-container-low space-y-2">
+            <div key={purchaseOrder.id} className="p-4 sm:p-5 rounded-2xl bg-surface-container-low border border-outline-variant/15 hover:border-outline-variant/30 shadow-md space-y-3 transition-all">
               <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-sm font-bold text-on-surface">{purchaseOrder.id}</p>
-                  <p className="text-xs text-on-surface-variant">{purchaseOrder.supplier}</p>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-surface-container-high flex items-center justify-center shrink-0 border border-outline-variant/10 text-primary">
+                    <span className="material-symbols-outlined text-[18px]">receipt_long</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-on-surface">PO #{purchaseOrder.id}</p>
+                    <p className="text-xs text-on-surface-variant font-medium">{purchaseOrder.supplier}</p>
+                  </div>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-surface-container-high text-xs text-on-surface">
+                <span className="px-2.5 py-0.5 rounded-full bg-surface-container-high border border-outline-variant/15 text-[10px] font-bold uppercase tracking-wider text-primary">
                   {purchaseOrder.status}
                 </span>
               </div>
-              {purchaseOrder.lines.map((line) => (
-                <p key={line.ingredientId} className="text-xs text-on-surface-variant">
-                  {line.ingredientName}: {line.receivedQuantity}/{line.orderedQuantity} {line.unit}
-                </p>
-              ))}
+              <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-2.5 space-y-1 text-xs text-on-surface-variant">
+                {purchaseOrder.lines.map((line) => (
+                  <p key={line.ingredientId} className="flex justify-between font-medium">
+                    <span className="text-on-surface">{line.ingredientName}</span>
+                    <span className="tabular-nums font-bold text-primary">{line.receivedQuantity}/{line.orderedQuantity} {line.unit}</span>
+                  </p>
+                ))}
+              </div>
               {purchaseOrder.status !== 'received' && purchaseOrder.status !== 'cancelled' && (
                 <button
                   type="button"
@@ -637,9 +645,9 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
                       receivedLines: [{ ingredientId: line.ingredientId, quantity }],
                     });
                   }}
-                  className="px-3 py-1.5 rounded-lg bg-primary-container text-on-primary text-xs font-bold"
+                  className="px-4 py-2 rounded-xl bg-primary hover:brightness-110 text-on-primary text-xs font-bold shadow-sm transition-all active:scale-95 cursor-pointer"
                 >
-                  Receive
+                  Receive Stock
                 </button>
               )}
             </div>
@@ -662,59 +670,73 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
                 lines: [{ ingredientId: item.id, quantity, unitCost: item.unitCost }],
               });
             }}
-            className="w-full py-2.5 rounded-xl bg-primary text-on-primary text-sm font-bold"
+            className="w-full py-3 rounded-2xl bg-primary hover:brightness-110 text-on-primary text-sm font-bold shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
           >
-            Create Purchase Order
+            <span className="material-symbols-outlined text-[18px]">add_circle</span>
+            <span>Create Purchase Order</span>
           </button>
         </div>
       ) : activeTab === 'Batches' ? (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {inventoryBatches.length === 0 ? (
-            <p className="p-6 rounded-xl bg-surface-container-low text-sm text-on-surface-variant text-center">No inventory batches recorded.</p>
+            <p className="p-8 rounded-2xl bg-surface-container-low border border-outline-variant/15 text-sm text-on-surface-variant text-center">No inventory batches recorded.</p>
           ) : inventoryBatches.map((batch) => (
-            <div key={batch.id} className="p-3 rounded-xl bg-surface-container-low flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-on-surface">{batch.ingredientName}</p>
-                <p className="text-xs text-on-surface-variant">Batch {batch.batchNumber}{batch.expiryDate ? ` · Expires ${batch.expiryDate}` : ''}</p>
+            <div key={batch.id} className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/15 flex items-center justify-between shadow-md">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-surface-container-high flex items-center justify-center text-primary border border-outline-variant/10">
+                  <span className="material-symbols-outlined text-[18px]">category</span>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-on-surface">{batch.ingredientName}</p>
+                  <p className="text-xs text-on-surface-variant">Batch {batch.batchNumber}{batch.expiryDate ? ` · Expires ${batch.expiryDate}` : ''}</p>
+                </div>
               </div>
               <div className="text-right">
-                <p className="text-sm font-bold text-on-surface">{batch.quantity} {batch.unit}</p>
-                <p className="text-xs text-on-surface-variant">{batch.status}</p>
+                <p className="text-sm font-black text-on-surface tabular-nums">{batch.quantity} {batch.unit}</p>
+                <span className="px-2 py-0.5 rounded-full bg-surface-container-high text-[10px] font-bold uppercase tracking-wider text-primary">{batch.status}</span>
               </div>
             </div>
           ))}
         </div>
       ) : activeTab === 'Waste' ? (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {stockMovements.filter((movement) => movement.type === 'waste').length === 0 ? (
-            <p className="p-6 rounded-xl bg-surface-container-low text-sm text-on-surface-variant text-center">No waste recorded.</p>
+            <p className="p-8 rounded-2xl bg-surface-container-low border border-outline-variant/15 text-sm text-on-surface-variant text-center">No waste recorded.</p>
           ) : stockMovements.filter((movement) => movement.type === 'waste').map((movement) => (
-            <div key={movement.id} className="p-3 rounded-xl bg-surface-container-low flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-on-surface">{movement.ingredientName}</p>
-                <p className="text-xs text-on-surface-variant">{movement.note}</p>
+            <div key={movement.id} className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/15 flex items-center justify-between shadow-md">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-error-container/20 text-error flex items-center justify-center border border-error/20">
+                  <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-on-surface">{movement.ingredientName}</p>
+                  <p className="text-xs text-on-surface-variant">{movement.note}</p>
+                </div>
               </div>
-              <p className="text-sm font-bold text-error">{movement.quantityDelta} {movement.unit}</p>
+              <p className="text-sm font-black text-error tabular-nums">{movement.quantityDelta} {movement.unit}</p>
             </div>
           ))}
         </div>
       ) : activeTab === 'Stock Counts' ? (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {stockCounts.length === 0 ? (
-            <p className="p-6 rounded-xl bg-surface-container-low text-sm text-on-surface-variant text-center">No stock counts recorded.</p>
+            <p className="p-8 rounded-2xl bg-surface-container-low border border-outline-variant/15 text-sm text-on-surface-variant text-center">No stock counts recorded.</p>
           ) : stockCounts.map((count) => (
-            <div key={count.id} className="p-3.5 rounded-xl bg-surface-container-low space-y-2">
+            <div key={count.id} className="p-4 sm:p-5 rounded-2xl bg-surface-container-low border border-outline-variant/15 space-y-3 shadow-md">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-bold text-on-surface">{count.id}</p>
-                <span className="text-xs text-on-surface-variant">{count.status}</span>
+                <p className="text-sm font-bold text-on-surface">Count #{count.id}</p>
+                <span className="px-2 py-0.5 rounded-full bg-surface-container-high text-[10px] font-bold uppercase tracking-wider text-primary">{count.status}</span>
               </div>
-              {count.lines.map((line) => (
-                <p key={line.ingredientId} className="text-xs text-on-surface-variant">
-                  {line.ingredientName}: system {line.systemQuantity}, physical {line.physicalQuantity}, variance {line.variance} {line.unit}
-                </p>
-              ))}
+              <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-2.5 space-y-1 text-xs text-on-surface-variant">
+                {count.lines.map((line) => (
+                  <p key={line.ingredientId} className="flex justify-between font-medium">
+                    <span className="text-on-surface">{line.ingredientName}</span>
+                    <span className="tabular-nums">Sys: {line.systemQuantity} · Phys: {line.physicalQuantity} (Var: {line.variance} {line.unit})</span>
+                  </p>
+                ))}
+              </div>
               {count.status === 'draft' && (
-                <button type="button" onClick={() => void onApproveStockCount(count.id)} className="px-3 py-1.5 rounded-lg bg-primary-container text-on-primary text-xs font-bold">
+                <button type="button" onClick={() => void onApproveStockCount(count.id)} className="px-4 py-2 rounded-xl bg-primary hover:brightness-110 text-on-primary text-xs font-bold transition-all active:scale-95 cursor-pointer">
                   Approve Variance
                 </button>
               )}
@@ -722,27 +744,38 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
           ))}
         </div>
       ) : activeTab === 'Suppliers' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {supplierGroups.map(([supplier, vendorItems]) => (
             <div
               key={supplier}
-              className="p-3.5 rounded-xl bg-surface-container-low flex flex-col justify-between gap-2.5 shadow-sm"
+              className="p-4 sm:p-5 rounded-2xl bg-surface-container-low hover:bg-surface-container border border-outline-variant/15 hover:border-outline-variant/30 flex flex-col justify-between gap-3 shadow-md hover:shadow-lg transition-all"
             >
               <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-on-surface">{supplier}</span>
-                <span className="px-2 py-0.5 rounded-full bg-surface-container-high text-[11px] text-primary font-semibold">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-surface-container-high flex items-center justify-center shrink-0 border border-outline-variant/10 text-primary">
+                    <span className="material-symbols-outlined text-[18px]">local_shipping</span>
+                  </div>
+                  <span className="text-sm font-bold text-on-surface truncate">{supplier}</span>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full bg-surface-container-high border border-outline-variant/15 text-[10px] text-primary font-bold uppercase tracking-wider shrink-0">
                   {vendorItems.length} SKUs
                 </span>
               </div>
-              <p className="text-xs text-on-surface-variant">
-                Supplies: {vendorItems.map((v) => v.name).join(', ')}
-              </p>
+
+              <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-2.5 text-xs text-on-surface-variant">
+                <span className="text-[10px] text-outline font-semibold uppercase tracking-wider block mb-0.5">Supplies</span>
+                <p className="truncate text-on-surface font-medium">
+                  {vendorItems.map((v) => v.name).join(', ')}
+                </p>
+              </div>
+
               <button
                 type="button"
                 onClick={() => onNotify(`Purchase order draft created for ${supplier}`)}
-                className="w-full py-2 rounded-lg bg-surface-container-high hover:bg-surface-bright text-primary text-xs font-semibold cursor-pointer"
+                className="w-full py-2 rounded-xl bg-surface-container-high hover:bg-surface-bright border border-outline-variant/15 text-primary text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
               >
-                Create Vendor PO
+                <span className="material-symbols-outlined text-[15px]">post_add</span>
+                <span>Create Vendor PO</span>
               </button>
             </div>
           ))}

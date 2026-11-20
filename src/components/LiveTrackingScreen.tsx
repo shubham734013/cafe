@@ -13,6 +13,7 @@ import { CafeImage } from './CafeImage';
 interface LiveTrackingScreenProps {
   activeOrder?: CafeOrder;
   allOrders: CafeOrder[];
+  availableBeans: number;
   onSelectOrder: (orderId: string) => void;
   onDownloadInvoicePdf?: (order: CafeOrder) => void;
   onStartPayment?: (orderId: string) => Promise<void>;
@@ -38,6 +39,7 @@ const STEPS: { key: CafeOrder['status']; label: string; icon: string }[] = [
 export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
   activeOrder,
   allOrders,
+  availableBeans,
   onSelectOrder,
   onDownloadInvoicePdf,
   onStartPayment,
@@ -58,6 +60,7 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
   const [feedbackComment, setFeedbackComment] = useState('');
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(Boolean(activeOrder?.rating));
+  const [beansEarned, setBeansEarned] = useState(activeOrder?.loyaltyPointsAwarded ?? 0);
 
   useEffect(() => {
     if (activeOrder?.rating) {
@@ -66,7 +69,8 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
     } else {
       setFeedbackSubmitted(false);
     }
-  }, [activeOrder?.id, activeOrder?.rating]);
+    setBeansEarned(activeOrder?.loyaltyPointsAwarded ?? 0);
+  }, [activeOrder?.id, activeOrder?.rating, activeOrder?.loyaltyPointsAwarded]);
 
   useEffect(() => {
     if (
@@ -476,8 +480,12 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
               <h3 className="text-xs font-extrabold uppercase tracking-wider text-on-surface">
                 How Was Your Food?
               </h3>
-              <p className="text-[11px] text-on-surface-variant mt-0.5">
-                Leave a rating to earn <strong className="text-[#FF6422]">+25 Beans</strong>
+              <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-on-surface-variant">
+                <span>Rate this order to earn</span>
+                <span className="rounded-full bg-[#FF6422]/10 px-2 py-0.5 font-semibold text-[#C84B17]">
+                  +25 Beans
+                </span>
+                <span>· 2 Beans = ₹1 off a future order</span>
               </p>
             </div>
             {feedbackSubmitted && (
@@ -486,6 +494,23 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
               </span>
             )}
           </div>
+
+          {feedbackSubmitted && (
+            <div
+              role="status"
+              className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2.5 text-xs text-on-surface"
+            >
+              <p className="font-bold text-emerald-600">
+                {beansEarned > 0
+                  ? `You earned ${beansEarned} Beans for this review.`
+                  : 'Beans are awarded once per order.'}
+              </p>
+              <p className="mt-1 text-on-surface-variant">
+                Available balance: <strong>{availableBeans} Beans</strong>. Redeem at checkout
+                (up to 50% of your subtotal).
+              </p>
+            </div>
+          )}
 
           {/* Star selector */}
           <div className="flex items-center gap-2 py-1 justify-center">
@@ -560,6 +585,7 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
                   feedbackComment
                 );
                 setFeedbackSubmitted(true);
+                setBeansEarned(result.pointsAwarded || activeOrder.loyaltyPointsAwarded || 0);
                 onNotify(
                   result.pointsAwarded > 0
                     ? `Thank you! ${result.pointsAwarded} Beans added to your account.`
