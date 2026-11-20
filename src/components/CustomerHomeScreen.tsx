@@ -348,79 +348,92 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
           )}
         </div>
 
-        {/* Dish Cards List */}
-        <div className="space-y-3">
+        {/* Dish Cards Grid (matches exact reference design) */}
+        <div>
           {popularDishes.length === 0 ? (
-            <div className="p-8 text-center bg-surface-container rounded-2xl text-on-surface-variant text-xs">
+            <div className="p-8 text-center bg-white rounded-2xl border border-[#EDE4D9] text-[#7B7166] text-xs">
               No items match "{searchQuery.trim()}".
             </div>
           ) : (
-            visibleDishes.map((dish) => {
-              const isFav = favorites.has(dish.id);
-              return (
-                <div
-                  key={dish.id}
-                  onClick={() => setDetailItem(dish)}
-                  className="group flex items-center justify-between gap-3 p-3 rounded-2xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 shadow-sm transition-all cursor-pointer hover:shadow-md"
-                >
-                  {/* Left Dish Photo */}
-                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden shrink-0 shadow-md ring-2 ring-outline-variant/10">
-                    <CafeImage
-                      src={dish.imageUrl}
-                      alt={dish.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      fallbackIcon="restaurant"
-                    />
-                  </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {visibleDishes.map((dish) => {
+                const isFav = favorites.has(dish.id);
+                return (
+                  <div
+                    key={dish.id}
+                    className="bg-white rounded-2xl overflow-hidden border border-[#EDE4D9] shadow-xs hover:shadow-md transition-all duration-200 flex flex-col group"
+                  >
+                    {/* Left Dish Photo */}
+                    <div
+                      onClick={() => setDetailItem(dish)}
+                      className="relative w-full h-44 sm:h-48 overflow-hidden bg-[#F2EDE7] cursor-pointer"
+                    >
+                      <CafeImage
+                        src={dish.imageUrl}
+                        alt={dish.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        fallbackIcon="restaurant"
+                      />
 
-                  {/* Middle Info */}
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-xs sm:text-sm font-bold text-on-surface truncate group-hover:text-[#FF6422] transition-colors">
-                      {dish.name}
-                    </h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs sm:text-sm font-black text-on-surface">
-                        ₹{dish.price}
-                      </span>
+                      {/* Floating Heart Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFavorite(dish.id);
+                        }}
+                        aria-label="Favorite"
+                        className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/95 shadow-md flex items-center justify-center text-[#3B332B] hover:text-red-500 hover:scale-110 transition-all cursor-pointer"
+                      >
+                        <span
+                          className={`material-symbols-outlined text-[18px] transition-colors ${
+                            isFav ? 'text-red-500 fill-current' : 'text-[#3B332B]'
+                          }`}
+                          style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
+                        >
+                          favorite
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Middle Info */}
+                    <div className="p-4 flex flex-col flex-1 justify-between">
+                      <div
+                        onClick={() => setDetailItem(dish)}
+                        className="cursor-pointer space-y-0.5"
+                      >
+                        <h3 className="font-serif font-bold text-base sm:text-lg text-[#201914] tracking-tight group-hover:text-[#244130] transition-colors">
+                          {dish.name}
+                        </h3>
+                        <p className="text-xs text-[#7B7166] line-clamp-1 leading-relaxed">
+                          {dish.description}
+                        </p>
+                      </div>
+
+                      {/* Bottom Row */}
+                      <div className="mt-4 flex items-center justify-between pt-1">
+                        <span className="font-serif font-bold text-lg sm:text-xl text-[#221A15]">
+                          ₹{dish.price}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onAddToCart(dish);
+                            onNotify(`Added ${dish.name} to cart`);
+                          }}
+                          className="px-4 py-1.5 rounded-xl bg-[#D5E2D0] hover:bg-[#244130] text-[#1B3625] hover:text-white font-semibold text-xs sm:text-sm flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">add</span>
+                          <span>Add</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
-
-                  {/* Right Actions: Favorite & Quick Add */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleFavorite(dish.id);
-                      }}
-                      aria-label="Favorite"
-                      className="w-8 h-8 rounded-full bg-surface hover:bg-surface-variant flex items-center justify-center transition-colors cursor-pointer"
-                    >
-                      <span
-                        className={`material-symbols-outlined text-[18px] transition-colors ${
-                          isFav ? 'text-red-500 icon-filled' : 'text-on-surface-variant'
-                        }`}
-                      >
-                        favorite
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAddToCart(dish);
-                        onNotify(`Added ${dish.name} to cart`);
-                      }}
-                      aria-label="Add to cart"
-                      className="w-8 h-8 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white flex items-center justify-center shadow-md active:scale-95 transition-all cursor-pointer font-bold"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">add</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </div>
           )}
         </div>
       </div>
