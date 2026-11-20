@@ -71,7 +71,7 @@ export const QrPreviewModal: React.FC<QrPreviewModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-surface-container border border-outline-variant/30 text-on-surface sm:max-w-sm rounded-2xl p-5">
+      <DialogContent className="bg-surface-container dark:bg-slate-900/85 dark:backdrop-blur-2xl dark:border-white/10 dark:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)] border border-outline-variant/30 text-on-surface sm:max-w-sm rounded-2xl p-5">
         <DialogHeader>
           <DialogTitle className="text-lg font-bold text-primary flex items-center gap-2">
             <span className="material-symbols-outlined text-[20px]">qr_code_2</span>

@@ -395,7 +395,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
           {/* Executive KPI Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
             {/* 1. Total Revenue */}
-            <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm flex flex-col justify-between space-y-3">
+            <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm liquid-glass-card flex flex-col justify-between space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-slate-400">Total Revenue</span>
                 <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
@@ -414,7 +414,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
             </div>
 
             {/* 2. Total Orders */}
-            <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm flex flex-col justify-between space-y-3">
+            <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm liquid-glass-card flex flex-col justify-between space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-slate-400">Total Orders</span>
                 <div className="w-8 h-8 rounded-lg bg-[#FF6422]/10 border border-[#FF6422]/20 flex items-center justify-center text-[#FF6422]">
@@ -433,7 +433,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
             </div>
 
             {/* 3. Average Order Value */}
-            <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm flex flex-col justify-between space-y-3">
+            <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm liquid-glass-card flex flex-col justify-between space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-slate-400">Avg. Order Value</span>
                 <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
@@ -451,7 +451,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
             </div>
 
             {/* 4. Total Customers */}
-            <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm flex flex-col justify-between space-y-3">
+            <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm liquid-glass-card flex flex-col justify-between space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-slate-400">Customers Served</span>
                 <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
@@ -473,7 +473,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
           {/* Charts & Analytics Row */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             {/* Revenue Trend Area Chart */}
-            <div className="lg:col-span-8 p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm space-y-3">
+            <div className="lg:col-span-8 p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm liquid-glass-card space-y-3">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-sm font-semibold text-slate-100">Revenue Performance</h2>
@@ -529,7 +529,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
             </div>
 
             {/* Top Selling Dishes */}
-            <div className="lg:col-span-4 p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm flex flex-col justify-between space-y-4">
+            <div className="lg:col-span-4 p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm liquid-glass-card flex flex-col justify-between space-y-4">
               <div>
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                   <div className="flex items-center gap-2">
@@ -625,7 +625,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
           {/* Bottom Grid: Live Orders Stream & Low Stock Warning */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             {/* Live Operational Activity Stream (Defaults to 'orders' - No 'All Events') */}
-            <div className="lg:col-span-8 p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm space-y-3">
+            <div className="lg:col-span-8 p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm liquid-glass-card space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800">
                 <div className="flex items-center gap-2">
                   <Receipt className="w-4 h-4 text-slate-400" />
@@ -760,7 +760,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
             </div>
 
             {/* Low Stock Warning Card */}
-            <div className="lg:col-span-4 p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm flex flex-col justify-between space-y-3">
+            <div className="lg:col-span-4 p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm liquid-glass-card flex flex-col justify-between space-y-3">
               <div>
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                   <div className="flex items-center gap-2">
@@ -854,7 +854,7 @@ export const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({
             {filteredMenuItems.map((item) => (
               <div
                 key={item.id}
-                className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm flex flex-col justify-between space-y-3"
+                className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm liquid-glass-card flex flex-col justify-between space-y-3"
               >
                 <div className="flex items-start gap-3">
                   <img

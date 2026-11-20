@@ -42,9 +42,9 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg bg-surface-container-low border border-outline-variant/30 text-on-surface p-0 overflow-hidden sm:rounded-2xl">
+      <DialogContent className="max-w-lg bg-surface-container-low dark:bg-slate-900/85 dark:backdrop-blur-2xl dark:border-white/10 dark:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)] border border-outline-variant/30 text-on-surface p-0 overflow-hidden sm:rounded-2xl">
         {/* Modal Controls Header (Screen only) */}
-        <div className="print:hidden p-4 border-b border-outline-variant/20 flex flex-col gap-3 bg-surface-container">
+        <div className="print:hidden p-4 border-b border-outline-variant/20 flex flex-col gap-3 bg-surface-container/80 dark:bg-slate-900/60 dark:backdrop-blur-md">
           <div className="flex items-center justify-between">
             <div>
               <DialogTitle className="text-base font-bold text-on-surface flex items-center gap-2">

@@ -145,7 +145,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
       </div>
 
       {/* Service Mode Selector Switch (Dine-In / Takeaway) */}
-      <div className="flex items-center justify-between p-1.5 rounded-2xl bg-surface-container border border-outline-variant/15">
+      <div className="flex items-center justify-between p-1.5 rounded-2xl bg-surface-container border border-outline-variant/15 liquid-glass-card">
         <button
           type="button"
           onClick={() => onServiceModeChange?.('dine-in')}
@@ -190,7 +190,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
         {cart.map((item) => (
           <div
             key={item.menuItemId}
-            className="group flex items-center justify-between gap-3.5 p-3.5 rounded-3xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 shadow-sm transition-all"
+            className="group flex items-center justify-between gap-3.5 p-3.5 rounded-3xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 shadow-sm transition-all liquid-glass-card"
           >
             {/* Circular Dish Image */}
             <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden shrink-0 shadow-md ring-2 ring-outline-variant/10">
@@ -262,7 +262,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
       </div>
 
       {/* Special Cooking Instructions Input */}
-      <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-surface-container border border-outline-variant/15 shadow-sm">
+      <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-surface-container border border-outline-variant/15 shadow-sm liquid-glass-card">
         <span className="material-symbols-outlined text-[20px] text-[#FF6422] shrink-0">
           edit_note
         </span>
@@ -276,7 +276,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
       </div>
 
       {/* Promo Code Card */}
-      <div className="p-4 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-2.5">
+      <div className="p-4 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-2.5 liquid-glass-card">
         <div className="flex items-center justify-between">
           <label
             htmlFor="cart-coupon"
@@ -357,7 +357,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
 
       {/* Loyalty Points Redemption (if available) */}
       {availablePoints > 0 && (
-        <div className="flex items-center justify-between p-3.5 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm">
+        <div className="flex items-center justify-between p-3.5 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm liquid-glass-card">
           <div className="flex items-center gap-2.5">
             <span className="material-symbols-outlined text-amber-400 text-[22px]">stars</span>
             <div>
@@ -385,7 +385,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
       )}
 
       {/* Bill Summary Card */}
-      <div className="p-4 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-2.5">
+      <div className="p-4 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-2.5 liquid-glass-card">
         <div className="flex items-center justify-between pb-2 border-b border-outline-variant/15">
           <span className="text-xs font-extrabold text-on-surface tracking-tight uppercase">
             Bill Summary
@@ -458,7 +458,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
 
       {/* Customer Account & Authentication Card */}
       {customerSession ? (
-        <div className="p-4 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm flex items-center justify-between">
+        <div className="p-4 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm flex items-center justify-between liquid-glass-card">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-[#FF6422]/15 text-[#FF6422] font-black text-sm flex items-center justify-center shrink-0 border border-[#FF6422]/20">
               {customerSession.name.charAt(0).toUpperCase()}
@@ -517,7 +517,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
       )}
 
       {/* Payment Options Card */}
-      <div className="p-4 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-2.5">
+      <div className="p-4 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-2.5 liquid-glass-card">
         <span className="text-xs font-extrabold text-on-surface tracking-tight uppercase block">
           Payment Method
         </span>
