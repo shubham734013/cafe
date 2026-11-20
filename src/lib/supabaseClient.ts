@@ -34,6 +34,7 @@ export interface CustomerAuthSession {
   phone: string;
   provider: 'email' | 'google';
   confirmed: boolean;
+  phoneVerified?: boolean;
   avatarUrl?: string;
   createdAt: string;
 }
@@ -99,12 +100,82 @@ function extractCustomerSessionFromUser(user: SupabaseUser, defaultProvider: 'em
     id: user.id,
     name,
     email: user.email || '',
-    phone,
+    phone: user.phone || phone,
     provider,
     confirmed: Boolean(user.email_confirmed_at || user.confirmed_at),
+    phoneVerified: Boolean(user.phone_confirmed_at),
     avatarUrl,
     createdAt: user.created_at || new Date().toISOString(),
   };
+}
+
+function formatPhoneForSupabase(phone: string): string {
+  const trimmed = phone.trim();
+  if (trimmed.startsWith('+')) return trimmed;
+  const digits = trimmed.replace(/\D/g, '');
+  if (/^\d{10}$/.test(digits)) return `+91${digits}`;
+  if (/^91\d{10}$/.test(digits)) return `+${digits}`;
+  throw new Error('Enter a valid phone number with country code.');
+}
+
+export async function requestCustomerPhoneOtp(phone: string): Promise<void> {
+  if (!isLiveSupabase) {
+    throw new Error('Supabase Auth is not configured for phone verification.');
+  }
+  const { error } = await supabase.auth.updateUser({ phone: formatPhoneForSupabase(phone) });
+  if (error) throw new Error(error.message);
+}
+
+export async function verifyCustomerPhoneOtp(
+  phone: string,
+  token: string
+): Promise<CustomerAuthSession> {
+  if (!isLiveSupabase) {
+    throw new Error('Supabase Auth is not configured for phone verification.');
+  }
+  const { data, error } = await supabase.auth.verifyOtp({
+    phone: formatPhoneForSupabase(phone),
+    token: token.trim(),
+    type: 'phone_change',
+  });
+  if (error) throw new Error(error.message);
+  if (!data.user) throw new Error('Phone verification did not return a customer account.');
+  const session = extractCustomerSessionFromUser(data.user);
+  saveLocalCustomerSession(session);
+  return session;
+}
+
+export async function syncCustomerIdentityWithCafe(): Promise<{
+  verified: boolean;
+  matched: boolean;
+} | null> {
+  if (!isLiveSupabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw new Error(error.message);
+  const request = data.session
+    ? fetch('/api/customer/identity', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
+      })
+    : fetch('/api/customer/identity', { method: 'DELETE' });
+  const response = await request;
+  const result = (await response.json().catch(() => ({}))) as {
+    error?: string;
+    verified?: boolean;
+    matched?: boolean;
+  };
+  if (!response.ok) {
+    throw new Error(result.error || `Customer identity sync failed (${response.status}).`);
+  }
+  return { verified: Boolean(result.verified), matched: Boolean(result.matched) };
+}
+
+export async function clearCustomerIdentityFromCafe(): Promise<void> {
+  if (!isLiveSupabase) return;
+  const response = await fetch('/api/customer/identity', { method: 'DELETE' });
+  if (!response.ok) {
+    throw new Error(`Could not clear customer offer identity (${response.status}).`);
+  }
 }
 
 /**
@@ -312,5 +383,9 @@ export async function logoutCustomer(): Promise<void> {
       console.warn('Supabase signOut error:', err);
     }
   }
-  clearLocalCustomerSession();
+  try {
+    await clearCustomerIdentityFromCafe();
+  } finally {
+    clearLocalCustomerSession();
+  }
 }

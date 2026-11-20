@@ -354,6 +354,7 @@ export interface PromoCampaign {
   revenueLabel?: string;
   icon: string;
   tone: 'primary' | 'secondary' | 'tertiary';
+  targetSegment?: CustomerSegment;
 }
 
 export interface StaffMember {

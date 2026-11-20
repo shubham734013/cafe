@@ -104,6 +104,7 @@ export interface StaffSessionPayload {
 
 export interface CustomerSessionPayload {
   customerId?: string;
+  crmCustomerId?: string;
   orderIds: string[];
   issuedAt: number;
   exp: number;
@@ -260,11 +261,34 @@ export function issueOrUpdateCustomerSessionCookie(
     : [orderId];
   const nextPayload: CustomerSessionPayload = {
     customerId: customerId || existing?.customerId,
+    crmCustomerId: existing?.crmCustomerId,
     orderIds: nextOrderIds,
     issuedAt: existing?.issuedAt ?? Date.now(),
     exp: Date.now() + 24 * 60 * 60 * 1000,
   };
   const token = signToken(nextPayload);
+  res.cookie(CUSTOMER_SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 24 * 60 * 60 * 1000,
+  });
+}
+
+export function updateCustomerCrmIdentityCookie(
+  req: Request,
+  res: Response,
+  crmCustomerId?: string
+): void {
+  const existing = getCustomerSession(req);
+  const token = signToken({
+    customerId: existing?.customerId,
+    crmCustomerId,
+    orderIds: existing?.orderIds ?? [],
+    issuedAt: existing?.issuedAt ?? Date.now(),
+    exp: Date.now() + 24 * 60 * 60 * 1000,
+  } satisfies CustomerSessionPayload);
   res.cookie(CUSTOMER_SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',

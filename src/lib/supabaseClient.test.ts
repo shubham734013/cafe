@@ -62,6 +62,7 @@ test('local customer session management saves and clears valid session data', ()
     phone: '+91 98765 43210',
     provider: 'email',
     confirmed: true,
+    phoneVerified: true,
     createdAt: new Date().toISOString(),
   };
 

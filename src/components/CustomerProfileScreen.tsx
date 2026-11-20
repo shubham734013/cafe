@@ -1,12 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { CAFE_ASSETS } from '../data/cafeSeedData';
 import { CafeImage } from './CafeImage';
-import { getLocalCustomerSession, logoutCustomer } from '../lib/supabaseClient';
+import {
+  getLocalCustomerSession,
+  isLiveSupabase,
+  logoutCustomer,
+  requestCustomerPhoneOtp,
+  syncCustomerIdentityWithCafe,
+  verifyCustomerPhoneOtp,
+} from '../lib/supabaseClient';
 
 interface CustomerProfileScreenProps {
   onNotify: (message: string) => void;
   onBrowseMenu: () => void;
   onNavigateLogin?: () => void;
+  onIdentityUpdated?: () => void;
 }
 
 interface CustomerProfile {
@@ -47,12 +55,18 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
   onNotify,
   onBrowseMenu,
   onNavigateLogin,
+  onIdentityUpdated,
 }) => {
   const [profile, setProfile] = useState<CustomerProfile>(loadProfile);
   const [savedProfile, setSavedProfile] = useState<CustomerProfile>(loadProfile);
   const [authSession, setAuthSession] = useState(getLocalCustomerSession);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; phone?: string }>({});
+  const [phoneOtp, setPhoneOtp] = useState('');
+  const [phoneOtpSent, setPhoneOtpSent] = useState(false);
+  const [phoneVerificationBusy, setPhoneVerificationBusy] = useState(false);
+  const [phoneVerificationMessage, setPhoneVerificationMessage] = useState('');
+  const [phoneVerificationError, setPhoneVerificationError] = useState('');
 
   useEffect(() => {
     setSavedProfile(loadProfile());
@@ -93,6 +107,46 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
   };
 
   const hasChanges = JSON.stringify(profile) !== JSON.stringify(savedProfile);
+
+  const handleSendPhoneOtp = async () => {
+    setPhoneVerificationBusy(true);
+    setPhoneVerificationError('');
+    setPhoneVerificationMessage('');
+    try {
+      await requestCustomerPhoneOtp(profile.phone.trim());
+      setPhoneOtpSent(true);
+      setPhoneVerificationMessage('Verification code sent by SMS.');
+    } catch (error) {
+      setPhoneVerificationError(
+        error instanceof Error ? error.message : 'Could not send phone verification code.'
+      );
+    } finally {
+      setPhoneVerificationBusy(false);
+    }
+  };
+
+  const handleVerifyPhoneOtp = async () => {
+    setPhoneVerificationBusy(true);
+    setPhoneVerificationError('');
+    setPhoneVerificationMessage('');
+    try {
+      const verifiedSession = await verifyCustomerPhoneOtp(profile.phone.trim(), phoneOtp);
+      setAuthSession(verifiedSession);
+      const identity = await syncCustomerIdentityWithCafe();
+      onIdentityUpdated?.();
+      setPhoneVerificationMessage(
+        identity?.matched
+          ? 'Phone verified. Personalized offers for your customer group are now available.'
+          : 'Phone verified. No matching CRM profile was found for this number yet.'
+      );
+    } catch (error) {
+      setPhoneVerificationError(
+        error instanceof Error ? error.message : 'Could not verify this phone number.'
+      );
+    } finally {
+      setPhoneVerificationBusy(false);
+    }
+  };
 
   return (
     <div className="flex flex-col w-full pb-8 gap-4">
@@ -210,6 +264,82 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
               />
               {errors.phone && <span className="text-[11px] text-error">{errors.phone}</span>}
             </label>
+
+            <div className="sm:col-span-2 rounded-xl border border-outline-variant/20 bg-surface-container p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-semibold text-on-surface">Personalized offers</p>
+                  <p className="mt-0.5 text-[11px] text-on-surface-variant">
+                    Verify your phone to match your cafe customer group.
+                  </p>
+                </div>
+                {authSession?.phoneVerified && (
+                  <span className="shrink-0 rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-700">
+                    Phone verified
+                  </span>
+                )}
+              </div>
+              {!authSession?.phoneVerified && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {phoneOtpSent && (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={8}
+                      value={phoneOtp}
+                      onChange={(event) => setPhoneOtp(event.target.value)}
+                      placeholder="SMS code"
+                      aria-label="Phone verification code"
+                      className="h-9 w-32 rounded-lg border border-outline-variant/30 bg-surface-container-lowest px-3 text-sm text-on-surface"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    disabled={
+                      phoneVerificationBusy ||
+                      !authSession ||
+                      !isLiveSupabase ||
+                      !profile.phone.trim()
+                    }
+                    onClick={() =>
+                      phoneOtpSent ? void handleVerifyPhoneOtp() : void handleSendPhoneOtp()
+                    }
+                    className="h-9 rounded-lg bg-surface-container-high px-3 text-xs font-semibold text-on-surface disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {phoneVerificationBusy
+                      ? 'Please wait...'
+                      : phoneOtpSent
+                        ? 'Verify phone'
+                        : 'Send SMS code'}
+                  </button>
+                </div>
+              )}
+              {phoneVerificationMessage && (
+                <p role="status" className="text-[11px] text-emerald-700">
+                  {phoneVerificationMessage}
+                </p>
+              )}
+              {phoneVerificationError && (
+                <p role="alert" className="text-[11px] text-error">
+                  {phoneVerificationError}
+                </p>
+              )}
+              {!authSession && (
+                <button
+                  type="button"
+                  onClick={onNavigateLogin}
+                  className="text-[11px] font-semibold text-primary"
+                >
+                  Sign in to verify your phone
+                </button>
+              )}
+              {authSession && !isLiveSupabase && (
+                <p className="text-[11px] text-on-surface-variant">
+                  Supabase phone OTP is not configured in this environment.
+                </p>
+              )}
+            </div>
 
             <label className="flex flex-col gap-1 text-xs font-semibold text-on-surface-variant">
               Date of Birth

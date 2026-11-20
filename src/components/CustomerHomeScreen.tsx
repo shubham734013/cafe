@@ -360,7 +360,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
         {/* Dish Cards (Responsive: Mobile Ergonomic Horizontal vs Desktop 3-Col Grid) */}
         <div>
           {popularDishes.length === 0 ? (
-            <div className="p-8 text-center bg-white rounded-2xl border border-[#EDE4D9] text-[#7B7166] text-xs">
+            <div className="p-8 text-center bg-surface-container-low rounded-2xl border border-outline-variant/15 text-on-surface-variant text-xs">
               No items match "{searchQuery.trim()}".
             </div>
           ) : (
@@ -372,7 +372,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                   return (
                     <div
                       key={`mobile-home-${dish.id}`}
-                      className="bg-white rounded-2xl p-3.5 border border-[#EDE4D9] shadow-xs hover:shadow-sm transition-all flex items-start justify-between gap-3 relative"
+                      className="bg-surface-container-low rounded-2xl p-3.5 border border-outline-variant/15 shadow-sm hover:shadow-md transition-all flex items-start justify-between gap-3 relative"
                     >
                       {/* Left: Info */}
                       <div
@@ -380,25 +380,25 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                         className="flex-1 min-w-0 pr-1 cursor-pointer"
                       >
                         <div className="flex items-center gap-1.5 mb-1">
-                          <span className="w-3.5 h-3.5 border border-emerald-600 p-0.5 rounded flex items-center justify-center shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 block" />
+                          <span className="w-3.5 h-3.5 border border-emerald-500 p-0.5 rounded flex items-center justify-center shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 block" />
                           </span>
                           {dish.isBestSeller && (
-                            <span className="text-[10px] font-bold text-amber-700 bg-amber-500/10 px-1.5 py-0.2 rounded">
+                            <span className="text-[10px] font-bold text-amber-400 bg-amber-500/15 px-1.5 py-0.2 rounded">
                               Bestseller
                             </span>
                           )}
                         </div>
 
-                        <h3 className="font-sans font-bold text-base text-[#201914] tracking-tight leading-snug">
+                        <h3 className="font-sans font-bold text-base text-on-surface tracking-tight leading-snug">
                           {dish.name}
                         </h3>
 
-                        <div className="font-sans font-bold text-base text-[#221A15] mt-1">
+                        <div className="font-sans font-bold text-base text-primary mt-1">
                           ₹{dish.price}
                         </div>
 
-                        <p className="text-xs text-[#7B7166] line-clamp-2 mt-1 leading-relaxed">
+                        <p className="text-xs text-on-surface-variant line-clamp-2 mt-1 leading-relaxed">
                           {dish.description}
                         </p>
                       </div>
@@ -407,7 +407,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                       <div className="relative shrink-0 flex flex-col items-center pb-2.5">
                         <div
                           onClick={() => setDetailItem(dish)}
-                          className="w-28 h-24 rounded-2xl overflow-hidden bg-[#F2EDE7] border border-[#EDE4D9] cursor-pointer"
+                          className="w-28 h-24 rounded-2xl overflow-hidden bg-surface-container border border-outline-variant/15 cursor-pointer"
                         >
                           <CafeImage
                             src={dish.imageUrl}
@@ -425,11 +425,11 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                             toggleFavorite(dish.id);
                           }}
                           aria-label="Favorite"
-                          className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/95 shadow-sm flex items-center justify-center text-[#3B332B] hover:text-red-500 transition-all cursor-pointer"
+                          className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-surface-container-high/90 shadow-sm flex items-center justify-center text-on-surface hover:text-red-500 transition-all cursor-pointer"
                         >
                           <span
                             className={`material-symbols-outlined text-[16px] ${
-                              isFav ? 'text-red-500 fill-current' : 'text-[#3B332B]'
+                              isFav ? 'text-red-500 fill-current' : 'text-on-surface'
                             }`}
                             style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
                           >
@@ -445,7 +445,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                             onAddToCart(dish);
                             onNotify(`Added ${dish.name} to cart`);
                           }}
-                          className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-3.5 py-1 rounded-xl bg-[#D5E2D0] hover:bg-[#244130] text-[#1B3625] hover:text-white font-bold text-xs flex items-center gap-1 shadow-sm border border-white/70 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+                          className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-3.5 py-1 rounded-xl bg-primary hover:brightness-110 text-on-primary font-bold text-xs flex items-center gap-1 shadow-sm transition-all active:scale-95 cursor-pointer whitespace-nowrap"
                         >
                           <span className="material-symbols-outlined text-[14px]">add</span>
                           <span>Add</span>
@@ -463,12 +463,12 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                   return (
                     <div
                       key={`desktop-home-${dish.id}`}
-                      className="bg-white rounded-2xl overflow-hidden border border-[#EDE4D9] shadow-xs hover:shadow-md transition-all duration-200 flex flex-col group"
+                      className="bg-surface-container-low rounded-2xl overflow-hidden border border-outline-variant/15 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col group"
                     >
                       {/* Left Dish Photo */}
                       <div
                         onClick={() => setDetailItem(dish)}
-                        className="relative w-full h-44 sm:h-48 overflow-hidden bg-[#F2EDE7] cursor-pointer"
+                        className="relative w-full h-44 sm:h-48 overflow-hidden bg-surface-container cursor-pointer"
                       >
                         <CafeImage
                           src={dish.imageUrl}
@@ -485,11 +485,11 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                             toggleFavorite(dish.id);
                           }}
                           aria-label="Favorite"
-                          className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/95 shadow-md flex items-center justify-center text-[#3B332B] hover:text-red-500 hover:scale-110 transition-all cursor-pointer"
+                          className="absolute top-3 right-3 w-8 h-8 rounded-full bg-surface-container-high/90 shadow-md flex items-center justify-center text-on-surface hover:text-red-500 hover:scale-110 transition-all cursor-pointer"
                         >
                           <span
                             className={`material-symbols-outlined text-[18px] transition-colors ${
-                              isFav ? 'text-red-500 fill-current' : 'text-[#3B332B]'
+                              isFav ? 'text-red-500 fill-current' : 'text-on-surface'
                             }`}
                             style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
                           >
@@ -504,17 +504,17 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                           onClick={() => setDetailItem(dish)}
                           className="cursor-pointer space-y-0.5"
                         >
-                          <h3 className="font-sans font-bold text-base sm:text-lg text-[#201914] tracking-tight group-hover:text-[#244130] transition-colors">
+                          <h3 className="font-sans font-bold text-base sm:text-lg text-on-surface tracking-tight group-hover:text-primary transition-colors">
                             {dish.name}
                           </h3>
-                          <p className="text-xs text-[#7B7166] line-clamp-1 leading-relaxed">
+                          <p className="text-xs text-on-surface-variant line-clamp-1 leading-relaxed">
                             {dish.description}
                           </p>
                         </div>
 
                         {/* Bottom Row */}
                         <div className="mt-4 flex items-center justify-between pt-1">
-                          <span className="font-sans font-bold text-lg sm:text-xl text-[#221A15]">
+                          <span className="font-sans font-bold text-lg sm:text-xl text-primary">
                             ₹{dish.price}
                           </span>
 
@@ -525,7 +525,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                               onAddToCart(dish);
                               onNotify(`Added ${dish.name} to cart`);
                             }}
-                            className="px-4 py-1.5 rounded-xl bg-[#D5E2D0] hover:bg-[#244130] text-[#1B3625] hover:text-white font-semibold text-xs sm:text-sm flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs"
+                            className="px-4 py-1.5 rounded-xl bg-primary hover:brightness-110 text-on-primary font-semibold text-xs sm:text-sm flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs"
                           >
                             <span className="material-symbols-outlined text-[16px]">add</span>
                             <span>Add</span>

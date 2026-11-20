@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
+import { createClient } from '@supabase/supabase-js';
 import { Server as SocketIOServer } from 'socket.io';
 import swaggerUi from 'swagger-ui-express';
 import { z } from 'zod';
@@ -46,6 +47,7 @@ import {
   hasStaffRole,
   issueOrUpdateCustomerSessionCookie,
   setStaffSessionCookie,
+  updateCustomerCrmIdentityCookie,
 } from './auth';
 import { createRateLimiter, createTableRateLimiter } from './rateLimit';
 import { InvalidDomainTransitionError } from '../state/cafeStateMachines';
@@ -919,6 +921,50 @@ export function createCafeServer(
       authenticated: Boolean(session),
       session,
     });
+
+    app.post('/api/customer/identity', async (req, res, next) => {
+      try {
+        const accessToken = req.header('authorization')?.replace(/^Bearer\s+/i, '');
+        if (!accessToken) {
+          res.status(401).json({ error: 'Supabase customer authentication is required.' });
+          return;
+        }
+
+        const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+        const supabaseAnonKey =
+          process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+        if (!supabaseUrl || !supabaseAnonKey) {
+          res.status(503).json({ error: 'Supabase identity verification is not configured.' });
+          return;
+        }
+
+        const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+          auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        });
+        const { data, error } = await supabase.auth.getUser(accessToken);
+        if (error || !data.user) {
+          res.status(401).json({ error: 'Customer session could not be verified.' });
+          return;
+        }
+
+        if (!data.user.phone || !data.user.phone_confirmed_at) {
+          updateCustomerCrmIdentityCookie(req, res);
+          res.json({ verified: false, matched: false });
+          return;
+        }
+
+        const crmCustomerId = store.findCustomerIdByPhone(data.user.phone);
+        updateCustomerCrmIdentityCookie(req, res, crmCustomerId || undefined);
+        res.json({ verified: true, matched: Boolean(crmCustomerId) });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    app.delete('/api/customer/identity', (req, res) => {
+      updateCustomerCrmIdentityCookie(req, res);
+      res.status(204).end();
+    });
   });
 
   app.post('/api/auth/pin', pinLoginLimiter, (req, res, next) => {
@@ -1006,7 +1052,13 @@ export function createCafeServer(
         ? input.customerId
         : customerSession?.customerId || `guest_${crypto.randomUUID()}`;
       const orderInput = staffSession ? input : { ...input, customerId };
-      const result = await store.createOrder(orderInput);
+      const crmCustomerId = staffSession
+        ? input.customerId
+        : customerSession?.crmCustomerId;
+      const result = await store.createOrder(
+        orderInput,
+        store.getCustomerSegment(crmCustomerId)
+      );
       if (!staffSession && result.duplicate && result.order.customerId !== customerId) {
         res.status(403).json({ error: 'This idempotency key belongs to another customer order' });
         return;

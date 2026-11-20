@@ -12,6 +12,7 @@ import type {
   CafeOrder,
   CafeSettings,
   CafeTable,
+  CustomerSegment,
   CustomerProfile,
   CustomerReview,
   InventoryIngredient,
@@ -155,6 +156,13 @@ function deriveMaxOrderSeq(orders: CafeOrder[]): number {
     }
   }
   return maxSeq;
+}
+
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
 }
 
 function stripLegacyGatewayFields(order: CafeOrder): CafeOrder {
@@ -971,6 +979,9 @@ export class CafeStore {
     const allowedOrderIds = new Set(customerSession?.orderIds ?? []);
     const scopedOrders = publicState.orders.filter((o) => allowedOrderIds.has(o.id));
     const publicMenuItems = publicState.menuItems.map((item) => ({ ...item, unitsSold: 0 }));
+    const customerSegment = publicState.customers.find(
+      (customer) => customer.id === customerSession?.crmCustomerId
+    )?.segment;
     const sanitizedTables = publicState.tables.map((t) => ({
       ...t,
       activeOrderId: undefined,
@@ -987,7 +998,13 @@ export class CafeStore {
       customers: [],
       loyaltyRules: [],
       campaigns: publicState.campaigns
-        .filter((campaign) => campaign.status === 'active')
+        .filter(
+          (campaign) =>
+            campaign.status === 'active' &&
+            (!campaign.targetSegment ||
+              campaign.targetSegment === 'all' ||
+              campaign.targetSegment === customerSegment)
+        )
         .map((campaign) => ({ ...campaign, usedLabel: '', revenueLabel: undefined })),
       staffRoster: [],
       pointLedger: publicState.pointLedger.filter(
@@ -1350,7 +1367,10 @@ export class CafeStore {
     this.touch();
   }
 
-  public async createOrder(input: z.infer<typeof createOrderSchema>): Promise<{
+  public async createOrder(
+    input: z.infer<typeof createOrderSchema>,
+    customerSegment?: CustomerSegment
+  ): Promise<{
     order: CafeOrder;
     duplicate: boolean;
     rewardPoints: number;
@@ -1460,6 +1480,24 @@ export class CafeStore {
         toState: 'applied',
         action: 'apply_coupon',
         message: totals.couponError,
+        httpStatus: 400,
+      });
+    }
+
+    const selectedCampaign = this.state.campaigns.find(
+      (campaign) => campaign.code.toUpperCase() === input.couponCode?.trim().toUpperCase()
+    );
+    if (
+      selectedCampaign?.targetSegment &&
+      selectedCampaign.targetSegment !== 'all' &&
+      selectedCampaign.targetSegment !== customerSegment
+    ) {
+      throw new InvalidDomainTransitionError({
+        domain: 'campaign',
+        fromState: 'not_eligible',
+        toState: 'applied',
+        action: 'apply_coupon',
+        message: 'This offer is not available for your customer account.',
         httpStatus: 400,
       });
     }
@@ -2396,6 +2434,21 @@ export class CafeStore {
     return clone(created);
   }
 
+  public findCustomerIdByPhone(phone: string): string | null {
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) return null;
+    return (
+      this.state.customers.find(
+        (customer) => normalizePhone(customer.phone) === normalizedPhone
+      )?.id ?? null
+    );
+  }
+
+  public getCustomerSegment(customerId?: string): CustomerSegment | undefined {
+    if (!customerId) return undefined;
+    return this.state.customers.find((customer) => customer.id === customerId)?.segment;
+  }
+
   public exportCustomerPii(id: string): Record<string, unknown> | null {
     const customer = this.customersById.get(id);
     if (!customer) return null;
@@ -2434,6 +2487,7 @@ export class CafeStore {
       revenueLabel: '₹0 revenue',
       icon: 'sell',
       tone: 'primary',
+      targetSegment: input.targetSegment,
     };
     this.state.campaigns = [created, ...this.state.campaigns];
     this.touch();

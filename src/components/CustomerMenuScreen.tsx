@@ -92,21 +92,21 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
     <div className="w-full max-w-7xl mx-auto space-y-5 sm:space-y-6 pb-20 pt-1">
       {/* Top Header Row: "Menu" title on Left, "Cart" button on Right */}
       <div className="flex items-center justify-between gap-4">
-        <h1 className="font-sans font-black text-2xl sm:text-4xl text-[#221A15] tracking-tight">
+        <h1 className="font-sans font-black text-2xl sm:text-4xl text-on-surface tracking-tight">
           Menu
         </h1>
 
         <button
           type="button"
           onClick={onNavigateCart}
-          className="border border-[#DFD7CD] rounded-xl px-3.5 sm:px-4 py-2 flex items-center gap-2 text-xs sm:text-sm font-semibold text-[#251F1A] bg-white/80 hover:bg-white shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
+          className="border border-outline-variant/20 rounded-xl px-3.5 sm:px-4 py-2 flex items-center gap-2 text-xs sm:text-sm font-semibold text-on-surface bg-surface-container-low hover:bg-surface-container shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
         >
-          <span className="material-symbols-outlined text-[19px] text-[#251F1A]">
+          <span className="material-symbols-outlined text-[19px] text-primary">
             shopping_bag
           </span>
           <span>Cart</span>
           {cartCount > 0 && (
-            <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-[#244130] text-white tabular-nums">
+            <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-primary text-on-primary tabular-nums">
               {cartCount}
             </span>
           )}
@@ -115,7 +115,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
 
       {/* Full-Width Search Input */}
       <div className="relative w-full">
-        <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#7C7268] text-[20px] pointer-events-none">
+        <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline text-[20px] pointer-events-none">
           search
         </span>
         <input
@@ -123,20 +123,20 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search menu..."
-          className="w-full pl-11 pr-10 py-2.5 sm:py-3 bg-white text-xs sm:text-sm text-[#251F1A] placeholder:text-[#9A9085] rounded-xl border border-[#E5DDD2] focus:outline-none focus:ring-1 focus:ring-[#244130] shadow-xs transition-all"
+          className="w-full pl-11 pr-10 py-2.5 sm:py-3 bg-surface-container-low text-xs sm:text-sm text-on-surface placeholder:text-outline rounded-xl border border-outline-variant/20 focus:outline-none focus:ring-1 focus:ring-primary shadow-xs transition-all"
         />
         {searchQuery && (
           <button
             type="button"
             onClick={() => setSearchQuery('')}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#9A9085] hover:text-[#251F1A] cursor-pointer"
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px]">close</span>
           </button>
         )}
       </div>
 
-      {/* Horizontal Category Filter Pills: All, Pizza, Burger, Pasta, Salad, Drink, Dessert */}
+      {/* Horizontal Category Filter Pills */}
       <div className="flex items-center gap-2 sm:gap-2.5 overflow-x-auto no-scrollbar py-1">
         {CATEGORY_TABS.map((cat) => {
           const isActive = activeCategory === cat;
@@ -147,8 +147,8 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
               onClick={() => onCategoryChange(cat)}
               className={`px-3.5 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap transition-all cursor-pointer active:scale-95 ${
                 isActive
-                  ? 'bg-[#D5E2D0] text-[#1B3625] font-bold shadow-xs border border-transparent'
-                  : 'bg-white/90 border border-[#E2DAD0] text-[#423A32] hover:bg-white hover:border-[#D5CDC2]'
+                  ? 'bg-primary text-on-primary font-bold shadow-md border border-primary'
+                  : 'bg-surface-container-low border border-outline-variant/20 text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
               }`}
             >
               {cat}
@@ -159,12 +159,12 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
 
       {/* Empty State */}
       {visibleItems.length === 0 ? (
-        <div className="p-10 sm:p-12 text-center bg-white rounded-3xl border border-[#EDE4D9] text-[#7B7166] text-sm shadow-xs">
-          <div className="w-16 h-16 rounded-full bg-[#FAF7F2] border border-[#EDE4D9] text-[#7B7166] mx-auto flex items-center justify-center mb-3">
+        <div className="p-10 sm:p-12 text-center bg-surface-container-low rounded-3xl border border-outline-variant/15 text-on-surface-variant text-sm shadow-xs">
+          <div className="w-16 h-16 rounded-full bg-surface-container border border-outline-variant/20 text-outline mx-auto flex items-center justify-center mb-3">
             <span className="material-symbols-outlined text-[28px]">search_off</span>
           </div>
-          <h3 className="font-sans font-bold text-base text-[#251E18]">No items found</h3>
-          <p className="text-xs text-[#7B7166] mt-1">
+          <h3 className="font-sans font-bold text-base text-on-surface">No items found</h3>
+          <p className="text-xs text-on-surface-variant mt-1">
             Try searching for another dish or select a different category.
           </p>
           <button
@@ -173,7 +173,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
               setSearchQuery('');
               onCategoryChange('All');
             }}
-            className="mt-4 px-4 py-2 rounded-xl bg-[#D5E2D0] text-[#1B3625] font-bold text-xs hover:brightness-95 cursor-pointer shadow-xs"
+            className="mt-4 px-4 py-2 rounded-xl bg-primary text-on-primary font-bold text-xs hover:brightness-110 cursor-pointer shadow-sm"
           >
             View All Dishes
           </button>
@@ -189,7 +189,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
               return (
                 <div
                   key={`mobile-${item.id}`}
-                  className="bg-white rounded-2xl p-3.5 border border-[#EDE4D9] shadow-xs hover:shadow-sm transition-all flex items-start justify-between gap-3 relative"
+                  className="bg-surface-container-low rounded-2xl p-3.5 border border-outline-variant/15 shadow-sm hover:shadow-md transition-all flex items-start justify-between gap-3 relative"
                 >
                   {/* Left Column: Veg badge, Title, Price, Description */}
                   <div
@@ -197,25 +197,25 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                     className="flex-1 min-w-0 pr-1 cursor-pointer"
                   >
                     <div className="flex items-center gap-1.5 mb-1">
-                      <span className="w-3.5 h-3.5 border border-emerald-600 p-0.5 rounded flex items-center justify-center shrink-0">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 block" />
+                      <span className="w-3.5 h-3.5 border border-emerald-500 p-0.5 rounded flex items-center justify-center shrink-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 block" />
                       </span>
                       {item.isBestSeller && (
-                        <span className="text-[10px] font-bold text-amber-700 bg-amber-500/10 px-1.5 py-0.2 rounded">
+                        <span className="text-[10px] font-bold text-amber-400 bg-amber-500/15 px-1.5 py-0.2 rounded">
                           Bestseller
                         </span>
                       )}
                     </div>
 
-                    <h3 className="font-sans font-bold text-base text-[#201914] tracking-tight leading-snug">
+                    <h3 className="font-sans font-bold text-base text-on-surface tracking-tight leading-snug">
                       {item.name}
                     </h3>
 
-                    <div className="font-sans font-bold text-base text-[#221A15] mt-1">
+                    <div className="font-sans font-bold text-base text-primary mt-1">
                       ₹{item.price}
                     </div>
 
-                    <p className="text-xs text-[#7B7166] line-clamp-2 mt-1 leading-relaxed">
+                    <p className="text-xs text-on-surface-variant line-clamp-2 mt-1 leading-relaxed">
                       {item.description}
                     </p>
                   </div>
@@ -224,7 +224,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                   <div className="relative shrink-0 flex flex-col items-center pb-2.5">
                     <div
                       onClick={() => setDetailItem(item)}
-                      className="w-28 h-24 rounded-2xl overflow-hidden bg-[#F2EDE7] border border-[#EDE4D9] cursor-pointer"
+                      className="w-28 h-24 rounded-2xl overflow-hidden bg-surface-container border border-outline-variant/15 cursor-pointer"
                     >
                       <CafeImage
                         src={item.imageUrl ?? ''}
@@ -242,11 +242,11 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                         toggleFavorite(item.id);
                       }}
                       aria-label={`Favorite ${item.name}`}
-                      className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/95 shadow-sm flex items-center justify-center text-[#3B332B] hover:text-red-500 transition-all cursor-pointer"
+                      className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-surface-container-high/90 shadow-sm flex items-center justify-center text-on-surface hover:text-red-500 transition-all cursor-pointer"
                     >
                       <span
                         className={`material-symbols-outlined text-[16px] ${
-                          isFav ? 'text-red-500 fill-current' : 'text-[#3B332B]'
+                          isFav ? 'text-red-500 fill-current' : 'text-on-surface'
                         }`}
                         style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
                       >
@@ -260,17 +260,17 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                         <button
                           type="button"
                           onClick={() => onAddToCart(item, 1)}
-                          className="px-3.5 py-1 rounded-xl bg-[#D5E2D0] hover:bg-[#244130] text-[#1B3625] hover:text-white font-bold text-xs flex items-center gap-1 shadow-sm border border-white/70 transition-all active:scale-95 cursor-pointer"
+                          className="px-3.5 py-1 rounded-xl bg-primary hover:brightness-110 text-on-primary font-bold text-xs flex items-center gap-1 shadow-sm transition-all active:scale-95 cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-[14px]">add</span>
                           <span>Add</span>
                         </button>
                       ) : (
-                        <div className="flex items-center gap-2 bg-[#244130] text-white px-2 py-0.5 rounded-xl shadow-md border border-white/50 text-xs font-bold">
+                        <div className="flex items-center gap-2 bg-primary text-on-primary px-2 py-0.5 rounded-xl shadow-md text-xs font-bold">
                           <button
                             type="button"
                             onClick={() => onUpdateQty(item.id, -1)}
-                            className="w-4 h-4 flex items-center justify-center text-white cursor-pointer"
+                            className="w-4 h-4 flex items-center justify-center text-on-primary cursor-pointer"
                             aria-label="Decrease quantity"
                           >
                             <span className="material-symbols-outlined text-[12px]">remove</span>
@@ -279,7 +279,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                           <button
                             type="button"
                             onClick={() => onUpdateQty(item.id, 1)}
-                            className="w-4 h-4 flex items-center justify-center text-white cursor-pointer"
+                            className="w-4 h-4 flex items-center justify-center text-on-primary cursor-pointer"
                             aria-label="Increase quantity"
                           >
                             <span className="material-symbols-outlined text-[12px]">add</span>
@@ -302,12 +302,12 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
               return (
                 <div
                   key={`desktop-${item.id}`}
-                  className="bg-white rounded-2xl overflow-hidden border border-[#EDE4D9] shadow-xs hover:shadow-md transition-all duration-200 flex flex-col group"
+                  className="bg-surface-container-low rounded-2xl overflow-hidden border border-outline-variant/15 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col group"
                 >
                   {/* Food Image Container */}
                   <div
                     onClick={() => setDetailItem(item)}
-                    className="relative w-full h-44 sm:h-48 overflow-hidden bg-[#F2EDE7] cursor-pointer"
+                    className="relative w-full h-44 sm:h-48 overflow-hidden bg-surface-container cursor-pointer"
                   >
                     <CafeImage
                       src={item.imageUrl ?? ''}
@@ -324,11 +324,11 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                         toggleFavorite(item.id);
                       }}
                       aria-label={`Mark ${item.name} as favorite`}
-                      className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/95 shadow-md flex items-center justify-center text-[#3B332B] hover:text-red-500 hover:scale-110 transition-all cursor-pointer"
+                      className="absolute top-3 right-3 w-8 h-8 rounded-full bg-surface-container-high/90 shadow-md flex items-center justify-center text-on-surface hover:text-red-500 hover:scale-110 transition-all cursor-pointer"
                     >
                       <span
                         className={`material-symbols-outlined text-[18px] transition-colors ${
-                          isFav ? 'text-red-500 fill-current' : 'text-[#3B332B]'
+                          isFav ? 'text-red-500 fill-current' : 'text-on-surface'
                         }`}
                         style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
                       >
@@ -343,17 +343,17 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                       onClick={() => setDetailItem(item)}
                       className="cursor-pointer space-y-0.5"
                     >
-                      <h3 className="font-sans font-bold text-base sm:text-lg text-[#201914] tracking-tight group-hover:text-[#244130] transition-colors">
+                      <h3 className="font-sans font-bold text-base sm:text-lg text-on-surface tracking-tight group-hover:text-primary transition-colors">
                         {item.name}
                       </h3>
-                      <p className="text-xs text-[#7B7166] line-clamp-1 leading-relaxed">
+                      <p className="text-xs text-on-surface-variant line-clamp-1 leading-relaxed">
                         {item.description}
                       </p>
                     </div>
 
                     {/* Price & Add to Cart Bottom Action */}
                     <div className="mt-4 flex items-center justify-between pt-1">
-                      <span className="font-sans font-bold text-lg sm:text-xl text-[#221A15]">
+                      <span className="font-sans font-bold text-lg sm:text-xl text-primary">
                         ₹{item.price}
                       </span>
 
@@ -361,17 +361,17 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                         <button
                           type="button"
                           onClick={() => onAddToCart(item, 1)}
-                          className="px-4 py-1.5 rounded-xl bg-[#D5E2D0] hover:bg-[#244130] text-[#1B3625] hover:text-white font-semibold text-xs sm:text-sm flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs"
+                          className="px-4 py-1.5 rounded-xl bg-primary hover:brightness-110 text-on-primary font-semibold text-xs sm:text-sm flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs"
                         >
                           <span className="material-symbols-outlined text-[16px]">add</span>
                           <span>Add</span>
                         </button>
                       ) : (
-                        <div className="flex items-center gap-2.5 bg-[#244130] text-white px-2.5 py-1 rounded-xl shadow-xs">
+                        <div className="flex items-center gap-2.5 bg-primary text-on-primary px-2.5 py-1 rounded-xl shadow-xs">
                           <button
                             type="button"
                             onClick={() => onUpdateQty(item.id, -1)}
-                            className="w-5 h-5 flex items-center justify-center rounded-lg hover:bg-white/20 transition-colors text-white font-bold cursor-pointer"
+                            className="w-5 h-5 flex items-center justify-center rounded-lg hover:bg-black/20 transition-colors text-on-primary font-bold cursor-pointer"
                             aria-label="Decrease quantity"
                           >
                             <span className="material-symbols-outlined text-[14px]">remove</span>
@@ -382,7 +382,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                           <button
                             type="button"
                             onClick={() => onUpdateQty(item.id, 1)}
-                            className="w-5 h-5 flex items-center justify-center rounded-lg hover:bg-white/20 transition-colors text-white font-bold cursor-pointer"
+                            className="w-5 h-5 flex items-center justify-center rounded-lg hover:bg-black/20 transition-colors text-on-primary font-bold cursor-pointer"
                             aria-label="Increase quantity"
                           >
                             <span className="material-symbols-outlined text-[14px]">add</span>

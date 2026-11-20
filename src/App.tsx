@@ -37,6 +37,7 @@ import {
 } from './utils/rbac';
 import {
   getLocalCustomerSession,
+  syncCustomerIdentityWithCafe,
   syncSupabaseCustomerSession,
   subscribeToSupabaseAuth,
   type CustomerAuthSession,
@@ -231,14 +232,22 @@ export default function App() {
   useEffect(() => {
     void syncSupabaseCustomerSession().then((session) => {
       if (session) setCustomerSession(session);
+      return syncCustomerIdentityWithCafe();
+    }).then(() => refetch()).catch((error: unknown) => {
+      console.error('Could not sync verified customer identity:', error);
     });
     const unsubscribe = subscribeToSupabaseAuth((session) => {
       setCustomerSession(session);
+      void syncCustomerIdentityWithCafe()
+        .then(() => refetch())
+        .catch((error: unknown) => {
+          console.error('Could not sync verified customer identity:', error);
+        });
     });
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [refetch]);
 
   const {
     orders,
@@ -1056,6 +1065,7 @@ export default function App() {
           code: campaign.code,
           validityLabel: campaign.validityLabel,
           description: campaign.description,
+          targetSegment: campaign.targetSegment ?? 'all',
         });
         showToast(`Created promo campaign "${campaign.title}" (${campaign.code})`);
       } catch (err) {
@@ -1344,6 +1354,7 @@ export default function App() {
           <CustomerProfileScreen
             onNotify={showToast}
             onBrowseMenu={() => handleNavigate('menu', 'customer')}
+            onIdentityUpdated={() => void refetch()}
             onNavigateLogin={() => handleNavigate('login', 'customer')}
           />
         </Suspense>

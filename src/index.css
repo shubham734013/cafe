@@ -69,8 +69,8 @@
   body {
     margin: 0;
     padding: 0;
-    background-color: #17120f;
-    color: #ebe0db;
+    background-color: #0b0f17;
+    color: #f1f5f9;
     font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif !important;
     overscroll-behavior: none;
   }
@@ -177,24 +177,24 @@
 }
 
 :root {
-  --background: #17120f;
-  --foreground: #ebe0db;
-  --card: #241f1b;
-  --card-foreground: #ebe0db;
-  --popover: #241f1b;
-  --popover-foreground: #ebe0db;
-  --primary: #ffc174;
-  --primary-foreground: #472a00;
-  --secondary: #ffb77d;
-  --secondary-foreground: #4d2600;
-  --muted: #201b17;
-  --muted-foreground: #d8c3ad;
-  --accent: #3a3430;
-  --accent-foreground: #ebe0db;
-  --destructive: #ffb4ab;
-  --border: rgba(83, 68, 52, 0.45);
-  --input: rgba(83, 68, 52, 0.55);
-  --ring: #ffc174;
+  --background: #0b0f17;
+  --foreground: #f1f5f9;
+  --card: #101726;
+  --card-foreground: #f1f5f9;
+  --popover: #101726;
+  --popover-foreground: #f1f5f9;
+  --primary: #ff6422;
+  --primary-foreground: #ffffff;
+  --secondary: #38bdf8;
+  --secondary-foreground: #082f49;
+  --muted: #141c2e;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f1f5f9;
+  --destructive: #f43f5e;
+  --border: rgba(51, 65, 85, 0.4);
+  --input: rgba(51, 65, 85, 0.5);
+  --ring: #ff6422;
   --radius: 0.625rem;
 }
 

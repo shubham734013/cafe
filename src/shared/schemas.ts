@@ -235,6 +235,10 @@ export const createCampaignSchema = z.object({
     .transform((v) => v.toUpperCase()),
   validityLabel: z.string().trim().min(2, 'Validity window is required').max(40),
   description: z.string().trim().min(4, 'Offer rule summary is required').max(200),
+  targetSegment: z
+    .enum(['all', 'vip', 'loyal', 'regular', 'new', 'risk'])
+    .optional()
+    .default('all'),
 });
 
 export const addStaffSchema = z.object({

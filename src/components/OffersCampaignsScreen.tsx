@@ -46,6 +46,7 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
       code: '',
       validityLabel: 'Till 28 Feb',
       description: 'Live across POS billing terminal and customer QR menu checkout.',
+      targetSegment: 'all',
     },
   });
 
@@ -78,6 +79,7 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
       code: '',
       validityLabel: 'Till 28 Feb',
       description: 'Live across POS billing terminal and customer QR menu checkout.',
+      targetSegment: 'all',
     });
     setModalOpen(true);
   };
@@ -90,6 +92,7 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
       status: 'active',
       validityLabel: parsed.validityLabel,
       description: parsed.description,
+      targetSegment: parsed.targetSegment,
       usedLabel: '0 used',
       revenueLabel: '₹0 revenue',
       icon: 'sell',
@@ -292,6 +295,11 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
                           >
                             {camp.status}
                           </span>
+                          {camp.targetSegment && camp.targetSegment !== 'all' && (
+                            <span className="px-1.5 py-0.5 rounded bg-primary-container/10 text-primary text-[10px] font-semibold">
+                              {camp.targetSegment}
+                            </span>
+                          )}
                           <span className="text-on-surface-variant text-xs">
                             • {camp.validityLabel}
                           </span>
@@ -434,6 +442,25 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
                     {form.formState.errors.description.message}
                   </p>
                 )}
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                  Customer Group
+                </label>
+                <select
+                  {...form.register('targetSegment')}
+                  className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="all">All customers</option>
+                  <option value="vip">VIP</option>
+                  <option value="loyal">Loyal</option>
+                  <option value="regular">Regular</option>
+                  <option value="new">New</option>
+                  <option value="risk">At Risk</option>
+                </select>
+                <p className="mt-1 text-[11px] text-on-surface-variant">
+                  Segment offers appear only to customers whose verified phone matches a CRM profile.
+                </p>
               </div>
             </div>
 
