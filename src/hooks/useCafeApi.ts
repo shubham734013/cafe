@@ -23,6 +23,7 @@ import type {
 import type {
   AuthSessionState,
   CafeOrder,
+  CartItem,
   CustomerReview,
   MenuItem,
   PaymentMode,

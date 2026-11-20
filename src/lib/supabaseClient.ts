@@ -66,23 +66,23 @@ export function getLocalCustomerSession(): CustomerAuthSession | null {
 
 export function saveLocalCustomerSession(session: CustomerAuthSession): void {
   memoryCustomerSession = session;
+  // Issue 9: Never store authentication tokens or session payloads in localStorage
+  // Authentication sessions are strictly enforced via server-side httpOnly cookies.
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(CUSTOMER_SESSION_STORAGE_KEY, JSON.stringify(session));
-    // Also sync to customer profile
-    const existing = window.localStorage.getItem('cafeos_customer_profile');
-    const prev = existing ? JSON.parse(existing) : {};
+    window.localStorage.removeItem(CUSTOMER_SESSION_STORAGE_KEY);
+    window.sessionStorage.removeItem(CUSTOMER_SESSION_STORAGE_KEY);
+    // Persist only non-sensitive visual display preferences
     window.localStorage.setItem(
       'cafeos_customer_profile',
       JSON.stringify({
-        ...prev,
-        name: session.name || prev.name,
-        email: session.email || prev.email,
-        phone: session.isLocalTestAccount ? session.phone : session.phone || prev.phone,
+        name: session.name,
+        email: session.email,
+        phone: session.phone,
       })
     );
   } catch (err) {
-    console.error('Failed to persist customer session:', err);
+    console.error('Failed to sync customer display preferences:', err);
   }
 }
 

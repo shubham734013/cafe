@@ -48,8 +48,31 @@ import {
   hasStaffRole,
   issueOrUpdateCustomerSessionCookie,
   setStaffSessionCookie,
+  setStaffRefreshTokenCookie,
+  clearStaffRefreshTokenCookie,
+  rotateRefreshToken,
+  checkLockout,
+  createRefreshToken,
+  STAFF_REFRESH_COOKIE,
+  parseCookies,
   updateCustomerCrmIdentityCookie,
+  type StaffSessionPayload,
 } from './auth';
+import { requestOtp, verifyOtp } from './otp';
+import {
+  generatePasswordResetToken,
+  consumePasswordResetToken,
+  initiateEmailChange,
+  verifyAndApplyEmailChange,
+  generateOAuthChallenge,
+  verifyOAuthCallbackState,
+} from './accountSecurity';
+import {
+  setupAdmin2Fa,
+  confirmAndEnableAdmin2Fa,
+  verifyAdmin2Fa,
+  isAdmin2FaRequired,
+} from './admin2fa';
 import { createRateLimiter, createTableRateLimiter } from './rateLimit';
 import { noSqlInjectionSanitizer, safeJsonForHtml, verifyCaptchaToken } from './security';
 import { InvalidDomainTransitionError } from '../state/cafeStateMachines';
@@ -1010,31 +1033,274 @@ export function createCafeServer(
 
   app.post('/api/auth/pin', pinLoginLimiter, (req, res, next) => {
     try {
+      const ip = req.ip || '127.0.0.1';
+      const lockout = checkLockout('staff_login', ip);
+      if (lockout.locked) {
+        res.status(429).json({
+          error: `Too many failed login attempts. Account temporarily locked. Please wait ${lockout.retryAfterSeconds} seconds.`,
+          retryAfterSeconds: lockout.retryAfterSeconds,
+        });
+        return;
+      }
+
       const { pin } = parseBody(staffPinLoginSchema, req.body);
-      const matched = authenticateStaffPin(pin);
+      const matched = authenticateStaffPin(pin, undefined, ip);
       if (!matched) {
         res.status(401).json({ error: 'Invalid 4-digit staff PIN' });
         return;
       }
-      const payload = {
+
+      // Issue 20: Admin 2FA verification
+      if (matched.role === 'admin' && isAdmin2FaRequired('admin')) {
+        const totpCode = (req.body as { totpCode?: string }).totpCode;
+        if (!totpCode) {
+          res.status(403).json({ requires2Fa: true, error: 'Two-factor authentication code required for admin.' });
+          return;
+        }
+        const verifyResult = verifyAdmin2Fa('admin', totpCode);
+        if (!verifyResult.valid) {
+          res.status(401).json({ error: 'Invalid two-factor authentication or backup code.' });
+          return;
+        }
+      }
+
+      const staffId = matched.staffId || `staff_${matched.role}`;
+      const payload: StaffSessionPayload = {
+        staffId,
         role: matched.role,
         staffName: matched.staffName,
         issuedAt: Date.now(),
-        exp: Date.now() + 12 * 60 * 60 * 1000,
+        exp: Date.now() + 15 * 60 * 1000, // Issue 8: 15-minute access token lifetime
       };
       setStaffSessionCookie(res, payload);
+
+      // Issue 10: Refresh token rotation with family ID
+      const refreshToken = createRefreshToken(staffId, matched.role);
+      setStaffRefreshTokenCookie(res, refreshToken.token);
+
       res.json({ authenticated: true, session: payload });
     } catch (err) {
       next(err);
     }
   });
 
+  // Issue 10: Refresh Token Rotation Endpoint
+  app.post('/api/auth/refresh', (req, res) => {
+    const cookies = parseCookies(req.headers.cookie);
+    const refreshToken = cookies[STAFF_REFRESH_COOKIE];
+    if (!refreshToken) {
+      res.status(401).json({ error: 'No refresh token provided.' });
+      return;
+    }
+
+    const result = rotateRefreshToken(refreshToken);
+    if (!result.success || !result.newAccessToken || !result.newRefreshToken) {
+      clearStaffSessionCookie(res, req);
+      res.status(401).json({ error: result.error || 'Invalid or revoked refresh token.' });
+      return;
+    }
+
+    const session = getStaffSessionFromCookieHeader(`cafeos_staff_session=${result.newAccessToken}`);
+    if (session) {
+      setStaffSessionCookie(res, session);
+    }
+    setStaffRefreshTokenCookie(res, result.newRefreshToken);
+    res.json({ authenticated: true, session });
+  });
+
+  // Issue 11: Server-side Logout
   app.post('/api/auth/logout', (req, res) => {
     clearStaffSessionCookie(res, req);
     res.json({ authenticated: false, session: null });
   });
 
-  // Customer Brevo Email Confirmation endpoint
+  // Issues 1, 2, 3, 4: Hardened OTP Request Endpoint
+  app.post('/api/auth/otp/request', async (req, res, next) => {
+    try {
+      const { identifier, name, email, phone } = req.body as {
+        identifier?: string;
+        name?: string;
+        email?: string;
+        phone?: string;
+      };
+      const cleanId = identifier || email || phone;
+      if (!cleanId) {
+        res.status(400).json({ error: 'Identifier (email or phone) is required.' });
+        return;
+      }
+      const result = await requestOtp({
+        identifier: cleanId,
+        ip: req.ip || '127.0.0.1',
+        name,
+        email,
+        phone,
+      });
+      if (!result.success) {
+        res.status(429).json({ error: result.message, retryAfterSeconds: result.retryAfterSeconds });
+        return;
+      }
+      // Issue 2 & 4: Generic response; NEVER return the code in response body
+      res.json({ success: true, message: result.message });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Issue 1 & 3: Hardened OTP Verification Endpoint
+  app.post('/api/auth/otp/verify', (req, res) => {
+    const { identifier, code } = req.body as { identifier?: string; code?: string };
+    if (!identifier || !code) {
+      res.status(400).json({ error: 'Identifier and 6-digit code are required.' });
+      return;
+    }
+    const result = verifyOtp({
+      identifier,
+      code,
+      ip: req.ip || '127.0.0.1',
+    });
+    if (!result.valid) {
+      res.status(401).json({ error: result.error || 'Verification failed.' });
+      return;
+    }
+    res.json({ verified: true, message: 'OTP verified successfully.' });
+  });
+
+  // Issues 13, 14, 16: Password / Credential Reset Flow
+  app.post('/api/auth/reset/request', (req, res) => {
+    const { identifier } = req.body as { identifier?: string };
+    if (!identifier) {
+      res.status(400).json({ error: 'Account identifier is required.' });
+      return;
+    }
+    try {
+      const { rawToken } = generatePasswordResetToken(identifier);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[Dev Only Reset Link] Token for ${identifier}: ${rawToken}`);
+      }
+      // Issue 4: Generic message
+      res.json({ success: true, message: "If an account exists, a reset link has been dispatched." });
+    } catch (err) {
+      res.status(429).json({ error: err instanceof Error ? err.message : 'Too many reset requests.' });
+    }
+  });
+
+  app.post('/api/auth/reset/confirm', (req, res) => {
+    const { token } = req.body as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: 'Reset token is required.' });
+      return;
+    }
+    const result = consumePasswordResetToken(token);
+    if (!result.valid) {
+      res.status(401).json({ error: result.error || 'Invalid reset token.' });
+      return;
+    }
+    // Revoke current session cookies on reset
+    clearStaffSessionCookie(res, req);
+    res.json({ success: true, message: 'Password/PIN reset successfully. All existing sessions have been terminated.' });
+  });
+
+  // Issue 15: Email Change Re-Authentication & Dual-Notification
+  app.post('/api/auth/email-change/request', async (req, res, next) => {
+    try {
+      const session = getStaffSession(req);
+      if (!session) {
+        res.status(401).json({ error: 'Authentication required for email change.' });
+        return;
+      }
+      const { newEmail, currentPin } = req.body as { newEmail?: string; currentPin?: string };
+      if (!newEmail || !currentPin) {
+        res.status(400).json({ error: 'New email and current PIN are required for re-authentication.' });
+        return;
+      }
+      // Re-authentication verification
+      const matched = authenticateStaffPin(currentPin);
+      if (!matched || matched.role !== session.role) {
+        res.status(401).json({ error: 'Re-authentication failed. Incorrect PIN.' });
+        return;
+      }
+      const { token } = await initiateEmailChange(session.staffId || session.role, 'staff@sethsawariya.com', newEmail);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[Dev Only Email Change Token]: ${token}`);
+      }
+      res.json({ success: true, message: 'Verification link sent to new email; notification dispatched to old email.' });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/auth/email-change/confirm', (req, res) => {
+    const { token } = req.body as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: 'Verification token is required.' });
+      return;
+    }
+    const result = verifyAndApplyEmailChange(token);
+    if (!result.valid) {
+      res.status(401).json({ error: result.error || 'Invalid or expired email change token.' });
+      return;
+    }
+    clearStaffSessionCookie(res, req);
+    res.json({ success: true, message: 'Email address updated. Please log in again.' });
+  });
+
+  // Issue 20: Admin 2FA Setup & Verification
+  app.post('/api/auth/2fa/setup', (req, res) => {
+    const session = getStaffSession(req);
+    if (!session || session.role !== 'admin') {
+      res.status(403).json({ error: 'Admin authentication required to configure 2FA.' });
+      return;
+    }
+    const setup = setupAdmin2Fa('admin');
+    res.json({
+      secret: setup.secret,
+      otpauthUri: setup.otpauthUri,
+      recoveryCodes: setup.plainRecoveryCodes,
+    });
+  });
+
+  app.post('/api/auth/2fa/confirm', (req, res) => {
+    const session = getStaffSession(req);
+    if (!session || session.role !== 'admin') {
+      res.status(403).json({ error: 'Admin authentication required.' });
+      return;
+    }
+    const { token } = req.body as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: 'Verification token is required.' });
+      return;
+    }
+    const confirmed = confirmAndEnableAdmin2Fa('admin', token);
+    if (!confirmed) {
+      res.status(401).json({ error: 'Invalid 2FA token. Setup not confirmed.' });
+      return;
+    }
+    res.json({ success: true, message: 'Admin 2FA enabled successfully.' });
+  });
+
+  // Issue 17: OAuth PKCE Challenge & State Cookie
+  app.get('/api/auth/oauth/challenge', (req, res) => {
+    const redirectUri = (req.query.redirect_uri as string) || 'http://localhost:3000/api/auth/oauth/callback';
+    try {
+      const challenge = generateOAuthChallenge(redirectUri);
+      res.cookie('cafeos_oauth_state', challenge.state, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/api/auth/oauth',
+        maxAge: 10 * 60 * 1000,
+      });
+      res.json({
+        state: challenge.state,
+        codeChallenge: challenge.codeChallenge,
+        codeVerifier: challenge.codeVerifier,
+      });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Invalid OAuth request.' });
+    }
+  });
+
+  // Customer Brevo Email Confirmation endpoint (Issue 2: Never leak OTP in JSON response)
   app.post('/api/auth/brevo-confirmation', brevoConfirmationLimiter, async (req, res, next) => {
     try {
       const captchaCheck = await verifyCaptchaToken((req.body as { captchaToken?: string })?.captchaToken);

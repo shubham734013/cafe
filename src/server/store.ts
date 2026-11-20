@@ -12,6 +12,7 @@ import type {
   CafeOrder,
   CafeSettings,
   CafeTable,
+  CartItem,
   CustomerSegment,
   CustomerProfile,
   CustomerReview,
