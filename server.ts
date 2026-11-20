@@ -1,12 +1,16 @@
 import 'dotenv/config';
 import path from 'node:path';
+import type { Socket } from 'node:net';
 import express from 'express';
 import { createCafeServer } from './src/server/app';
 import { CafeStore } from './src/server/store';
 import { checkPostgresHealth, closeDbPool } from './src/server/db';
+import { validateEnv } from './src/server/env';
 
-const PORT = Number(process.env.PORT || 3000);
-const isProduction = process.env.NODE_ENV === 'production';
+// Validate environment variables at startup
+const env = validateEnv();
+const PORT = env.PORT;
+const isProduction = env.NODE_ENV === 'production';
 
 async function startServer() {
   const store = new CafeStore();
@@ -54,8 +58,35 @@ async function startServer() {
       });
     }
 
+    const activeSockets = new Set<Socket>();
+    httpServer.on('connection', (socket: Socket) => {
+      activeSockets.add(socket);
+      socket.on('close', () => activeSockets.delete(socket));
+    });
+
+    let isShuttingDown = false;
     const shutdown = async (signal: string) => {
-      console.log(`[CafeOS] Received ${signal}, closing the server and flushing database state...`);
+      if (isShuttingDown) return;
+      isShuttingDown = true;
+      console.log(`[CafeOS] Received ${signal}, closing server and draining in-flight connections...`);
+
+      // 1. Stop accepting new HTTP requests
+      await new Promise<void>((resolve) => {
+        httpServer.close((err) => {
+          if (err) console.warn('[CafeOS] Error stopping HTTP listener:', err);
+          else console.log('[CafeOS] Stopped accepting new HTTP requests.');
+          resolve();
+        });
+        // 5-second bounded drain timeout
+        setTimeout(() => {
+          for (const socket of activeSockets) {
+            socket.destroy();
+          }
+          resolve();
+        }, 5000).unref();
+      });
+
+      // 2. Close Vite dev server if running
       if (closeViteServer) {
         try {
           await closeViteServer();
@@ -64,6 +95,8 @@ async function startServer() {
           process.exitCode = 1;
         }
       }
+
+      // 3. Close Socket.IO cleanly
       if (closeSocketServer) {
         try {
           await closeSocketServer();
@@ -72,12 +105,17 @@ async function startServer() {
           process.exitCode = 1;
         }
       }
+
+      // 4. Flush and close MongoDB
       try {
         await store.closeMongo();
+        console.log('[CafeOS] MongoDB connection pool drained and closed.');
       } catch (error) {
         console.error('[CafeOS] Failed to flush MongoDB state during shutdown:', error);
         process.exitCode = 1;
       }
+
+      // 5. Close PostgreSQL pool if open
       try {
         await closeDbPool();
       } catch (error) {

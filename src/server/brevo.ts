@@ -20,6 +20,8 @@ export interface BrevoEmailResult {
 
 const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 
+import { brevoCircuitBreaker, withRetry } from './resilience';
+
 export async function sendBrevoConfirmationEmail(
   options: SendBrevoConfirmationOptions
 ): Promise<BrevoEmailResult> {
@@ -118,54 +120,60 @@ export async function sendBrevoConfirmationEmail(
 </html>
   `.trim();
 
-  // If live Brevo API key is available, send real email via Brevo REST API
+  // If live Brevo API key is available, send real email via Brevo REST API protected by Circuit Breaker
   if (apiKey && apiKey !== 'YOUR_BREVO_API_KEY') {
     try {
-      const response = await fetch(BREVO_API_URL, {
-        method: 'POST',
-        headers: {
-          'api-key': apiKey,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          sender: {
-            name: senderName,
-            email: senderEmail,
-          },
-          to: [
-            {
-              email: toEmail,
-              name: toName,
-            },
-          ],
-          subject: 'Welcome to Seth Sawariya Cafe — Account Confirmation',
-          htmlContent,
-        }),
-      });
+      return await brevoCircuitBreaker.execute(async () => {
+        const response = await withRetry(
+          () =>
+            fetch(BREVO_API_URL, {
+              method: 'POST',
+              headers: {
+                'api-key': apiKey,
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+              },
+              body: JSON.stringify({
+                sender: {
+                  name: senderName,
+                  email: senderEmail,
+                },
+                to: [
+                  {
+                    email: toEmail,
+                    name: toName,
+                  },
+                ],
+                subject: 'Welcome to Seth Sawariya Cafe — Account Confirmation',
+                htmlContent,
+              }),
+            }),
+          { maxRetries: 2, initialDelayMs: 300 }
+        );
 
-      const data = await response.json().catch(() => ({}));
+        const data = await response.json().catch(() => ({}));
 
-      if (!response.ok) {
-        const errorMsg = (data as { message?: string }).message || `Brevo API HTTP ${response.status}`;
-        console.error('[Brevo Error]', errorMsg);
+        if (!response.ok) {
+          const errorMsg = (data as { message?: string }).message || `Brevo API HTTP ${response.status}`;
+          console.error('[Brevo Error]', errorMsg);
+          return {
+            success: false,
+            error: errorMsg,
+            code,
+          };
+        }
+
+        const messageId = (data as { messageId?: string }).messageId;
+        console.log(`[Brevo] Email sent to ${toEmail} (Message ID: ${messageId})`);
         return {
-          success: false,
-          error: errorMsg,
+          success: true,
+          messageId,
           code,
+          simulated: false,
         };
-      }
-
-      const messageId = (data as { messageId?: string }).messageId;
-      console.log(`[Brevo] Email sent to ${toEmail} (Message ID: ${messageId})`);
-      return {
-        success: true,
-        messageId,
-        code,
-        simulated: false,
-      };
+      });
     } catch (err) {
-      console.error('[Brevo Network Error]', err);
+      console.error('[Brevo Network Error / Circuit Open]', err);
       return {
         success: false,
         error: err instanceof Error ? err.message : 'Brevo network error',

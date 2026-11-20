@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { cashfreeCircuitBreaker, withRetry } from './resilience';
 import {
   UpiGatewayClient,
   UpiGatewayOrder,
@@ -269,19 +270,25 @@ export class CashfreeGateway implements UpiGatewayClient {
 
     let response: Response;
     try {
-      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-        method: options.method,
-        headers: {
-          'x-client-id': this.appId,
-          'x-client-secret': this.secretKey,
-          'x-api-version': this.apiVersion,
-          'User-Agent': 'Cashfree/1.0 (Node.js; CafeOS)',
-          Accept: 'application/json',
-          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-        },
-        ...(options.body ? { body: options.body } : {}),
-        signal: AbortSignal.timeout(10_000),
-      });
+      response = await cashfreeCircuitBreaker.execute(() =>
+        withRetry(
+          () =>
+            this.fetchImpl(`${this.baseUrl}${path}`, {
+              method: options.method,
+              headers: {
+                'x-client-id': this.appId,
+                'x-client-secret': this.secretKey,
+                'x-api-version': this.apiVersion,
+                'User-Agent': 'Cashfree/1.0 (Node.js; CafeOS)',
+                Accept: 'application/json',
+                ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+              },
+              ...(options.body ? { body: options.body } : {}),
+              signal: AbortSignal.timeout(10_000),
+            }),
+          { maxRetries: 2, initialDelayMs: 250 }
+        )
+      );
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Network request failed.';
       throw new UpiGatewayRequestError(`Could not reach Cashfree: ${detail}`);

@@ -224,7 +224,15 @@ export class CafeStore {
     if (!uri.trim()) throw new Error('MONGODB_URI must be configured before starting CafeOS.');
     if (this.mongoClient) throw new Error('CafeStore is already connected to MongoDB.');
 
-    const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
+    const maxPoolSize = Number(process.env.MONGODB_MAX_POOL_SIZE || 20);
+    const minPoolSize = Number(process.env.MONGODB_MIN_POOL_SIZE || 5);
+    const client = new MongoClient(uri, {
+      serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 5000,
+      maxPoolSize,
+      minPoolSize,
+      maxIdleTimeMS: 30000,
+    });
     try {
       await client.connect();
       const database: Db = client.db(databaseName);
@@ -394,6 +402,10 @@ export class CafeStore {
         this.mongoLeaseOwner = null;
       }
     }
+  }
+
+  public isMongoConnected(): boolean {
+    return this.mongoClient !== null;
   }
 
   private getLegacyRevisionCollections(database: Db): Collection<MongoRevisionDocument>[] {

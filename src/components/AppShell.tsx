@@ -71,6 +71,8 @@ const SCREEN_TITLES: Record<ScreenId, string> = {
   rewards: 'Beans & Offers',
   profile: 'My Profile',
   login: 'Customer Sign In',
+  'privacy-policy': 'Privacy Policy',
+  'terms-and-conditions': 'Terms & Conditions',
   'staff-home': 'Staff Home',
   'pos-terminal': 'Billing Counter',
   'pos-orders': 'Billing Orders',

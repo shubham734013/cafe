@@ -9,6 +9,8 @@ const CUSTOMER_PATHS: Record<Exclude<ScreenId, 'splash' | StaffScreenId>, string
   rewards: '/customer/rewards',
   profile: '/customer/profile',
   login: '/customer/login',
+  'privacy-policy': '/privacy-policy',
+  'terms-and-conditions': '/terms-and-conditions',
 };
 
 const ADMIN_PATHS: Record<StaffScreenId, string> = {

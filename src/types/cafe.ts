@@ -11,7 +11,16 @@ export interface AuthSessionState {
     exp: number;
   } | null;
 }
-export type CustomerScreenId = 'home' | 'menu' | 'cart' | 'tracking' | 'rewards' | 'profile' | 'login';
+export type CustomerScreenId =
+  | 'home'
+  | 'menu'
+  | 'cart'
+  | 'tracking'
+  | 'rewards'
+  | 'profile'
+  | 'login'
+  | 'privacy-policy'
+  | 'terms-and-conditions';
 export type StaffScreenId =
   | 'staff-home'
   | 'pos-terminal'

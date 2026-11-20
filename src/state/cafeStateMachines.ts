@@ -395,7 +395,17 @@ export type PinAuthState =
 // 6. Navigation Workspace Mode Derivation
 // ---------------------------------------------------------------------------
 
-const CUSTOMER_SCREENS = new Set<ScreenId>(['home', 'menu', 'cart', 'tracking', 'rewards', 'profile', 'login']);
+const CUSTOMER_SCREENS = new Set<ScreenId>([
+  'home',
+  'menu',
+  'cart',
+  'tracking',
+  'rewards',
+  'profile',
+  'login',
+  'privacy-policy',
+  'terms-and-conditions',
+]);
 
 export function deriveWorkspaceMode(
   screen: ScreenId,

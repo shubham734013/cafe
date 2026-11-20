@@ -938,6 +938,19 @@ export function createCafeServer(
     });
   });
 
+  // Task 10: Standard SRE Liveness and Readiness Probes
+  app.get(['/health/live', '/api/health/live'], (_req, res) => {
+    res.status(200).json({ status: 'ok', uptime: process.uptime() });
+  });
+
+  app.get(['/health/ready', '/api/health/ready'], (_req, res) => {
+    const isHealthy = store.isPersistenceHealthy();
+    res.status(isHealthy ? 200 : 503).json({
+      status: isHealthy ? 'ready' : 'not_ready',
+      database: isHealthy ? 'connected' : 'degraded',
+    });
+  });
+
   app.get('/api/audit', requireRoles(['admin']), async (req, res, next) => {
     try {
       const requestedLimit = Number(req.query.limit ?? 100);

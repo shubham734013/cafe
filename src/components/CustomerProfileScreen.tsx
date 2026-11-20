@@ -16,6 +16,8 @@ interface CustomerProfileScreenProps {
   onNotify: (message: string) => void;
   onBrowseMenu: () => void;
   onNavigateLogin?: () => void;
+  onNavigatePrivacyPolicy?: () => void;
+  onNavigateTerms?: () => void;
   onIdentityUpdated?: () => void;
   onSessionChange?: (session: CustomerAuthSession | null) => void;
 }
@@ -58,6 +60,8 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
   onNotify,
   onBrowseMenu,
   onNavigateLogin,
+  onNavigatePrivacyPolicy,
+  onNavigateTerms,
   onIdentityUpdated,
   onSessionChange,
 }) => {
@@ -443,6 +447,26 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
             </button>
           </div>
         </section>
+
+        <div className="pt-4 border-t border-outline-variant/20 flex flex-wrap items-center justify-between gap-3 text-xs text-on-surface-variant">
+          <span>&copy; {new Date().getFullYear()} Seth Sawariya CafeOS</span>
+          <div className="flex gap-4">
+            <button
+              type="button"
+              onClick={onNavigatePrivacyPolicy}
+              className="hover:text-primary transition-colors cursor-pointer underline"
+            >
+              Privacy Policy
+            </button>
+            <button
+              type="button"
+              onClick={onNavigateTerms}
+              className="hover:text-primary transition-colors cursor-pointer underline"
+            >
+              Terms & Conditions
+            </button>
+          </div>
+        </div>
       </form>
     </div>
   );

@@ -68,6 +68,12 @@ const CustomerRewardsScreen = lazy(() =>
 const CustomerProfileScreen = lazy(() =>
   import('./components/CustomerProfileScreen').then((m) => ({ default: m.CustomerProfileScreen }))
 );
+const PrivacyPolicyScreen = lazy(() =>
+  import('./components/legal/PrivacyPolicyScreen').then((m) => ({ default: m.PrivacyPolicyScreen }))
+);
+const TermsAndConditionsScreen = lazy(() =>
+  import('./components/legal/TermsAndConditionsScreen').then((m) => ({ default: m.TermsAndConditionsScreen }))
+);
 const CustomerLoginScreen = lazy(() =>
   import('./components/CustomerLoginScreen').then((m) => ({ default: m.CustomerLoginScreen }))
 );
@@ -1438,6 +1444,8 @@ export default function App() {
             onBrowseMenu={() => handleNavigate('menu', 'customer')}
             onIdentityUpdated={() => void refetch()}
             onNavigateLogin={() => handleNavigate('login', 'customer')}
+            onNavigatePrivacyPolicy={() => handleNavigate('privacy-policy', 'customer')}
+            onNavigateTerms={() => handleNavigate('terms-and-conditions', 'customer')}
             onSessionChange={setCustomerSession}
           />
         </Suspense>
@@ -1460,6 +1468,18 @@ export default function App() {
             }}
             onBrowseMenu={() => handleNavigate('menu', 'customer')}
           />
+        </Suspense>
+      )}
+
+      {activeScreen === 'privacy-policy' && (
+        <Suspense fallback={<ScreenFallback />}>
+          <PrivacyPolicyScreen onBack={() => handleNavigate('menu', 'customer')} />
+        </Suspense>
+      )}
+
+      {activeScreen === 'terms-and-conditions' && (
+        <Suspense fallback={<ScreenFallback />}>
+          <TermsAndConditionsScreen onBack={() => handleNavigate('menu', 'customer')} />
         </Suspense>
       )}
 

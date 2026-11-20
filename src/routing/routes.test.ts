@@ -6,6 +6,16 @@ import { canStaffRoleAccessScreen, getDefaultStaffScreenForRole } from '../utils
 test('customer and staff screens have stable URL routes', () => {
   assert.equal(getPathForScreen('menu'), '/customer/menu');
   assert.equal(getPathForScreen('profile'), '/customer/profile');
+  assert.equal(getPathForScreen('privacy-policy'), '/privacy-policy');
+  assert.equal(getPathForScreen('terms-and-conditions'), '/terms-and-conditions');
+  assert.deepEqual(resolveCafeRoute('/privacy-policy'), {
+    screen: 'privacy-policy',
+    mode: 'customer',
+  });
+  assert.deepEqual(resolveCafeRoute('/terms-and-conditions'), {
+    screen: 'terms-and-conditions',
+    mode: 'customer',
+  });
   assert.deepEqual(resolveCafeRoute('/customer/profile'), {
     screen: 'profile',
     mode: 'customer',

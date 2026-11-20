@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Allow: /customer
+Allow: /customer/menu
+Allow: /privacy-policy
+Allow: /terms-and-conditions
+Disallow: /admin
+Disallow: /admin/
+Disallow: /kitchen
+Disallow: /kitchen/
+Disallow: /api/
+
+Sitemap: https://sethsawariya.com/sitemap.xml

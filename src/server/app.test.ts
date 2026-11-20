@@ -184,6 +184,16 @@ test('health and public bootstrap remain available and retired YouPI routes stay
   assert.equal(health.ok, true);
   assert.equal(health.service, 'seth-sawariya-cafeos');
 
+  const liveness = await fetch(`${baseUrl}/health/live`);
+  assert.equal(liveness.status, 200);
+  const liveJson = (await liveness.json()) as { status: string; uptime: number };
+  assert.equal(liveJson.status, 'ok');
+
+  const readiness = await fetch(`${baseUrl}/health/ready`);
+  assert.equal(readiness.status, 200);
+  const readyJson = (await readiness.json()) as { status: string };
+  assert.equal(readyJson.status, 'ready');
+
   const identityWithoutAuth = await fetch(`${baseUrl}/api/customer/identity`, {
     method: 'POST',
   });
