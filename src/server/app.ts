@@ -1161,7 +1161,15 @@ export function createCafeServer(
 
   // Issue 1 & 3: Hardened OTP Verification Endpoint
   app.post('/api/auth/otp/verify', (req, res) => {
-    const { identifier, code } = req.body as { identifier?: string; code?: string };
+    const b = (req.body || {}) as {
+      identifier?: string;
+      email?: string;
+      phone?: string;
+      code?: string;
+      otp?: string;
+    };
+    const identifier = b.identifier || b.email || b.phone;
+    const code = b.code || b.otp;
     if (!identifier || !code) {
       res.status(400).json({ error: 'Identifier and 6-digit code are required.' });
       return;
@@ -1361,7 +1369,22 @@ export function createCafeServer(
 
   app.post('/api/orders', tableOrderLimiter, async (req, res, next) => {
     try {
-      const input = parseBody(createOrderSchema, req.body);
+      const headerIdempotencyKey =
+        typeof req.headers['idempotency-key'] === 'string'
+          ? req.headers['idempotency-key'].trim()
+          : typeof req.headers['x-idempotency-key'] === 'string'
+          ? req.headers['x-idempotency-key'].trim()
+          : undefined;
+      const rawBody =
+        typeof req.body === 'object' && req.body !== null
+          ? {
+              ...req.body,
+              idempotencyKey:
+                (req.body as { idempotencyKey?: string }).idempotencyKey ||
+                headerIdempotencyKey,
+            }
+          : req.body;
+      const input = parseBody(createOrderSchema, rawBody);
       const staffSession = getStaffSession(req);
       if (input.isPosTerminal && !staffSession) {
         res.status(401).json({ error: 'Staff PIN authentication required for POS orders' });
@@ -2273,6 +2296,14 @@ export function createCafeServer(
 
   // Central Zod + domain state transition + error handler
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (
+      err instanceof SyntaxError &&
+      'status' in err &&
+      (err as { status?: number }).status === 400
+    ) {
+      res.status(400).json({ error: 'Malformed JSON payload in request body' });
+      return;
+    }
     if (err instanceof z.ZodError) {
       const firstIssue = err.issues[0];
       const fieldPath = firstIssue?.path.length ? `[${firstIssue.path.join('.')}] ` : '';

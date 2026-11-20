@@ -4,36 +4,31 @@ import {
   Sparkles,
   Gift,
   Tag,
+  Coins,
+  ArrowRight,
+  Info,
   Check,
   Copy,
-  Clock,
-  ArrowRight,
   Coffee,
-  Coins,
-  ShieldCheck,
   ShoppingBag,
-  Info,
-  BadgePercent,
+  ShieldCheck,
   Flame,
   ArrowUpRight,
-  Award,
   Zap,
-  ChevronRight,
+  ChevronDown,
   Star,
   Percent,
 } from 'lucide-react';
 import type { PromoCampaign } from '../types/cafe';
 import { BlurFade } from '@/components/ui/blur-fade';
 import { NumberTicker } from '@/components/ui/number-ticker';
-import { ShinyText } from '@/components/ui/shiny-text';
-import { CardSpotlight } from '@/components/ui/card-spotlight';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
-import { ShineBorder } from '@/components/ui/shine-border';
+import { CardSpotlight } from '@/components/ui/card-spotlight';
 
-interface CustomerRewardsScreenProps {
+export interface CustomerRewardsScreenProps {
   points: number;
   campaigns: PromoCampaign[];
-  hasMatchedCustomerProfile: boolean;
+  hasMatchedCustomerProfile?: boolean;
   onRedeemCoupon: (code: string) => void;
   onNavigateProfile?: () => void;
   onBrowseMenu?: () => void;
@@ -93,22 +88,23 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
   const availableBeans = Number.isFinite(points) ? Math.max(0, points) : 0;
   const beanValue = Math.floor(availableBeans / 2);
 
-  // Next milestone calculation (e.g. next tier at 200 beans)
+  // Next milestone calculation (tier reward at 200 beans)
   const nextMilestone = 200;
   const progressPercent = Math.min(100, Math.round((availableBeans / nextMilestone) * 100));
   const beansToNext = Math.max(0, nextMilestone - availableBeans);
 
   const filteredCampaigns = useMemo(() => {
-    return activeCampaigns.filter((campaign) => {
-      const isPersonalized = Boolean(campaign.targetSegment && campaign.targetSegment !== 'all');
-      if (activeTab === 'exclusive') return isPersonalized;
+    return activeCampaigns.filter((c) => {
+      if (activeTab === 'exclusive') {
+        return c.targetSegment && c.targetSegment !== 'all';
+      }
       if (activeTab === 'beverage') {
-        const text = `${campaign.title} ${campaign.description}`.toLowerCase();
-        return text.includes('coffee') || text.includes('frappe') || text.includes('tea') || text.includes('bogo');
+        const text = (c.title + ' ' + (c.description || '')).toLowerCase();
+        return text.includes('coffee') || text.includes('brew') || text.includes('drink') || text.includes('latte') || text.includes('tea');
       }
       if (activeTab === 'food') {
-        const text = `${campaign.title} ${campaign.description}`.toLowerCase();
-        return text.includes('sandwich') || text.includes('snack') || text.includes('food');
+        const text = (c.title + ' ' + (c.description || '')).toLowerCase();
+        return text.includes('pizza') || text.includes('burger') || text.includes('snack') || text.includes('bite') || text.includes('meal');
       }
       return true;
     });
@@ -125,7 +121,7 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
   };
 
   const scrollToOffers = () => {
-    const el = document.getElementById('deal-vouchers');
+    const el = document.getElementById('available-offers');
     if (el) {
       el.scrollIntoView({ behavior: 'smooth' });
     }
@@ -133,33 +129,34 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 sm:gap-8 px-4 py-4 sm:px-6 sm:py-6 pb-28 text-on-surface">
-        {/* Header Bar */}
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-5 sm:px-6 sm:py-7 md:gap-8 pb-28 text-on-surface">
+        {/* Navigation Bar / Page Header */}
         <BlurFade delay={0.03} yOffset={6}>
-          <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-outline-variant/15">
-            <div className="space-y-1.5">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-transparent border border-amber-500/25">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                <ShinyText text="Seth Sawariya Luxury Roastery Club" speed={3.2} className="text-amber-300 font-extrabold" />
+          <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-outline-variant/15">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary">
+                  <Coins className="w-4 h-4" />
+                </span>
+                <span className="text-[11px] font-extrabold uppercase tracking-widest text-primary">
+                  CafeOS Loyalty Club
+                </span>
               </div>
-              <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight flex items-center gap-2">
-                Beans <span className="text-primary font-serif italic">&amp;</span> Privileges
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight font-display text-on-surface">
+                Beans <span className="text-primary">&amp;</span> Exclusive Offers
               </h1>
-              <p className="text-xs sm:text-sm text-on-surface-variant max-w-xl leading-relaxed">
-                Your artisanal coffee journey rewarded. Convert bean rewards directly to cash discounts and redeem exclusive chef specials.
-              </p>
             </div>
 
-            <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0">
+            <div className="flex items-center gap-2 self-start sm:self-auto">
               {onBrowseMenu && (
                 <motion.button
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.95 }}
                   type="button"
                   onClick={onBrowseMenu}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container-high hover:bg-surface-variant text-xs font-bold text-on-surface border border-outline-variant/20 transition-all cursor-pointer shadow-sm"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-surface-container-high hover:bg-surface-variant text-xs font-bold text-on-surface border border-outline-variant/20 transition-all cursor-pointer shadow-sm"
                 >
-                  <Coffee className="w-4 h-4 text-primary" />
+                  <Coffee className="w-3.5 h-3.5 text-primary" />
                   <span>Menu</span>
                 </motion.button>
               )}
@@ -169,207 +166,169 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
                   whileTap={{ scale: 0.95 }}
                   type="button"
                   onClick={onNavigateCart}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 hover:bg-primary/20 text-xs font-bold text-primary border border-primary/25 transition-all cursor-pointer shadow-sm"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary/15 hover:bg-primary/25 text-xs font-bold text-primary border border-primary/30 transition-all cursor-pointer shadow-sm"
                 >
-                  <ShoppingBag className="w-4 h-4" />
-                  <span>Cart</span>
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                  <span>View Cart</span>
                 </motion.button>
               )}
             </div>
           </header>
         </BlurFade>
 
-        {/* Bento Grid: Master Loyalty Dashboard */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5">
-          {/* Bento Tile 1: The Main Obsidian Glass Vault Card (Col 8) */}
-          <div className="lg:col-span-8">
-            <BlurFade delay={0.06} yOffset={10}>
-              <ShineBorder
-                borderRadius={28}
-                borderWidth={1.5}
-                color={['#FF6422', '#F5A638', '#E6A15C']}
-                className="p-0 bg-transparent overflow-hidden shadow-2xl shadow-black/50"
-              >
-                <CardSpotlight
-                  radius={360}
-                  color="rgba(255, 100, 34, 0.16)"
-                  className="relative isolate overflow-hidden rounded-[28px] bg-gradient-to-br from-[#26150E] via-[#1B0E08] to-[#0E0603] text-white p-6 sm:p-7 md:p-8 flex flex-col justify-between min-h-[320px]"
-                >
-                  {/* Atmospheric Glow Backdrops */}
-                  <div className="pointer-events-none absolute -right-16 -top-16 h-72 w-72 rounded-full bg-primary/25 blur-3xl" />
-                  <div className="pointer-events-none absolute -left-16 -bottom-16 h-72 w-72 rounded-full bg-amber-600/15 blur-3xl" />
+        {/* Bento Grid: Vault Card (Col 8) + Tier Milestone (Col 4) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+          {/* Main Vault Tile */}
+          <BlurFade delay={0.06} yOffset={10} className="lg:col-span-8 flex">
+            <section
+              aria-label="Bean Vault"
+              className="relative w-full overflow-hidden rounded-3xl border border-amber-500/25 bg-gradient-to-br from-[#20120B] via-[#140B07] to-[#0A0503] p-5 sm:p-7 md:p-8 text-white shadow-2xl flex flex-col justify-between"
+            >
+              {/* Specular ambient lighting */}
+              <div className="pointer-events-none absolute -top-24 -left-24 w-72 h-72 rounded-full bg-primary/15 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-24 -right-24 w-72 h-72 rounded-full bg-amber-500/10 blur-3xl" />
+              <div className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-primary via-amber-400 to-transparent" />
 
-                  {/* Card Top: Member Tier & Hologram Chip */}
-                  <div className="relative flex items-center justify-between pb-4 border-b border-white/10">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center">
-                        <Award className="w-4 h-4 text-amber-300" />
-                      </div>
-                      <div>
-                        <div className="text-[10px] font-black uppercase tracking-widest text-amber-300/80">
-                          Roastery Pass
-                        </div>
-                        <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                          <span>Reserve Gold Tier</span>
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        </div>
-                      </div>
-                    </div>
+              <div>
+                {/* Status Badges */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-amber-200">
+                    <Coins className="h-3.5 w-3.5 text-amber-400" />
+                    Vault Balance
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-[11px] font-bold text-emerald-300">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Available Instantly
+                  </span>
+                </div>
 
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-white/[0.08] border border-white/15 text-neutral-200 backdrop-blur-md">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Live Wallet</span>
-                    </div>
-                  </div>
+                {/* Big Balance Display */}
+                <div className="mt-5 flex items-baseline gap-3">
+                  <NumberTicker
+                    value={availableBeans}
+                    className="text-5xl sm:text-6xl md:text-7xl font-black font-display tracking-tight text-amber-50 tabular-nums"
+                  />
+                  <span className="text-base sm:text-lg font-bold uppercase tracking-widest text-amber-300/80">
+                    Beans
+                  </span>
+                </div>
 
-                  {/* Card Middle: Main Balance & Numbers */}
-                  <div className="relative py-4 space-y-3">
-                    <div className="text-xs font-bold uppercase tracking-widest text-amber-200/70 flex items-center gap-1.5">
-                      <Coins className="w-4 h-4 text-amber-400" />
-                      <span>Available Beans Balance</span>
-                    </div>
+                {/* Conversion Equivalent */}
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-neutral-300">
+                  <span className="text-xs font-medium text-neutral-400">Cash Value:</span>
+                  <span className="inline-flex items-center text-lg sm:text-xl font-black text-amber-300">
+                    ₹<NumberTicker value={beanValue} className="text-amber-300 font-black ml-0.5" />
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[11px] text-neutral-300 font-medium">
+                    <Percent className="w-3 h-3 text-amber-400" /> 2 Beans = ₹1 discount
+                  </span>
+                </div>
+              </div>
 
-                    <div className="flex items-baseline gap-3 flex-wrap">
-                      <NumberTicker
-                        value={availableBeans}
-                        className="text-5xl sm:text-6xl md:text-7xl font-black font-display tracking-tight text-white tabular-nums drop-shadow-md"
-                      />
-                      <span className="text-lg sm:text-xl font-black uppercase tracking-widest text-amber-300/90">
-                        Beans
-                      </span>
-                    </div>
+              {/* Action Buttons & Security Guarantee */}
+              <div className="mt-7 pt-5 border-t border-white/10 flex flex-wrap items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <ShimmerButton
+                    onClick={scrollToOffers}
+                    background="radial-gradient(ellipse 80% 80% at 50% 120%, #ff6422, #c84610)"
+                    shimmerColor="#ffd7b5"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white shadow-lg cursor-pointer transition-transform active:scale-95"
+                  >
+                    <Tag className="h-3.5 w-3.5" />
+                    <span>Explore Vouchers</span>
+                  </ShimmerButton>
 
-                    {/* Cash Conversion Pill */}
-                    <div className="inline-flex flex-wrap items-center gap-2.5 px-4 py-2 rounded-2xl bg-white/[0.07] border border-white/15 backdrop-blur-md text-xs">
-                      <span className="text-neutral-300 font-medium">Checkout Redemption Value:</span>
-                      <span className="text-base font-black text-amber-400 flex items-center">
-                        ₹<NumberTicker value={beanValue} className="text-amber-400 font-black" />
-                      </span>
-                      <span className="text-[11px] text-neutral-400 font-mono">(2 Beans = ₹1)</span>
-                    </div>
-                  </div>
+                  {onNavigateCart && (
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.95 }}
+                      type="button"
+                      onClick={onNavigateCart}
+                      className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/15 transition-all cursor-pointer shadow-sm"
+                    >
+                      <span>Redeem in Cart</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </motion.button>
+                  )}
+                </div>
 
-                  {/* Card Bottom: Milestone Bar & Action CTAs */}
-                  <div className="relative space-y-4 pt-3 border-t border-white/10">
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-neutral-300 font-semibold flex items-center gap-1.5">
-                          <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                          Next Perk: Free Specialty Pour-Over
-                        </span>
-                        <span className="text-amber-300 font-mono font-bold">
-                          {beansToNext > 0 ? `${beansToNext} Beans away` : 'Unlocked!'}
-                        </span>
-                      </div>
-                      <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden p-0.5 border border-white/10">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${progressPercent}%` }}
-                          transition={{ duration: 1.2, ease: 'easeOut', delay: 0.2 }}
-                          className="h-full rounded-full bg-gradient-to-r from-amber-500 via-orange-400 to-[#FF6422]"
-                        />
-                      </div>
-                    </div>
+                <div className="inline-flex items-center gap-1.5 text-[11px] text-neutral-400 font-medium">
+                  <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+                  <span>Dine-in verified credits</span>
+                </div>
+              </div>
+            </section>
+          </BlurFade>
 
-                    <div className="flex flex-wrap items-center gap-3">
-                      <ShimmerButton
-                        onClick={scrollToOffers}
-                        background="radial-gradient(ellipse 80% 80% at 50% 120%, #ff6422, #c84610)"
-                        shimmerColor="#ffd7b5"
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-lg cursor-pointer transition-transform active:scale-95"
-                      >
-                        <Tag className="w-3.5 h-3.5" />
-                        <span>Explore Coupons</span>
-                      </ShimmerButton>
+          {/* Tier Milestone Card (Col 4) */}
+          <BlurFade delay={0.09} yOffset={10} className="lg:col-span-4 flex">
+            <section
+              aria-label="Tier Milestone"
+              className="w-full rounded-3xl border border-outline-variant/20 bg-surface-container-low/90 backdrop-blur-md p-5 sm:p-6 flex flex-col justify-between shadow-xl"
+            >
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-primary/10 border border-primary/25 text-primary">
+                    <Star className="w-3 h-3 fill-primary" />
+                    Tier Level
+                  </span>
+                  <span className="text-xs font-bold text-on-surface">
+                    {availableBeans >= nextMilestone ? 'Gold Member' : 'Silver Tier'}
+                  </span>
+                </div>
 
-                      {onNavigateCart && (
-                        <motion.button
-                          whileHover={{ scale: 1.03 }}
-                          whileTap={{ scale: 0.95 }}
-                          type="button"
-                          onClick={onNavigateCart}
-                          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold border border-white/15 transition-all cursor-pointer backdrop-blur-md"
-                        >
-                          <span>Use in Cart</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </motion.button>
-                      )}
-                    </div>
-                  </div>
-                </CardSpotlight>
-              </ShineBorder>
-            </BlurFade>
-          </div>
-
-          {/* Bento Tile 2: Loyalty Tier Highlights (Col 4) */}
-          <div className="lg:col-span-4 flex flex-col gap-4">
-            <BlurFade delay={0.09} yOffset={10}>
-              <div className="h-full rounded-[28px] border border-outline-variant/15 bg-surface-container-low/80 backdrop-blur-xl p-5 sm:p-6 flex flex-col justify-between space-y-4 shadow-lg hover:border-primary/30 transition-all">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 border border-primary/20 px-2.5 py-0.5 rounded-full">
-                      Privileges
-                    </span>
-                    <Flame className="w-4 h-4 text-primary" />
-                  </div>
-                  <h3 className="text-base sm:text-lg font-bold text-on-surface">
-                    Tier Benefits Unlocked
-                  </h3>
-                  <p className="text-xs text-on-surface-variant leading-relaxed">
-                    Active on every order when you order via Table QR or counter POS.
+                <div>
+                  <h3 className="text-base font-extrabold text-on-surface">VIP Roastery Club</h3>
+                  <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
+                    {beansToNext > 0
+                      ? `Collect ${beansToNext} more Beans to unlock 15% bonus redemption privileges.`
+                      : 'You have achieved Gold Tier VIP status! Enjoy complimentary priority tables.'}
                   </p>
                 </div>
 
-                <div className="space-y-2.5">
-                  <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-surface-container/60 border border-outline-variant/10">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <Percent className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-on-surface">50% Max Deduction</div>
-                      <div className="text-[11px] text-on-surface-variant">Redeem Beans up to half your bill</div>
-                    </div>
+                {/* Milestone Progress Bar */}
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-on-surface-variant">
+                    <span>Progress</span>
+                    <span>{progressPercent}%</span>
                   </div>
-
-                  <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-surface-container/60 border border-outline-variant/10">
-                    <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <Sparkles className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-on-surface">+25 Beans Per Review</div>
-                      <div className="text-[11px] text-on-surface-variant">Instant credit after dining</div>
-                    </div>
+                  <div className="h-2 w-full rounded-full bg-surface-container-highest overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${progressPercent}%` }}
+                      transition={{ duration: 1.2, ease: 'easeOut' }}
+                      className="h-full rounded-full bg-gradient-to-r from-primary to-amber-400"
+                    />
                   </div>
-
-                  <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-surface-container/60 border border-outline-variant/10">
-                    <div className="w-7 h-7 rounded-lg bg-violet-500/15 text-violet-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <Gift className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-on-surface">VIP Segment Deals</div>
-                      <div className="text-[11px] text-on-surface-variant">Secret curated seasonal offers</div>
-                    </div>
+                  <div className="flex justify-between text-[10px] text-on-surface-variant/70">
+                    <span>0 Beans</span>
+                    <span>{nextMilestone} Beans (Gold)</span>
                   </div>
-                </div>
-
-                <div className="pt-2 border-t border-outline-variant/10 flex items-center justify-between text-xs text-on-surface-variant">
-                  <span>Never expires</span>
-                  <span className="font-semibold text-primary">No minimum balance</span>
                 </div>
               </div>
-            </BlurFade>
-          </div>
+
+              {/* Review Prompt Reminder */}
+              <div className="mt-5 p-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 shrink-0">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div className="text-[11px] text-on-surface leading-snug">
+                  <strong className="text-emerald-400 font-extrabold">+25 Beans</strong> awarded on every verified table review.
+                </div>
+              </div>
+            </section>
+          </BlurFade>
         </div>
 
-        {/* 3-Step Earn & Save Cards */}
-        <section aria-label="How Beans Work" className="space-y-3.5">
-          <BlurFade delay={0.12} yOffset={6}>
+        {/* 3 Interactive Perk Rule Cards */}
+        <section aria-label="Earning and Redemption Rules" className="space-y-3">
+          <BlurFade delay={0.12} yOffset={8}>
             <div className="flex items-center justify-between">
-              <h2 className="text-sm sm:text-base font-extrabold text-on-surface flex items-center gap-2">
+              <h2 className="text-sm sm:text-base font-bold text-on-surface flex items-center gap-2">
                 <Info className="w-4 h-4 text-primary" />
-                <span>The Three-Step Loop</span>
+                <span>How Beans Work</span>
               </h2>
-              <span className="text-xs text-on-surface-variant font-medium">Automatic & Effortless</span>
+              <span className="text-xs text-on-surface-variant font-medium">Clear &amp; Transparent</span>
             </div>
           </BlurFade>
 
@@ -377,27 +336,27 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
             {PERK_RULES.map((rule, idx) => {
               const IconComp = rule.icon;
               return (
-                <BlurFade key={rule.badge} delay={0.14 + idx * 0.05} yOffset={10}>
+                <BlurFade key={rule.badge} delay={0.14 + idx * 0.04} yOffset={10}>
                   <motion.div
-                    whileHover={{ y: -4, scale: 1.015 }}
-                    transition={{ type: 'spring', stiffness: 350, damping: 22 }}
-                    className="h-full rounded-2xl border border-outline-variant/15 bg-surface-container-low/70 hover:border-primary/30 transition-colors shadow-sm overflow-hidden"
+                    whileHover={{ y: -4, scale: 1.01 }}
+                    transition={{ type: 'spring', stiffness: 350, damping: 24 }}
+                    className="h-full rounded-2xl border border-outline-variant/15 bg-surface-container-low/80 hover:border-primary/40 transition-colors shadow-sm overflow-hidden"
                   >
-                    <CardSpotlight radius={180} color={rule.spotlight} className="p-4 sm:p-5 space-y-3 bg-transparent h-full flex flex-col justify-between">
-                      <div className="space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${rule.badgeClass}`}
-                          >
-                            {rule.badge}
-                          </span>
-                          <IconComp className="w-4 h-4 text-on-surface-variant/70" />
-                        </div>
-                        <div>
-                          <h3 className="text-base font-black text-on-surface">{rule.title}</h3>
-                          <p className="text-xs font-bold text-primary">{rule.subtitle}</p>
-                        </div>
+                    <CardSpotlight radius={160} color={rule.spotlight} className="p-4 space-y-2.5 bg-transparent h-full">
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${rule.badgeClass}`}
+                        >
+                          {rule.badge}
+                        </span>
+                        <IconComp className="w-4 h-4 text-on-surface-variant/70" />
                       </div>
+
+                      <div>
+                        <h3 className="text-base font-extrabold text-on-surface">{rule.title}</h3>
+                        <p className="text-xs font-semibold text-primary">{rule.subtitle}</p>
+                      </div>
+
                       <p className="text-xs text-on-surface-variant leading-relaxed">
                         {rule.desc}
                       </p>
@@ -409,33 +368,36 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
           </div>
         </section>
 
-        {/* Offers Section with Category Filter Tabs */}
-        <section id="deal-vouchers" className="space-y-4 scroll-mt-24">
-          <BlurFade delay={0.18} yOffset={6}>
+        {/* Available Offers Section with Category Filter Tabs */}
+        <section id="available-offers" className="space-y-4 scroll-mt-24">
+          <BlurFade delay={0.18} yOffset={8}>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-outline-variant/15">
               <div className="flex items-center gap-2">
                 <Flame className="w-5 h-5 text-primary" />
-                <h2 className="text-lg font-black text-on-surface">Active Cafe Vouchers</h2>
+                <h2 className="text-lg font-extrabold text-on-surface">Active Cafe Vouchers</h2>
+                <span className="px-2 py-0.5 rounded-full bg-surface-container-high border border-outline-variant/20 text-xs font-bold text-on-surface-variant">
+                  {filteredCampaigns.length}
+                </span>
               </div>
 
               {/* Filter Tabs */}
-              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-surface-container-high border border-outline-variant/20 self-start sm:self-auto overflow-x-auto max-w-full">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
                 {(
                   [
-                    { id: 'all', label: `All (${activeCampaigns.length})` },
+                    { id: 'all', label: 'All Deals' },
                     { id: 'beverage', label: 'Brews & Frappes' },
                     { id: 'food', label: 'Food & Snacks' },
-                    { id: 'exclusive', label: 'VIP Exclusive' },
+                    { id: 'exclusive', label: 'VIP Exclusives' },
                   ] as const
                 ).map((tab) => (
                   <button
                     key={tab.id}
                     type="button"
                     onClick={() => setActiveTab(tab.id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                       activeTab === tab.id
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'text-on-surface-variant hover:text-on-surface'
+                        ? 'bg-primary text-white shadow-sm shadow-primary/30'
+                        : 'bg-surface-container-high hover:bg-surface-variant text-on-surface-variant border border-outline-variant/15'
                     }`}
                   >
                     {tab.label}
@@ -445,118 +407,136 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
             </div>
           </BlurFade>
 
-          {/* Vouchers List */}
-          <div className="space-y-3.5">
-            <AnimatePresence mode="popLayout">
-              {filteredCampaigns.length === 0 ? (
-                <BlurFade delay={0.1} yOffset={8}>
-                  <div className="p-8 rounded-2xl border border-outline-variant/15 bg-surface-container-low text-center space-y-2">
-                    <Coffee className="w-8 h-8 text-on-surface-variant/50 mx-auto" />
-                    <h3 className="text-sm font-bold text-on-surface">No vouchers in this category</h3>
-                    <p className="text-xs text-on-surface-variant">
-                      Try selecting &ldquo;All&rdquo; to explore all active cafe promotions.
-                    </p>
-                  </div>
-                </BlurFade>
-              ) : (
-                filteredCampaigns.map((campaign, idx) => {
+          {/* Cards List or Empty State */}
+          <AnimatePresence mode="wait">
+            {filteredCampaigns.length === 0 ? (
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="p-8 rounded-2xl border border-outline-variant/15 bg-surface-container-low text-center space-y-2"
+              >
+                <Coffee className="w-8 h-8 text-on-surface-variant/40 mx-auto" />
+                <h3 className="text-sm font-bold text-on-surface">No vouchers in this category</h3>
+                <p className="text-xs text-on-surface-variant">
+                  Try switching tabs or check back soon as our barista team launches new seasonal specials.
+                </p>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="list"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="space-y-3.5"
+              >
+                {filteredCampaigns.map((campaign, idx) => {
                   const isPersonalized = Boolean(campaign.targetSegment && campaign.targetSegment !== 'all');
                   const isCopied = copiedCode === campaign.code;
 
                   return (
-                    <BlurFade key={campaign.id} delay={0.05 * idx} yOffset={12}>
+                    <BlurFade key={campaign.id} delay={0.04 * idx} yOffset={10}>
                       <motion.article
-                        layout
-                        whileHover={{ y: -3, scale: 1.006 }}
-                        transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+                        whileHover={{ y: -2 }}
                         className={`group relative overflow-hidden rounded-2xl border transition-all duration-300 ${
                           isPersonalized
-                            ? 'border-violet-500/35 bg-gradient-to-r from-violet-950/20 via-surface-container-low/80 to-surface-container-low hover:border-violet-400/50 shadow-violet-950/20'
-                            : 'border-outline-variant/15 bg-surface-container-low/80 hover:border-primary/40 hover:bg-surface-container-low shadow-black/20'
+                            ? 'border-violet-500/35 bg-gradient-to-r from-violet-950/20 via-surface-container-low/90 to-surface-container-low/70 hover:border-violet-400/50'
+                            : 'border-outline-variant/20 bg-surface-container-low/85 hover:border-primary/40'
                         } backdrop-blur-md shadow-md hover:shadow-xl`}
                       >
                         <CardSpotlight
-                          radius={260}
-                          color={isPersonalized ? 'rgba(168, 85, 247, 0.14)' : 'rgba(255, 100, 34, 0.12)'}
+                          radius={240}
+                          color={isPersonalized ? 'rgba(168, 85, 247, 0.12)' : 'rgba(255, 100, 34, 0.10)'}
                           className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 pl-5 sm:pl-6 bg-transparent"
                         >
-                          {/* Accent Bar */}
+                          {/* Left Accent Bar */}
                           <div
                             className={`absolute top-0 bottom-0 left-0 w-1.5 ${
                               isPersonalized
                                 ? 'bg-gradient-to-b from-violet-400 to-purple-600'
-                                : 'bg-gradient-to-b from-[#FF6422] to-amber-500'
+                                : 'bg-gradient-to-b from-primary to-amber-500'
                             }`}
                           />
 
-                          {/* Left: Info */}
+                          {/* Info Column */}
                           <div className="flex-1 min-w-0 space-y-2">
                             <div className="flex flex-wrap items-center gap-2">
                               <span
                                 className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${
                                   isPersonalized
                                     ? 'bg-violet-500/15 text-violet-300 border-violet-500/30'
-                                    : 'bg-primary/10 text-primary border-primary/20'
+                                    : 'bg-primary/10 text-primary border-primary/25'
                                 }`}
                               >
-                                <Tag className="w-3 h-3" />
-                                {isPersonalized ? 'VIP Member Exclusive' : 'Cafe Special'}
+                                {isPersonalized ? (
+                                  <>
+                                    <Sparkles className="w-3 h-3" />
+                                    <span>Member Tier Deal</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Tag className="w-3 h-3" />
+                                    <span>Cafe Voucher</span>
+                                  </>
+                                )}
                               </span>
 
-                              <h3 className="text-base sm:text-lg font-bold text-on-surface truncate">
-                                {campaign.title}
-                              </h3>
+                              {campaign.validityLabel && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+                                  {campaign.validityLabel}
+                                </span>
+                              )}
                             </div>
 
-                            <p className="text-xs sm:text-sm text-on-surface-variant line-clamp-2 leading-relaxed">
-                              {campaign.description}
-                            </p>
+                            <div>
+                              <h3 className="text-base font-extrabold text-on-surface group-hover:text-primary transition-colors">
+                                {campaign.title}
+                              </h3>
+                              {campaign.description && (
+                                <p className="text-xs text-on-surface-variant line-clamp-2 mt-0.5 leading-relaxed">
+                                  {campaign.description}
+                                </p>
+                              )}
+                            </div>
 
-                            <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-on-surface-variant">
-                              <span className="inline-flex items-center gap-1 font-medium">
-                                <Clock className="w-3.5 h-3.5 text-amber-400/80" />
-                                {campaign.validityLabel}
-                              </span>
+                            {/* Eligibility / usage stats */}
+                            <div className="flex flex-wrap items-center gap-3 text-[11px] text-on-surface-variant font-medium pt-1">
                               {campaign.usedLabel && (
-                                <>
-                                  <span className="w-1 h-1 rounded-full bg-outline-variant/40" />
-                                  <span className="text-[11px] text-on-surface-variant/80">
-                                    {campaign.usedLabel}
-                                  </span>
-                                </>
+                                <span>{campaign.usedLabel}</span>
+                              )}
+                              {campaign.revenueLabel && (
+                                <span>• {campaign.revenueLabel}</span>
                               )}
                             </div>
                           </div>
 
-                          {/* Right: Actions */}
-                          <div className="flex items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-outline-variant/15 shrink-0">
-                            {/* Copy Code Pill */}
-                            <motion.button
+                          {/* Voucher Code Stub & Action CTA */}
+                          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-outline-variant/15">
+                            {/* Copyable Promo Code Badge */}
+                            <button
                               type="button"
-                              whileHover={{ scale: 1.03 }}
-                              whileTap={{ scale: 0.94 }}
                               onClick={() => handleCopy(campaign.code)}
+                              className={`group/btn flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-mono font-bold tracking-wider transition-all cursor-pointer ${
+                                isCopied
+                                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                                  : 'bg-surface-container-high hover:bg-surface-variant border-outline-variant/25 text-on-surface'
+                              }`}
                               title="Click to copy promo code"
-                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-primary/40 bg-primary/5 hover:bg-primary/15 text-primary font-mono text-xs font-bold transition-colors cursor-pointer"
                             >
+                              <span>{campaign.code}</span>
                               {isCopied ? (
-                                <>
-                                  <Check className="w-3.5 h-3.5 text-emerald-400 animate-in zoom-in-50 duration-200" />
-                                  <span className="text-emerald-400 font-sans text-xs">Copied</span>
-                                </>
+                                <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                               ) : (
-                                <>
-                                  <Copy className="w-3.5 h-3.5 opacity-70" />
-                                  <span>{campaign.code}</span>
-                                </>
+                                <Copy className="w-3.5 h-3.5 text-on-surface-variant group-hover/btn:text-on-surface shrink-0" />
                               )}
-                            </motion.button>
+                            </button>
 
-                            {/* Apply to Cart */}
+                            {/* Direct Apply Button */}
                             <motion.button
-                              type="button"
                               whileHover={{ scale: 1.03 }}
                               whileTap={{ scale: 0.94 }}
+                              type="button"
                               onClick={() => onRedeemCoupon(campaign.code)}
                               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary hover:bg-[#E55518] text-white text-xs font-bold shadow-md shadow-primary/20 transition-all cursor-pointer"
                             >
@@ -568,30 +548,30 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
                       </motion.article>
                     </BlurFade>
                   );
-                })
-              )}
-            </AnimatePresence>
-          </div>
+                })}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </section>
 
-        {/* Personalized VIP Member Banner */}
-        <section>
+        {/* Member Tier VIP Banner */}
+        <section className="space-y-4">
           {hasMatchedCustomerProfile ? (
-            <BlurFade delay={0.22} yOffset={10}>
-              <div className="p-5 sm:p-6 rounded-2xl border border-violet-400/25 bg-gradient-to-r from-violet-950/25 via-neutral-900/60 to-neutral-900/40 backdrop-blur-md flex items-center gap-4">
+            <BlurFade delay={0.22} yOffset={8}>
+              <div className="p-5 sm:p-6 rounded-2xl border border-violet-400/25 bg-gradient-to-r from-violet-950/25 via-surface-container-low/80 to-surface-container-low/60 backdrop-blur-md flex items-center gap-4">
                 <div className="w-11 h-11 rounded-2xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center shrink-0">
-                  <ShieldCheck className="w-6 h-6 text-violet-300" />
+                  <ShieldCheck className="w-5 h-5 text-violet-300" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-sm sm:text-base font-bold text-on-surface">You&apos;re an Active VIP Member</h3>
+                  <h3 className="text-sm font-bold text-on-surface">Verified Member Account Active</h3>
                   <p className="text-xs text-on-surface-variant leading-relaxed">
-                    Your phone number is linked with Seth Sawariya CRM. Segment discounts apply automatically during billing.
+                    Your dine-in profile is verified. Your visit points and exclusive discounts are automatically credited to your phone number.
                   </p>
                 </div>
               </div>
             </BlurFade>
           ) : (
-            <BlurFade delay={0.22} yOffset={10}>
+            <BlurFade delay={0.22} yOffset={8}>
               <div className="p-5 sm:p-6 rounded-2xl border border-violet-400/25 bg-gradient-to-r from-violet-950/30 via-neutral-900/60 to-neutral-900/40 backdrop-blur-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="space-y-1.5 max-w-lg">
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-violet-500/20 text-violet-300 border border-violet-500/30">
@@ -655,9 +635,9 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
                   className="w-full p-3.5 flex items-center justify-between text-left text-xs font-bold text-on-surface hover:text-primary transition-colors cursor-pointer"
                 >
                   <span>{faq.q}</span>
-                  <ChevronRight
+                  <ChevronDown
                     className={`w-4 h-4 text-on-surface-variant transition-transform ${
-                      expandedFaq === idx ? 'rotate-90 text-primary' : ''
+                      expandedFaq === idx ? 'rotate-180 text-primary' : ''
                     }`}
                   />
                 </button>

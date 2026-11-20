@@ -7,49 +7,31 @@ interface SplashScreenProps {
 }
 
 const BRAND_NAME = 'SETH SAWARIYA';
+const INTRO_DURATION_MS = 5_000;
+const FADE_OUT_DURATION_MS = 700;
+const FADE_OUT_DELAY_MS = INTRO_DURATION_MS - FADE_OUT_DURATION_MS;
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({
   errorMessage,
   onRetry,
   onFinish,
 }) => {
-  const [progress, setProgress] = useState(0);
-  const [stage, setStage] = useState('Grinding Beans');
-  const [isReady, setIsReady] = useState(false);
   const [isFadingOut, setIsFadingOut] = useState(false);
 
   useEffect(() => {
     if (errorMessage) return;
 
-    let current = 0;
-    const interval = setInterval(() => {
-      current += 1;
-      if (current >= 100) {
-        current = 100;
-        clearInterval(interval);
-        setIsReady(true);
-        setStage('Welcome');
-        setTimeout(() => {
-          setIsFadingOut(true);
-          setTimeout(() => onFinish?.(), 650);
-        }, 900);
-      } else if (current < 35) {
-        setStage('Grinding Beans');
-      } else if (current < 75) {
-        setStage('Pouring Crema');
-      } else {
-        setStage('Serving Warm');
-      }
-      setProgress(current);
-    }, 90);
+    let finishTimer: ReturnType<typeof setTimeout> | undefined;
+    const fadeTimer = setTimeout(() => {
+      setIsFadingOut(true);
+      finishTimer = setTimeout(() => onFinish?.(), FADE_OUT_DURATION_MS);
+    }, FADE_OUT_DELAY_MS);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(fadeTimer);
+      if (finishTimer !== undefined) clearTimeout(finishTimer);
+    };
   }, [errorMessage, onFinish]);
-
-  const enterCafe = () => {
-    setIsFadingOut(true);
-    setTimeout(() => onFinish?.(), 220);
-  };
 
   return (
     <main className="brand-loader-root" role="status" aria-label="Loading Seth Sawariya Cafe">
@@ -59,7 +41,6 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
           --loader-ink: #2d2925;
           --loader-roast: #7a6655;
           --loader-crema: #c6a27b;
-          --loader-hairline: rgba(45, 41, 37, 0.13);
           position: fixed;
           inset: 0;
           z-index: 50;
@@ -166,73 +147,6 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
           opacity: 0;
           animation: slideFadeUp .9s ease-out 2.25s forwards;
         }
-        .brand-gauge {
-          width: 280px;
-          max-width: calc(100vw - 4rem);
-          margin-top: 2.15rem;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: .7rem;
-          opacity: 0;
-          animation: slideFadeUp .8s ease-out 2.65s forwards;
-        }
-        .brand-gauge-header {
-          width: 100%;
-          display: flex;
-          justify-content: space-between;
-          color: var(--loader-roast);
-          font-size: .58rem;
-          letter-spacing: .22em;
-          text-transform: uppercase;
-        }
-        .brand-percent {
-          color: var(--loader-ink);
-          font-variant-numeric: tabular-nums;
-        }
-        .brand-gauge-rail {
-          position: relative;
-          width: 100%;
-          height: 1px;
-          display: flex;
-          align-items: center;
-          background: var(--loader-hairline);
-        }
-        .brand-gauge-progress {
-          position: absolute;
-          left: 0;
-          height: 1.5px;
-          background: linear-gradient(90deg, transparent, var(--loader-crema) 22%, var(--loader-ink) 52%, var(--loader-crema) 78%, transparent);
-          transition: width 90ms linear;
-        }
-        .brand-diamond {
-          position: absolute;
-          left: 0;
-          width: 8px;
-          height: 8px;
-          border: 1.5px solid var(--loader-crema);
-          background: var(--loader-bg);
-          transform: translateX(-50%) rotate(45deg);
-          transition: left 90ms linear, transform .4s cubic-bezier(.22,1,.36,1), background .35s ease;
-        }
-        .brand-diamond.ready {
-          background: var(--loader-ink);
-          border-color: var(--loader-ink);
-          transform: translateX(-50%) rotate(225deg) scale(1.2);
-        }
-        .brand-enter {
-          margin-top: 1.05rem;
-          border: 0;
-          background: transparent;
-          color: var(--loader-crema);
-          font: 600 .58rem "Plus Jakarta Sans", sans-serif;
-          letter-spacing: .14em;
-          text-transform: uppercase;
-          cursor: pointer;
-          opacity: .72;
-          transition: opacity .2s ease;
-        }
-        .brand-enter:hover { opacity: 1; }
         .brand-error {
           width: 100%;
           max-width: 380px;
@@ -266,7 +180,6 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
         }
         @media (max-height: 620px) {
           .brand-cup { width: 54px; height: 54px; margin-bottom: .65rem; }
-          .brand-gauge { margin-top: 1.25rem; }
         }
       `}</style>
 
@@ -301,24 +214,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
             <p style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>{errorMessage}</p>
             <button type="button" onClick={onRetry}>Reconnect to Cafe</button>
           </div>
-        ) : (
-          <div className="brand-gauge">
-            <div className="brand-gauge-header">
-              <span>{stage}</span>
-              <span className="brand-percent">{String(progress).padStart(2, '0')}%</span>
-            </div>
-            <div className="brand-gauge-rail">
-              <div className="brand-gauge-progress" style={{ width: `${progress}%` }} />
-              <div
-                className={`brand-diamond ${isReady ? 'ready' : ''}`}
-                style={{ left: `${progress}%` }}
-              />
-            </div>
-            <button type="button" className="brand-enter" onClick={enterCafe}>
-              Enter Cafe <span aria-hidden="true">→</span>
-            </button>
-          </div>
-        )}
+        ) : null}
       </div>
     </main>
   );

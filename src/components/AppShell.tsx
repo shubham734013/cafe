@@ -26,7 +26,6 @@ interface AppShellProps {
 
 const CUSTOMER_NAV: { id: ScreenId; label: string; icon: string }[] = [
   { id: 'home', label: 'Home', icon: 'home' },
-  { id: 'menu', label: 'Search', icon: 'search' },
   { id: 'tracking', label: 'Orders', icon: 'receipt_long' },
   { id: 'rewards', label: 'Beans & Offers', icon: 'local_offer' },
   { id: 'cart', label: 'Cart', icon: 'shopping_bag' },
@@ -200,7 +199,7 @@ export const AppShell: React.FC<AppShellProps> = ({
             : 'bg-surface-container-lowest/65 backdrop-blur-2xl border-r border-white/[0.08] text-on-surface shadow-[1px_0_24px_rgba(0,0,0,0.45)]'
         }`}
       >
-        <div className="space-y-4 overflow-y-auto no-scrollbar">
+        <div className="flex min-h-0 flex-1 flex-col space-y-4 overflow-y-auto no-scrollbar">
           {/* Brand */}
           {!isStaffWorkspace ? (
             <div className="flex flex-col items-center text-center pt-2 px-1">
@@ -321,6 +320,79 @@ export const AppShell: React.FC<AppShellProps> = ({
               })}
             </div>
           )}
+
+          <div className="mt-auto pt-4">
+            {!isStaffWorkspace ? (
+              <div
+                className={`rounded-2xl border p-3 ${
+                  isLightTheme
+                    ? 'border-[#E3DBD2] bg-[#FAF7F2]'
+                    : 'border-white/10 bg-surface-container-low/75'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.16em] text-primary">
+                    <span className="material-symbols-outlined text-[16px]">shopping_bag</span>
+                    Your bag
+                  </span>
+                  <span className="rounded-lg bg-primary/10 px-2 py-0.5 text-[10px] font-bold tabular-nums text-primary">
+                    {cartCount}
+                  </span>
+                </div>
+                <p className={`mt-2 text-xs font-medium ${
+                  isLightTheme ? 'text-[#4D453D]' : 'text-on-surface'
+                }`}>
+                  {cartCount > 0
+                    ? `${cartCount} ${cartCount === 1 ? 'item' : 'items'} ready in your bag`
+                    : 'Your next favorite is one tap away.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onNavigate(cartCount > 0 ? 'cart' : 'menu', 'customer')}
+                  className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl bg-primary/10 px-2.5 py-2 text-[11px] font-bold text-primary transition-colors hover:bg-primary/15 cursor-pointer"
+                >
+                  {cartCount > 0 ? 'Review your bag' : 'Browse the menu'}
+                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                </button>
+              </div>
+            ) : activeRole && canStaffRoleAccessScreen(activeRole, 'kitchen-display-system') ? (
+              <div
+                className={`rounded-2xl border p-3 ${
+                  isLightTheme
+                    ? 'border-[#E3DBD2] bg-[#FAF7F2]'
+                    : 'border-white/10 bg-surface-container-low/75'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-primary">
+                    Service pulse
+                  </span>
+                  <span className={`rounded-lg px-2 py-0.5 text-[10px] font-bold tabular-nums ${
+                    liveKotCount > 0
+                      ? 'bg-amber-400/10 text-amber-400'
+                      : 'bg-emerald-400/10 text-emerald-400'
+                  }`}>
+                    {liveKotCount}
+                  </span>
+                </div>
+                <p className={`mt-2 text-xs font-medium ${
+                  isLightTheme ? 'text-[#4D453D]' : 'text-on-surface'
+                }`}>
+                  {liveKotCount > 0
+                    ? `${liveKotCount} active ${liveKotCount === 1 ? 'kitchen ticket' : 'kitchen tickets'}`
+                    : 'Kitchen queue is clear'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('kitchen-display-system', 'staff')}
+                  className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl bg-primary/10 px-2.5 py-2 text-[11px] font-bold text-primary transition-colors hover:bg-primary/15 cursor-pointer"
+                >
+                  Open kitchen
+                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {/* Bottom Actions */}

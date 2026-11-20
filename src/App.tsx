@@ -181,7 +181,6 @@ export default function App() {
   const {
     data,
     authSession,
-    isLoading,
     isAuthLoading,
     isError,
     socketConnected,
@@ -1284,12 +1283,20 @@ export default function App() {
       !canStaffRoleAccessScreen(authSession.session.role, activeScreen as StaffScreenId));
 
   const [splashFinished, setSplashFinished] = useState(false);
+  const finishSplash = useCallback(() => setSplashFinished(true), []);
+  const refreshedHomeAfterSplash = useRef(false);
 
   useEffect(() => {
-    if (activeScreen === 'splash' && splashFinished && !isLoading && !isAuthLoading && !isError) {
+    if (activeScreen === 'splash' && splashFinished && !isError) {
       navigate('home', 'customer', { replace: true });
     }
-  }, [activeScreen, isAuthLoading, isError, isLoading, navigate, splashFinished]);
+  }, [activeScreen, isError, navigate, splashFinished]);
+
+  useEffect(() => {
+    if (activeScreen !== 'home' || !splashFinished || refreshedHomeAfterSplash.current) return;
+    refreshedHomeAfterSplash.current = true;
+    void refetch();
+  }, [activeScreen, refetch, splashFinished]);
 
   if (activeScreen === 'splash') {
     return (
@@ -1297,7 +1304,7 @@ export default function App() {
         <SplashScreen
           errorMessage={isError ? errorMessage : undefined}
           onRetry={() => void refetch()}
-          onFinish={() => setSplashFinished(true)}
+          onFinish={finishSplash}
         />
       </Suspense>
     );
