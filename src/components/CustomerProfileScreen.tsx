@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CAFE_ASSETS } from '../data/cafeSeedData';
 import { CafeImage } from './CafeImage';
+import { CustomerCard, CustomerPage, CustomerText } from './CustomerMotion';
 import {
   getLocalCustomerSession,
   isLiveSupabase,
@@ -149,10 +150,12 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
   };
 
   return (
-    <div className="flex flex-col w-full pb-8 gap-4">
+    <CustomerPage className="flex flex-col w-full pb-8 gap-4">
       <div className="flex items-center justify-between pt-1">
         <div>
-          <h1 className="text-xl font-bold text-on-surface tracking-tight">Personal Profile</h1>
+          <h1 className="text-xl font-bold text-on-surface tracking-tight">
+            <CustomerText>Personal Profile</CustomerText>
+          </h1>
           <p className="text-xs text-on-surface-variant mt-0.5">Manage your customer details</p>
         </div>
         <button
@@ -166,7 +169,7 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
       </div>
 
       <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-        <section className="lg:col-span-4 rounded-xl bg-surface-container-low p-5 shadow-md border border-outline-variant/20">
+        <CustomerCard className="lg:col-span-4 rounded-xl bg-surface-container-low p-5 shadow-md border border-outline-variant/20">
           <div className="flex flex-col items-center text-center">
             <div className="relative w-24 h-24 rounded-full p-1 bg-primary/20">
               {profile.name ? (
@@ -226,9 +229,9 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
               </div>
             )}
           </div>
-        </section>
+        </CustomerCard>
 
-        <section className="lg:col-span-8 rounded-xl bg-surface-container-low p-4 shadow-md border border-outline-variant/20">
+        <CustomerCard delay={0.08} className="lg:col-span-8 rounded-xl bg-surface-container-low p-4 shadow-md border border-outline-variant/20">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-on-surface">Personal Information</h2>
             {hasChanges && (
@@ -425,8 +428,8 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
               {saving ? 'Saving...' : 'Save Profile'}
             </button>
           </div>
-        </section>
+        </CustomerCard>
       </form>
-    </div>
+    </CustomerPage>
   );
 };

@@ -737,6 +737,104 @@ test('customer order feedback records review and awards loyalty points', async (
   assert.equal(latestEntry.orderId, targetOrder.id);
 });
 
+test('first-order discount is available once to an authenticated customer account', async () => {
+  const store = new CafeStore(null);
+  const priorCustomer = store.addCustomer({
+    name: 'Existing Customer',
+    phone: '9876543210',
+    segment: 'regular',
+    favorites: '',
+    dpdpConsent: true,
+  });
+  await store.createOrder({
+    outletId: 'seth-sawariya-main',
+    serviceMode: 'takeaway',
+    paymentMode: 'cash',
+    couponCode: '',
+    cookingNote: '',
+    isPosTerminal: true,
+    customerId: priorCustomer.id,
+    items: [
+      {
+        menuItemId: 'cappuccino',
+        name: 'Cappuccino',
+        price: 0,
+        quantity: 1,
+        note: '',
+        imageUrl: '',
+        station: 'Barista',
+      },
+    ],
+  });
+  const customerId = 'first-order-customer-test';
+  const customerSession = {
+    customerId,
+    orderIds: [] as string[],
+    issuedAt: Date.now(),
+    exp: Date.now() + 60_000,
+  };
+  const customerActor = { staffSession: null, customerSession };
+  assert.equal(store.getBootstrap(customerActor).firstOrderEligible, true);
+  assert.equal(
+    store.getBootstrap({
+      staffSession: null,
+      customerSession: { ...customerSession, customerId: 'guest_test' },
+    }).firstOrderEligible,
+    false
+  );
+  assert.equal(
+    store.getBootstrap({
+      staffSession: null,
+      customerSession: {
+        ...customerSession,
+        customerId: 'new-account',
+        crmCustomerId: priorCustomer.id,
+      },
+    }).firstOrderEligible,
+    false
+  );
+
+  const orderInput = {
+    outletId: 'seth-sawariya-main',
+    serviceMode: 'takeaway' as const,
+    paymentMode: 'cash' as const,
+    couponCode: '',
+    cookingNote: '',
+    isPosTerminal: false,
+    customerId,
+    items: [
+      {
+        menuItemId: 'cappuccino',
+        name: 'Cappuccino',
+        price: 0,
+        quantity: 1,
+        note: '',
+        imageUrl: '',
+        station: 'Barista' as const,
+      },
+    ],
+  };
+  const firstOrder = await store.createOrder(orderInput);
+  assert.equal(firstOrder.order.discount, Math.round(firstOrder.order.subtotal * 0.2));
+
+  const afterFirstOrder = {
+    ...customerSession,
+    orderIds: [firstOrder.order.id],
+  };
+  assert.equal(
+    store.getBootstrap({ staffSession: null, customerSession: afterFirstOrder })
+      .firstOrderEligible,
+    false
+  );
+  const secondOrder = await store.createOrder(
+    { ...orderInput, idempotencyKey: 'second-order-attempt' },
+    undefined,
+    undefined,
+    afterFirstOrder.orderIds
+  );
+  assert.equal(secondOrder.order.discount, 0);
+});
+
 test('customers earn Beans once per order and redeem them on a later order', async (t) => {
   const gateway = new TestUpiGateway();
   const { baseUrl, store, close } = await startTestServer(gateway);
@@ -770,8 +868,9 @@ test('customers earn Beans once per order and redeem them on a later order', asy
   assert.equal(firstOrderResponse.status, 201);
   const firstCookie = getCookieHeader(firstOrderResponse);
   const firstOrderBody = (await firstOrderResponse.json()) as {
-    order: { id: string };
+    order: { id: string; discount: number };
   };
+  assert.equal(firstOrderBody.order.discount, 0);
   store.updateOrderStatus(firstOrderBody.order.id, 'served');
 
   const feedbackResponse = await fetch(

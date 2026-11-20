@@ -949,13 +949,13 @@ export function createCafeServer(
       }
 
       if (!data.user.phone || !data.user.phone_confirmed_at) {
-        updateCustomerCrmIdentityCookie(req, res);
+        updateCustomerCrmIdentityCookie(req, res, data.user.id);
         res.json({ verified: false, matched: false });
         return;
       }
 
       const crmCustomerId = store.findCustomerIdByPhone(data.user.phone);
-      updateCustomerCrmIdentityCookie(req, res, crmCustomerId || undefined);
+      updateCustomerCrmIdentityCookie(req, res, data.user.id, crmCustomerId || undefined);
       res.json({ verified: true, matched: Boolean(crmCustomerId) });
     } catch (error) {
       next(error);
@@ -1057,7 +1057,10 @@ export function createCafeServer(
         : customerSession?.crmCustomerId;
       const result = await store.createOrder(
         orderInput,
-        store.getCustomerSegment(crmCustomerId)
+        store.getCustomerSegment(crmCustomerId),
+        crmCustomerId,
+        customerSession?.orderIds,
+        !staffSession && Boolean(customerSession?.customerId)
       );
       if (!staffSession && result.duplicate && result.order.customerId !== customerId) {
         res.status(403).json({ error: 'This idempotency key belongs to another customer order' });

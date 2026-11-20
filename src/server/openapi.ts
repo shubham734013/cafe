@@ -48,7 +48,10 @@ export const cafeOpenApiSpec = {
           },
         ],
         responses: {
-          '200': { description: 'Authorized CafeOS state, optionally reduced to one route' },
+          '200': {
+            description:
+              'Authorized CafeOS state, optionally reduced to one route; customer state includes first-order offer eligibility when available.',
+          },
           '400': { description: 'Unknown screen or scope' },
         },
       },
@@ -108,7 +111,7 @@ export const cafeOpenApiSpec = {
               '/customer/identity': {
                 post: {
                   tags: ['Auth & Settings'],
-                  summary: 'Link a Supabase-verified customer phone to one CRM profile',
+                  summary: 'Bind the Supabase customer account and match a verified phone to one CRM profile',
                   parameters: [
                     {
                       name: 'Authorization',
@@ -126,8 +129,8 @@ export const cafeOpenApiSpec = {
                 },
                 delete: {
                   tags: ['Auth & Settings'],
-                  summary: 'Clear the signed-in customer CRM offer identity',
-                  responses: { '204': { description: 'Customer CRM identity cleared' } },
+                  summary: 'Clear the signed-in customer account and CRM offer identity',
+                  responses: { '204': { description: 'Customer account and CRM identity cleared' } },
                 },
               },
             },

@@ -71,6 +71,28 @@ test('calculateCartTotals applies only configured active campaign codes', () => 
   assert.equal(totals.couponApplied, true);
   assert.equal(totals.couponError, null);
 });
+
+test('calculateCartTotals automatically applies the first-order offer when eligible', () => {
+  const items = [
+    {
+      menuItemId: 'french-fries',
+      name: 'French Fries',
+      price: 89,
+      quantity: 1,
+      note: '',
+      imageUrl: '',
+      station: 'Fryer' as const,
+    },
+  ];
+
+  const eligibleTotals = calculateCartTotals(items, '', 'takeaway', false, undefined, 0, true);
+  assert.equal(eligibleTotals.discount, 18);
+  assert.equal(eligibleTotals.discountLabel, 'First Order Offer (20%)');
+
+  const ineligibleTotals = calculateCartTotals(items, '', 'takeaway');
+  assert.equal(ineligibleTotals.discount, 0);
+});
+
 test('calculateCartTotals rejects inactive campaigns and handles POS dine-in discount', () => {
   const smallOrder = [
     {

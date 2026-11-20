@@ -52,6 +52,7 @@ const FALLBACK_BOOTSTRAP: CafeBootstrapState = {
   purchaseOrders: [],
   stockCounts: [],
   activityLog: [],
+  firstOrderEligible: false,
   updatedAt: new Date().toISOString(),
 };
 

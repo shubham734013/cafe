@@ -10,6 +10,7 @@ import {
   isLiveSupabase,
   type CustomerAuthSession,
 } from '../lib/supabaseClient';
+import { CustomerCard, CustomerPage, CustomerText } from './CustomerMotion';
 
 interface CustomerLoginScreenProps {
   onNotify: (message: string) => void;
@@ -191,8 +192,8 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
   // If already logged in
   if (currentSession) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[65vh] p-4">
-        <div className="w-full max-w-md bg-surface-container-low border border-outline-variant/30 rounded-3xl p-6 shadow-2xl text-center space-y-5">
+      <CustomerPage className="flex flex-col items-center justify-center min-h-[65vh] p-4">
+        <CustomerCard className="w-full max-w-md bg-surface-container-low border border-outline-variant/30 rounded-3xl p-6 shadow-2xl text-center space-y-5">
           <div className="w-16 h-16 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 mx-auto flex items-center justify-center">
             <span className="material-symbols-outlined text-[32px]">check_circle</span>
           </div>
@@ -202,7 +203,7 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
               Customer Account
             </span>
             <h2 className="text-xl font-bold text-on-surface">
-              Welcome, {currentSession.name}
+              <CustomerText>Welcome, {currentSession.name}</CustomerText>
             </h2>
             <p className="text-xs text-on-surface-variant mt-1">
               Signed in via {currentSession.provider === 'google' ? 'Google' : 'Supabase Auth'}
@@ -260,21 +261,23 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
               Log Out of Account
             </button>
           </div>
-        </div>
-      </div>
+          </CustomerCard>
+        </CustomerPage>
     );
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[70vh] py-6 px-4">
-      <div className="w-full max-w-md bg-surface-container-low border border-outline-variant/30 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+    <CustomerPage className="flex flex-col items-center justify-center min-h-[70vh] py-6 px-4">
+      <CustomerCard className="w-full max-w-md bg-surface-container-low border border-outline-variant/30 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
         {/* Brand Header */}
         <div className="text-center space-y-1.5">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#C59B67]/15 border border-[#C59B67]/30 text-[#C59B67] text-[10px] font-bold tracking-widest uppercase">
             <span>Seth Sawariya Cafe</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-on-surface tracking-tight font-sans">
-            {activeTab === 'register' ? 'Join Our Cafe Club' : 'Welcome Back'}
+            <CustomerText>
+              {activeTab === 'register' ? 'Join Our Cafe Club' : 'Welcome Back'}
+            </CustomerText>
           </h1>
           <p className="text-xs text-on-surface-variant">
             {activeTab === 'register'
@@ -581,7 +584,7 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
             <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
           </button>
         </div>
-      </div>
-    </div>
+      </CustomerCard>
+    </CustomerPage>
   );
 };

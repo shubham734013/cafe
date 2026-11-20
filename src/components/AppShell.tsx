@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CAFE_ASSETS } from '../data/cafeSeedData';
-import { AuthSessionState, ScreenId, StaffScreenId, WorkspaceMode } from '../types/cafe';
+import {
+  AuthSessionState,
+  ScreenId,
+  StaffScreenId,
+  WorkspaceMode,
+} from '../types/cafe';
 import { isKitchenPath } from '../routing/routes';
 import { canStaffRoleAccessScreen, formatStaffRoleLabel } from '../utils/rbac';
 import { CafeBrandEmblem } from './CafeBrandEmblem';

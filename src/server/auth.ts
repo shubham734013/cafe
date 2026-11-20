@@ -279,11 +279,12 @@ export function issueOrUpdateCustomerSessionCookie(
 export function updateCustomerCrmIdentityCookie(
   req: Request,
   res: Response,
+  customerId?: string,
   crmCustomerId?: string
 ): void {
   const existing = getCustomerSession(req);
   const token = signToken({
-    customerId: existing?.customerId,
+    customerId,
     crmCustomerId,
     orderIds: existing?.orderIds ?? [],
     issuedAt: existing?.issuedAt ?? Date.now(),

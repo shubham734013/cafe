@@ -9,6 +9,7 @@ import {
 import { ORDER_STATUS_META } from '../state/cafeStateMachines';
 import { CafeOrder } from '../types/cafe';
 import { CafeImage } from './CafeImage';
+import { CustomerCard, CustomerPage, CustomerText } from './CustomerMotion';
 
 interface LiveTrackingScreenProps {
   activeOrder?: CafeOrder;
@@ -93,7 +94,7 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
 
   if (!activeOrder) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 px-4 text-center max-w-sm mx-auto">
+      <CustomerPage className="flex flex-col items-center justify-center py-20 px-4 text-center max-w-sm mx-auto">
         <div className="w-24 h-24 rounded-full bg-surface-container flex items-center justify-center text-[#FF6422] mb-5 shadow-lg border border-outline-variant/15">
           <span className="material-symbols-outlined text-[48px]">receipt_long</span>
         </div>
@@ -111,7 +112,7 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
           <span className="material-symbols-outlined text-[18px]">restaurant_menu</span>
           <span>Explore Menu</span>
         </button>
-      </div>
+      </CustomerPage>
     );
   }
 
@@ -121,7 +122,7 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
   const statusMessage = statusMeta.trackingMessage;
 
   return (
-    <div className="flex flex-col w-full pb-28 pt-1 space-y-4">
+    <CustomerPage className="flex flex-col w-full pb-28 pt-1 space-y-4">
       {/* Top Header Bar */}
       <div className="flex items-center justify-between pb-2">
         <button
@@ -133,7 +134,9 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
           <span className="material-symbols-outlined text-[22px]">arrow_back</span>
         </button>
 
-        <h1 className="text-lg font-black text-on-surface tracking-tight">Track Order</h1>
+        <h1 className="text-lg font-black text-on-surface tracking-tight">
+          <CustomerText>Track Order</CustomerText>
+        </h1>
 
         {/* Dining Mode Pill */}
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container text-xs font-bold text-on-surface border border-outline-variant/15 shrink-0">
@@ -170,7 +173,7 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
       )}
 
       {/* Hero Order Status Card */}
-      <div className="p-5 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-3">
+      <CustomerCard className="p-5 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div>
             <div className="flex items-center gap-1.5">
@@ -274,7 +277,7 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
           </span>
           <p className="text-xs font-semibold text-on-surface leading-snug">{statusMessage}</p>
         </div>
-      </div>
+      </CustomerCard>
 
       {/* Payment Confirmed Banner */}
       {activeOrder.paymentStatus === 'paid' && (
@@ -474,7 +477,7 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
 
       {/* Star Rating & Review Experience (Active once order is served) */}
       {activeOrder.status === 'served' && (
-        <div className="p-5 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-3">
+        <CustomerCard className="p-5 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-xs font-extrabold uppercase tracking-wider text-on-surface">
@@ -605,7 +608,7 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
                 ? 'Update Rating'
                 : 'Submit Review & Claim Points'}
           </button>
-        </div>
+        </CustomerCard>
       )}
 
       {/* Digital Invoice Modal */}
@@ -694,6 +697,6 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </CustomerPage>
   );
 };

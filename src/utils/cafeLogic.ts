@@ -39,7 +39,8 @@ export function calculateCartTotals(
   serviceMode: ServiceMode,
   isPosTerminal = false,
   campaigns?: PromoCampaign[],
-  redeemPoints = 0
+  redeemPoints = 0,
+  firstOrderEligible = false
 ): CartTotals {
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -81,6 +82,9 @@ export function calculateCartTotals(
     } else {
       couponError = 'This promo code is invalid or inactive.';
     }
+  } else if (firstOrderEligible) {
+    discount = Math.round(subtotal * 0.2);
+    discountLabel = 'First Order Offer (20%)';
   }
 
   // Loyalty Points Redemption (2 pts = ₹1 discount, capped at 50% subtotal)

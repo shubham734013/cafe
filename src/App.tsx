@@ -1172,8 +1172,17 @@ export default function App() {
   }, [resetSettingsMutation, showErrorToast, showToast]);
 
   const customerTotals = useMemo(
-    () => calculateCartTotals(customerCart, couponCode, serviceMode, false, campaigns),
-    [campaigns, couponCode, customerCart, serviceMode]
+    () =>
+      calculateCartTotals(
+        customerCart,
+        couponCode,
+        serviceMode,
+        false,
+        campaigns,
+        0,
+        Boolean(data.firstOrderEligible)
+      ),
+    [campaigns, couponCode, customerCart, data.firstOrderEligible, serviceMode]
   );
 
   const liveKotCount = useMemo(
@@ -1245,6 +1254,7 @@ export default function App() {
             orders={orders}
             customerReviews={customerReviews}
             menuItems={menuItems}
+            firstOrderEligible={Boolean(data.firstOrderEligible)}
             onSelectServiceAndTable={(mode, table) => {
               setServiceMode(mode);
               setSelectedTable(table);
@@ -1300,6 +1310,7 @@ export default function App() {
             selectedTable={selectedTable}
             tables={tables}
             campaigns={campaigns}
+            firstOrderEligible={Boolean(data.firstOrderEligible)}
             availablePoints={rewardPoints}
             couponCode={couponCode}
             cookingNote={cookingNote}

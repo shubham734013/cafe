@@ -3,6 +3,7 @@ import type { CafeTable, CartItem, PaymentMode, PromoCampaign, ServiceMode } fro
 import type { CustomerAuthSession } from '../lib/supabaseClient';
 import { calculateCartTotals, formatINR } from '../utils/cafeLogic';
 import { CafeImage } from './CafeImage';
+import { CustomerCard, CustomerPage, CustomerText } from './CustomerMotion';
 import { CoffeeBrewLoader } from './CoffeeBrewLoader';
 
 interface CustomerCartScreenProps {
@@ -11,6 +12,7 @@ interface CustomerCartScreenProps {
   selectedTable: string;
   tables?: CafeTable[];
   campaigns?: PromoCampaign[];
+  firstOrderEligible: boolean;
   availablePoints?: number;
   couponCode: string;
   cookingNote: string;
@@ -34,6 +36,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
   selectedTable,
   tables: _tables = [],
   campaigns = [],
+  firstOrderEligible,
   availablePoints = 0,
   couponCode,
   cookingNote,
@@ -62,7 +65,8 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
     serviceMode,
     false,
     campaigns,
-    pointsToRedeem
+    pointsToRedeem,
+    firstOrderEligible
   );
 
   const formatBillingAmount = (amount: number) =>
@@ -98,7 +102,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
   // Empty Cart State styled matching the app's clean UI
   if (cart.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 px-4 text-center max-w-sm mx-auto">
+      <CustomerPage className="flex flex-col items-center justify-center py-20 px-4 text-center max-w-sm mx-auto">
         <div className="w-24 h-24 rounded-full bg-surface-container flex items-center justify-center text-[#FF6422] mb-5 shadow-lg border border-outline-variant/15">
           <span className="material-symbols-outlined text-[48px]">shopping_bag</span>
         </div>
@@ -116,12 +120,12 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
           <span className="material-symbols-outlined text-[18px]">restaurant_menu</span>
           <span>Explore Menu</span>
         </button>
-      </div>
+      </CustomerPage>
     );
   }
 
   return (
-    <div className="flex flex-col w-full pb-28 pt-1 space-y-4">
+    <CustomerPage className="flex flex-col w-full pb-28 pt-1 space-y-4">
       {/* Header Bar */}
       <div className="flex items-center justify-between pb-2">
         <button
@@ -133,7 +137,9 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
           <span className="material-symbols-outlined text-[22px]">arrow_back</span>
         </button>
 
-        <h1 className="text-lg font-black text-on-surface tracking-tight">My Cart</h1>
+        <h1 className="text-lg font-black text-on-surface tracking-tight">
+          <CustomerText>My Cart</CustomerText>
+        </h1>
 
         {/* Dining Mode Pill */}
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container text-xs font-bold text-on-surface border border-outline-variant/15 shrink-0">
@@ -188,8 +194,9 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
         </div>
 
         {cart.map((item) => (
-          <div
+          <CustomerCard
             key={item.menuItemId}
+            delay={Math.min(cart.indexOf(item) * 0.06, 0.24)}
             className="group flex items-center justify-between gap-3.5 p-3.5 rounded-3xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 shadow-sm transition-all liquid-glass-card"
           >
             {/* Circular Dish Image */}
@@ -257,7 +264,7 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
                 </button>
               </div>
             </div>
-          </div>
+          </CustomerCard>
         ))}
       </div>
 
@@ -639,6 +646,6 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </CustomerPage>
   );
 };

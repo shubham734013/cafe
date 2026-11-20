@@ -86,6 +86,7 @@ export interface CafeBootstrapState {
   rewardPoints: number;
   activityLog?: CafeActivityLogItem[];
   customerHasMatchedProfile?: boolean;
+  firstOrderEligible?: boolean;
   stockMovements: StockMovement[];
   inventoryBatches: InventoryBatch[];
   purchaseOrders: PurchaseOrder[];
@@ -1034,6 +1035,11 @@ export class CafeStore {
         0
       ),
       customerHasMatchedProfile: Boolean(customerSegment),
+      firstOrderEligible: this.isFirstOrderEligible(
+        customerSession?.customerId,
+        customerSession?.crmCustomerId,
+        [...allowedOrderIds]
+      ),
     });
   }
 
@@ -1096,6 +1102,22 @@ export class CafeStore {
           0
         )
     );
+  }
+
+  private isFirstOrderEligible(
+    customerId?: string,
+    crmCustomerId?: string,
+    customerOrderIds: readonly string[] = []
+  ): boolean {
+    if (!customerId || customerId.startsWith('guest_')) return false;
+
+    const hasPreviousOrder = this.state.orders.some(
+      (order) =>
+        order.customerId === customerId ||
+        (crmCustomerId && order.customerId === crmCustomerId) ||
+        customerOrderIds.includes(order.id)
+    );
+    return !hasPreviousOrder;
   }
 
   public getInventory(): InventoryIngredient[] {
@@ -1371,7 +1393,10 @@ export class CafeStore {
 
   public async createOrder(
     input: z.infer<typeof createOrderSchema>,
-    customerSegment?: CustomerSegment
+    customerSegment?: CustomerSegment,
+    crmCustomerId?: string,
+    customerOrderIds: readonly string[] = [],
+    allowFirstOrderOffer = true
   ): Promise<{
     order: CafeOrder;
     duplicate: boolean;
@@ -1452,13 +1477,18 @@ export class CafeStore {
       }
     }
 
+    const firstOrderEligible =
+      !input.isPosTerminal &&
+      allowFirstOrderOffer &&
+      this.isFirstOrderEligible(input.customerId, crmCustomerId, customerOrderIds);
     const totals = calculateCartTotals(
       canonicalItems,
       input.couponCode ?? '',
       input.serviceMode,
       Boolean(input.isPosTerminal),
       this.state.campaigns,
-      input.redeemPoints || 0
+      input.redeemPoints || 0,
+      firstOrderEligible
     );
 
     const availablePoints = input.isPosTerminal
