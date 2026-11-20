@@ -2015,6 +2015,11 @@ export function createCafeServer(
       });
       return;
     }
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[Production Server Error]', err);
+      res.status(500).json({ error: 'An unexpected internal error occurred. Please try again later.' });
+      return;
+    }
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });
   });
