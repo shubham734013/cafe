@@ -410,21 +410,22 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
               return (
                 <div
                   key={customer.id}
-                  className="relative overflow-hidden flex flex-col justify-between p-3.5 rounded-xl bg-surface-container-low hover:bg-surface-container shadow-md transition-all space-y-2.5"
+                  className="relative overflow-hidden flex flex-col justify-between p-4 rounded-2xl bg-surface-container-low hover:bg-surface-container border border-outline-variant/15 hover:border-outline-variant/30 shadow-md transition-all space-y-3.5"
                 >
                   {isVip && (
                     <div className="absolute -right-8 -top-8 w-24 h-24 bg-primary/10 rounded-full blur-xl pointer-events-none" />
                   )}
 
-                  <div className="flex flex-wrap items-start justify-between gap-2 relative">
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  {/* Header Row: Avatar + Name/Phone + Action Buttons */}
+                  <div className="flex items-center justify-between gap-2.5 relative">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div
-                        className={`relative w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
+                        className={`relative w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
                           isVip
                             ? 'bg-gradient-to-tr from-primary-container to-primary text-on-primary shadow-md'
                             : isLoyal
-                              ? 'bg-secondary-container/20 text-secondary'
-                              : 'bg-surface-container-high text-on-surface'
+                              ? 'bg-secondary-container/30 text-secondary border border-secondary/20'
+                              : 'bg-surface-container-high text-primary font-bold'
                         }`}
                       >
                         {customer.initials}
@@ -438,31 +439,26 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                       </div>
 
                       <div className="flex flex-col min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm text-on-surface font-bold truncate">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm sm:text-base text-on-surface font-bold truncate">
                             {customer.name}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase flex items-center gap-0.5 shrink-0 ${
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider uppercase shrink-0 ${
                               isVip
-                                ? 'bg-primary/20 text-primary'
+                                ? 'bg-primary/20 text-primary border border-primary/30'
                                 : isLoyal
-                                  ? 'bg-secondary-container/30 text-primary'
+                                  ? 'bg-secondary-container/30 text-secondary border border-secondary/20'
                                   : isRegular
-                                    ? 'bg-tertiary-container/30 text-tertiary'
+                                    ? 'bg-tertiary-container/30 text-tertiary border border-tertiary/20'
                                     : 'bg-surface-container-high text-on-surface-variant'
                             }`}
                           >
-                            {isVip && (
-                              <span className="material-symbols-outlined text-[11px] icon-filled">
-                                workspace_premium
-                              </span>
-                            )}
                             {customer.segment}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1 text-on-surface-variant text-xs">
-                          <span className="material-symbols-outlined text-[13px] text-outline">
+                        <div className="flex items-center gap-1.5 text-outline text-xs sm:text-sm mt-0.5">
+                          <span className="material-symbols-outlined text-[14px]">
                             call
                           </span>
                           <span className="tabular-nums">+91 {customer.phone}</span>
@@ -470,7 +466,8 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
+                    {/* Action Icon Buttons */}
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         type="button"
                         aria-label={`Export DPDP PII for ${customer.name}`}
@@ -479,17 +476,19 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                             ? onExportCustomerPii(customer)
                             : onNotify(`Exported DPDP JSON for ${customer.name}`)
                         }
-                        className="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant hover:text-primary active:scale-95 transition-transform cursor-pointer"
+                        className="w-9 h-9 rounded-xl bg-surface-container-high/80 hover:bg-surface-container-high border border-outline-variant/15 flex items-center justify-center text-primary active:scale-95 transition-all cursor-pointer"
+                        title="Download DPDP Record"
                       >
-                        <span className="material-symbols-outlined text-[16px]">download</span>
+                        <span className="material-symbols-outlined text-[17px]">download</span>
                       </button>
                       <button
                         type="button"
                         aria-label={`Call ${customer.name}`}
                         onClick={() => onNotify(`Dialing ${customer.name} (+91 ${customer.phone})`)}
-                        className="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant hover:text-primary active:scale-95 transition-transform cursor-pointer"
+                        className="w-9 h-9 rounded-xl bg-surface-container-high/80 hover:bg-surface-container-high border border-outline-variant/15 flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-95 transition-all cursor-pointer"
+                        title="Call Customer"
                       >
-                        <span className="material-symbols-outlined text-[17px]">phone</span>
+                        <span className="material-symbols-outlined text-[17px]">call</span>
                       </button>
                       <button
                         type="button"
@@ -497,55 +496,57 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                         onClick={() =>
                           onNotify(`Opened WhatsApp greeting for ${customer.name}`)
                         }
-                        className="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-tertiary hover:bg-surface-bright active:scale-95 transition-transform cursor-pointer"
+                        className="w-9 h-9 rounded-xl bg-surface-container-high/80 hover:bg-surface-container-high border border-outline-variant/15 flex items-center justify-center text-tertiary hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+                        title="Chat on WhatsApp"
                       >
                         <span className="material-symbols-outlined text-[17px]">chat</span>
                       </button>
                     </div>
                   </div>
 
-                {/* Stats Grid */}
-                <div className="grid grid-cols-3 gap-1.5 py-2 px-2.5 rounded-lg bg-surface-container-lowest text-center">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-outline">Visits</span>
-                    <span className="text-xs text-on-surface font-semibold tabular-nums">
-                      {customer.visits} Visits
-                    </span>
+                  {/* Middle Metrics Inset Card */}
+                  <div className="grid grid-cols-3 gap-2 py-3 px-3.5 rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 text-center items-center">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] text-outline font-medium mb-0.5">Visits</span>
+                      <span className="text-xs sm:text-sm text-on-surface font-bold tabular-nums">
+                        {customer.visits} Visits
+                      </span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[11px] text-outline font-medium mb-0.5">Total Spent</span>
+                      <span className="text-xs sm:text-sm text-primary font-bold tabular-nums">
+                        {formatINR(customer.totalSpent)}
+                      </span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[11px] text-outline font-medium mb-0.5">Avg Ticket</span>
+                      <span className="text-xs sm:text-sm text-on-surface font-bold tabular-nums">
+                        {formatINR(customer.avgTicket)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-outline">Total Spent</span>
-                    <span className="text-xs text-primary font-semibold tabular-nums">
-                      {formatINR(customer.totalSpent)}
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-outline">Avg Ticket</span>
-                    <span className="text-xs text-on-surface font-semibold tabular-nums">
-                      {formatINR(customer.avgTicket)}
-                    </span>
-                  </div>
-                </div>
 
-                {customer.note && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-container-high/60 text-secondary">
-                    <span className="material-symbols-outlined text-[14px] shrink-0">
-                      restaurant
-                    </span>
-                    <span className="text-[11px] truncate">{customer.note}</span>
-                  </div>
-                )}
+                  {customer.note && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-container-high/60 text-secondary text-xs">
+                      <span className="material-symbols-outlined text-[14px] shrink-0">
+                        restaurant
+                      </span>
+                      <span className="text-[11px] truncate">{customer.note}</span>
+                    </div>
+                  )}
 
-                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                  {/* Footer Row: Heart + Favorites & Clock + Last Visit */}
+                  <div className="flex items-center justify-between gap-3 text-xs sm:text-sm pt-0.5">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="material-symbols-outlined text-[15px] text-primary shrink-0">
+                      <span className="material-symbols-outlined text-[17px] text-primary shrink-0">
                         favorite
                       </span>
                       <span className="text-xs text-on-surface-variant truncate">
                         {customer.favorites}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1 text-outline text-[11px] shrink-0">
-                      <span className="material-symbols-outlined text-[12px]">schedule</span>
+                    <div className="flex items-center gap-1 text-outline text-xs shrink-0 font-medium">
+                      <span className="material-symbols-outlined text-[14px]">schedule</span>
                       <span>{customer.lastVisit}</span>
                     </div>
                   </div>
