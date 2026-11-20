@@ -5,7 +5,7 @@ import { isKitchenPath } from '../routing/routes';
 import { canStaffRoleAccessScreen, formatStaffRoleLabel } from '../utils/rbac';
 import { CafeBrandEmblem } from './CafeBrandEmblem';
 import { CafeImage } from './CafeImage';
-import { LiquidGlassShader } from './LiquidGlassShader';
+import { LiquidGlassShader, ShaderType } from './LiquidGlassShader';
 
 interface AppShellProps {
   activeScreen: ScreenId;
@@ -133,6 +133,30 @@ export const AppShell: React.FC<AppShellProps> = ({
       return next;
     });
   };
+
+  const [shaderType, setShaderType] = useState<ShaderType>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('cafe_shader_type') as ShaderType | null;
+      if (saved) return saved;
+    }
+    return 'aceternity-gradient';
+  });
+
+  const cycleShaderType = () => {
+    setShaderType((prev) => {
+      const next: ShaderType =
+        prev === 'aceternity-gradient'
+          ? 'aceternity-wavy'
+          : prev === 'aceternity-wavy'
+          ? 'webgl-liquid'
+          : 'aceternity-gradient';
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('cafe_shader_type', next);
+      }
+      return next;
+    });
+  };
+
   const isStaff = isStaffWorkspace && Boolean(activeRole);
   const canShowStaffModules = isStaff;
   const isKitchenRoute =
@@ -169,7 +193,7 @@ export const AppShell: React.FC<AppShellProps> = ({
       }`}
     >
       {/* Liquid Glass Fluid Shader Background (Active in Dark Mode) */}
-      {!isLightTheme && <LiquidGlassShader intensity={0.9} />}
+      {!isLightTheme && <LiquidGlassShader type={shaderType} intensity={0.9} />}
 
       {/* Desktop Left Workspace Rail */}
       <aside
@@ -358,6 +382,27 @@ export const AppShell: React.FC<AppShellProps> = ({
 
             {/* Right Header Controls */}
             <div className="flex items-center gap-1.5 shrink-0">
+              {/* Aceternity UI & WebGL Shader Engine Selector (Dark Mode) */}
+              {!isLightTheme && (
+                <button
+                  type="button"
+                  title="Switch Aceternity UI / WebGL Shader Mode"
+                  onClick={cycleShaderType}
+                  className="liquid-glass-pill px-2.5 py-1.5 rounded-full hover:bg-surface-container-high/80 flex items-center gap-1 text-[11px] font-bold text-amber-400 transition-all cursor-pointer shadow-sm active:scale-95 border border-amber-500/25"
+                >
+                  <span className="material-symbols-outlined text-[15px] animate-spin-slow">
+                    auto_awesome
+                  </span>
+                  <span className="hidden sm:inline">
+                    {shaderType === 'aceternity-gradient'
+                      ? 'Aceternity Liquid'
+                      : shaderType === 'aceternity-wavy'
+                      ? 'Aceternity Wavy'
+                      : 'WebGL Fluid'}
+                  </span>
+                </button>
+              )}
+
               <button
                 type="button"
                 aria-label={isLightTheme ? 'Switch to Dark Theme' : 'Switch to Light Theme'}

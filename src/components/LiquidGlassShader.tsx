@@ -1,16 +1,79 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { BackgroundGradientAnimation } from '@/components/ui/background-gradient-animation';
+import { WavyBackground } from '@/components/ui/wavy-background';
+
+export type ShaderType = 'aceternity-gradient' | 'aceternity-wavy' | 'webgl-liquid';
 
 interface LiquidGlassShaderProps {
   className?: string;
   intensity?: number;
   interactive?: boolean;
+  type?: ShaderType;
 }
 
 export const LiquidGlassShader: React.FC<LiquidGlassShaderProps> = ({
   className = '',
   intensity = 0.85,
   interactive = true,
+  type = 'aceternity-gradient',
 }) => {
+  // If Aceternity UI Liquid Gradient is chosen (Default)
+  if (type === 'aceternity-gradient') {
+    return (
+      <div
+        className={`fixed inset-0 pointer-events-none -z-10 overflow-hidden ${className}`}
+        aria-hidden="true"
+      >
+        <BackgroundGradientAnimation
+          gradientBackgroundStart="rgb(11, 15, 23)"
+          gradientBackgroundEnd="rgb(15, 23, 42)"
+          firstColor="255, 100, 34"    // Seth Sawariya signature amber
+          secondColor="245, 166, 56"   // Honey liquid gold
+          thirdColor="16, 185, 129"    // Emerald caustic
+          fourthColor="234, 88, 12"    // Molten deep orange
+          fifthColor="59, 130, 246"    // Deep iridescent cyan
+          pointerColor="255, 104, 36"  // Interactive molten mouse orb
+          interactive={interactive}
+          containerClassName="opacity-80"
+        />
+        {/* Specular sheen overlay */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-[#0B0F17]/70 pointer-events-none backdrop-blur-[1px]" />
+      </div>
+    );
+  }
+
+  // If Aceternity UI Wavy Background is chosen
+  if (type === 'aceternity-wavy') {
+    return (
+      <div
+        className={`fixed inset-0 pointer-events-none -z-10 overflow-hidden ${className}`}
+        aria-hidden="true"
+      >
+        <WavyBackground
+          backgroundFill="#0b0f17"
+          colors={['#FF6824', '#F5A638', '#10B98C', '#3B82F6', '#EA580C']}
+          waveWidth={45}
+          blur={12}
+          speed="fast"
+          waveOpacity={0.4}
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-[#0B0F17]/70 pointer-events-none" />
+      </div>
+    );
+  }
+
+  // WebGL Native Fluid Shader
+  return <NativeWebGLShader className={className} intensity={intensity} interactive={interactive} />;
+};
+
+/**
+ * Pure WebGL Native Liquid Viscosity Shader
+ */
+const NativeWebGLShader: React.FC<{
+  className?: string;
+  intensity?: number;
+  interactive?: boolean;
+}> = ({ className = '', intensity = 0.85, interactive = true }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hasWebGL, setHasWebGL] = useState<boolean>(true);
 
@@ -27,7 +90,6 @@ export const LiquidGlassShader: React.FC<LiquidGlassShaderProps> = ({
       return;
     }
 
-    // Vertex Shader: Fullscreen quad
     const vsSource = `
       attribute vec2 a_position;
       varying vec2 v_uv;
@@ -37,7 +99,6 @@ export const LiquidGlassShader: React.FC<LiquidGlassShaderProps> = ({
       }
     `;
 
-    // Fragment Shader: Organic Liquid Fluid Caustics & Molten Amber Shimmer
     const fsSource = `
       precision mediump float;
       uniform float u_time;
@@ -46,7 +107,6 @@ export const LiquidGlassShader: React.FC<LiquidGlassShaderProps> = ({
       uniform float u_intensity;
       varying vec2 v_uv;
 
-      // Fractional Brownian Motion & Domain Warping for Liquid Viscosity
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
       }
@@ -79,49 +139,36 @@ export const LiquidGlassShader: React.FC<LiquidGlassShaderProps> = ({
 
         float t = u_time * 0.18;
 
-        // Fluid liquid domain warping
-        vec2 q = vec2(fbm(p + vec2(0.0, t * 0.4)), fbm(p + vec2(5.2, 1.3 - t * 0.3)));
-        vec2 r = vec2(fbm(p + 4.0 * q + vec2(1.7 - t * 0.5, 9.2)),
-                      fbm(p + 4.0 * q + vec2(8.3, 2.8 + t * 0.35)));
+        vec2 mouseOffset = (u_mouse - vec2(0.5)) * 0.8;
+        vec2 q = vec2(fbm(p + vec2(t * 0.4, t * 0.3) + mouseOffset),
+                      fbm(p + vec2(1.0)));
 
-        // Interactive mouse wave refraction
-        vec2 mouseDelta = (st - u_mouse);
-        float mouseDist = length(mouseDelta);
-        float mouseRipple = sin(mouseDist * 18.0 - u_time * 2.5) * exp(-mouseDist * 4.0) * 0.25;
-        r += mouseRipple;
+        vec2 r = vec2(fbm(p + 2.5 * q + vec2(1.7, 9.2) + 0.15 * t),
+                      fbm(p + 2.5 * q + vec2(8.3, 2.8) + 0.126 * t));
 
         float f = fbm(p + 3.0 * r);
 
-        // Deep obsidian base color
-        vec3 darkObsidian = vec3(0.043, 0.059, 0.090); // #0B0F17
-        vec3 midCharcoal  = vec3(0.075, 0.098, 0.155); // #131927
+        vec3 colorA = vec3(0.043, 0.059, 0.090); // #0B0F17
+        vec3 colorB = vec3(0.078, 0.118, 0.188); // Deep Slate Navy
+        vec3 colorC = vec3(1.0, 0.408, 0.141);   // Molten Amber #FF6824
+        vec3 colorD = vec3(0.961, 0.651, 0.220); // Warm Honey #F5A638
+        vec3 colorE = vec3(0.063, 0.725, 0.549); // Iridescent Turquoise #10B98C
 
-        // Liquid amber & warm honey highlights
-        vec3 warmAmber    = vec3(1.000, 0.410, 0.140); // #FF6824
-        vec3 moltenGold   = vec3(0.960, 0.650, 0.220); // #F5A638
+        vec3 col = mix(colorA, colorB, clamp(f * f * 2.5, 0.0, 1.0));
+        col = mix(col, colorC, clamp(length(q) * 0.65, 0.0, 1.0));
+        col = mix(col, colorD, clamp(length(r.x) * 0.45, 0.0, 1.0));
+        col += colorE * (f * f * f + 0.3 * f) * 0.22;
 
-        // Liquid specular refraction (subtle cyan/emerald caustics)
-        vec3 iridescentCaustic = vec3(0.060, 0.720, 0.550); // #10B98C
+        float distFromMouse = length(st - u_mouse);
+        float mouseWave = sin(distFromMouse * 25.0 - u_time * 4.0) * exp(-distFromMouse * 4.0);
+        col += vec3(1.0, 0.5, 0.2) * max(0.0, mouseWave) * 0.25;
 
-        // Mix liquid layers
-        vec3 color = mix(darkObsidian, midCharcoal, clamp(f * f * 2.5, 0.0, 1.0));
-        color = mix(color, warmAmber, clamp(length(q) * f * 0.45 * u_intensity, 0.0, 0.8));
-        color = mix(color, moltenGold, clamp(pow(r.x, 2.2) * 0.38 * u_intensity, 0.0, 0.7));
-        color = mix(color, iridescentCaustic, clamp(pow(r.y, 3.5) * 0.18 * u_intensity, 0.0, 0.4));
-
-        // Specular liquid glass glint
-        float glint = pow(max(0.0, fbm(p * 2.0 + t)), 4.0) * 0.25 * u_intensity;
-        color += vec3(glint * 0.9, glint * 0.7, glint * 0.5);
-
-        // Vignette at corners for rich cinematic dark mode focus
-        float vignette = smoothstep(1.4, 0.3, length((st - 0.5) * vec2(1.1, 1.0)));
-        color *= (0.65 + 0.35 * vignette);
-
-        gl_FragColor = vec4(color, 0.95);
+        col *= u_intensity;
+        gl_FragColor = vec4(col, 0.88);
       }
     `;
 
-    const createShader = (type: number, source: string): WebGLShader | null => {
+    const createShader = (type: number, source: string) => {
       const shader = gl.createShader(type);
       if (!shader) return null;
       gl.shaderSource(shader, source);
@@ -146,6 +193,7 @@ export const LiquidGlassShader: React.FC<LiquidGlassShaderProps> = ({
       setHasWebGL(false);
       return;
     }
+
     gl.attachShader(program, vs);
     gl.attachShader(program, fs);
     gl.linkProgram(program);
@@ -158,7 +206,6 @@ export const LiquidGlassShader: React.FC<LiquidGlassShaderProps> = ({
 
     gl.useProgram(program);
 
-    // Quad geometry
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(
@@ -198,7 +245,7 @@ export const LiquidGlassShader: React.FC<LiquidGlassShaderProps> = ({
     window.addEventListener('touchmove', handleTouchMove, { passive: true });
 
     const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.5); // Cap for 60fps power efficiency
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       const displayWidth = Math.floor(window.innerWidth * dpr * 0.65);
       const displayHeight = Math.floor(window.innerHeight * dpr * 0.65);
 
@@ -225,8 +272,6 @@ export const LiquidGlassShader: React.FC<LiquidGlassShaderProps> = ({
       }
 
       const elapsed = (now - startTime) * 0.001;
-
-      // Smooth mouse interpolation
       mousePos.x += (targetMousePos.x - mousePos.x) * 0.05;
       mousePos.y += (targetMousePos.y - mousePos.y) * 0.05;
 
@@ -255,7 +300,6 @@ export const LiquidGlassShader: React.FC<LiquidGlassShaderProps> = ({
   }, [intensity, interactive]);
 
   if (!hasWebGL) {
-    // Beautiful CSS Fluid Liquid Mesh Fallback
     return (
       <div
         className={`fixed inset-0 pointer-events-none -z-10 overflow-hidden bg-[#0B0F17] ${className}`}
@@ -276,7 +320,6 @@ export const LiquidGlassShader: React.FC<LiquidGlassShaderProps> = ({
         ref={canvasRef}
         className="w-full h-full object-cover opacity-85 transition-opacity duration-1000"
       />
-      {/* Liquid Glass Frosted Sheen & Caustics Overlay */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-[#0B0F17]/70 pointer-events-none backdrop-blur-[2px]" />
     </div>
   );
