@@ -23,6 +23,7 @@ import {
   toggleKotItemSchema,
   orderFeedbackSchema,
   orderRefundSchema,
+  cancelOrderItemSchema,
   orderPayCounterSchema,
   requestReorderSchema,
   stockReceiptSchema,
@@ -75,14 +76,8 @@ function parseBody<T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T>
 }
 
 const ROLE_LABELS: Record<StaffRole, string> = {
-  'super-admin': 'Super Admin',
-  owner: 'Manager / Owner',
-  manager: 'Manager / Owner',
-  cashier: 'Cashier',
-  barista: 'Barista',
-  kitchen: 'Kitchen / Barista',
-  server: 'Server / Steward',
-  waiter: 'Server / Steward',
+  admin: 'Admin',
+  kitchen: 'Kitchen',
 };
 
 const ROUTE_DATA_SCREENS = new Set<ScreenId>([
@@ -174,30 +169,14 @@ export function createCafeServer(
     const staffSession = (socket.data as any).staffSession;
     const customerSession = (socket.data as any).customerSession;
     const tableToken = socket.handshake.query.tableToken as string;
-    const queryScope = String(socket.handshake.query.scope || '');
-    const referer = String(socket.handshake.headers.referer || '');
-    const isKitchenStation =
-      queryScope === 'kitchen' ||
-      socket.handshake.query.station === 'kitchen' ||
-      referer.includes('/kitchen');
-    const isStaffStation =
-      queryScope === 'staff' ||
-      referer.includes('/admin') ||
-      referer.includes('/staff') ||
-      referer.includes('/pos') ||
-      referer.includes('/tables');
 
     if (staffSession) {
-      void socket.join(STAFF_ROOM);
-      if (['kitchen', 'barista', 'owner', 'manager', 'super-admin'].includes(staffSession.role)) {
+      if (staffSession.role === 'admin') {
+        void socket.join(STAFF_ROOM);
+        void socket.join(KITCHEN_ROOM);
+      } else if (staffSession.role === 'kitchen') {
         void socket.join(KITCHEN_ROOM);
       }
-    } else if (isKitchenStation) {
-      // Automatic kitchen terminal channel
-      void socket.join(KITCHEN_ROOM);
-      void socket.join(STAFF_ROOM);
-    } else if (isStaffStation) {
-      void socket.join(STAFF_ROOM);
     } else {
       void socket.join(PUBLIC_ROOM);
       if (customerSession?.orderIds?.length) {
@@ -214,21 +193,17 @@ export function createCafeServer(
     }
 
     // Explicit authenticated room subscriptions only
-    socket.on('outlet:join', (data?: { tableToken?: string; orderId?: string; scope?: string }) => {
+    socket.on('outlet:join', (data?: { tableToken?: string; orderId?: string }) => {
       const currentStaff = (socket.data as any).staffSession || getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
       const currentCust = (socket.data as any).customerSession || getCustomerSessionFromCookieHeader(socket.handshake.headers.cookie);
-      const joinScope = data?.scope || queryScope;
 
       if (currentStaff) {
-        void socket.join(STAFF_ROOM);
-        if (['kitchen', 'barista', 'owner', 'manager', 'super-admin'].includes(currentStaff.role)) {
+        if (currentStaff.role === 'admin') {
+          void socket.join(STAFF_ROOM);
+          void socket.join(KITCHEN_ROOM);
+        } else if (currentStaff.role === 'kitchen') {
           void socket.join(KITCHEN_ROOM);
         }
-      } else if (joinScope === 'kitchen' || isKitchenStation) {
-        void socket.join(KITCHEN_ROOM);
-        void socket.join(STAFF_ROOM);
-      } else if (joinScope === 'staff' || isStaffStation) {
-        void socket.join(STAFF_ROOM);
       } else {
         void socket.join(PUBLIC_ROOM);
         if (data?.tableToken) {
@@ -245,7 +220,7 @@ export function createCafeServer(
       if (!data?.orderId) return;
       const currentStaff = (socket.data as any).staffSession || getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
       const currentCust = (socket.data as any).customerSession || getCustomerSessionFromCookieHeader(socket.handshake.headers.cookie);
-      if (currentStaff || isKitchenStation || currentCust?.orderIds?.includes(data.orderId)) {
+      if (currentStaff || currentCust?.orderIds?.includes(data.orderId)) {
         void socket.join(`order:${data.orderId}`);
       }
     });
@@ -315,7 +290,7 @@ export function createCafeServer(
   const checkCustomerAccess = (req: Request, customerId: string): AuthCheckResult => {
     const staff = getStaffSession(req);
     if (staff) {
-      if (hasStaffRole(staff, ['owner', 'manager', 'cashier'])) return { allowed: true };
+      if (hasStaffRole(staff, ['admin'])) return { allowed: true };
       return {
         allowed: false,
         httpStatus: 403,
@@ -360,7 +335,7 @@ export function createCafeServer(
 
     const staffSession = getStaffSession(req);
     if (staffSession) {
-      if (!hasStaffRole(staffSession, ['owner', 'manager', 'cashier', 'server'])) {
+      if (!hasStaffRole(staffSession, ['admin'])) {
         res.status(403).json({ error: 'Your role cannot access online payment for this order.' });
         return null;
       }
@@ -652,7 +627,7 @@ export function createCafeServer(
       <div id="error-message" class="mb-3"></div>
       <div class="flex gap-2">
         <button onclick="window.location.reload()" class="px-3 py-1.5 bg-red-800 hover:bg-red-700 rounded text-white text-xs font-semibold cursor-pointer">Retry</button>
-        <a href="/tracking?orderId=${encodeURIComponent(order.id)}" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-slate-200 text-xs inline-block">Go to Order Tracking</a>
+        <a href="/customer/tracking?orderId=${encodeURIComponent(order.id)}" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-slate-200 text-xs inline-block">Go to Order Tracking</a>
       </div>
     </div>
   </div>
@@ -706,7 +681,7 @@ export function createCafeServer(
     const gatewayReference = String(req.params.id);
     const order = getCafeOrderByGatewayReference(gatewayReference);
     if (!order) {
-      res.redirect('/tracking');
+      res.redirect('/customer/tracking');
       return;
     }
     try {
@@ -718,11 +693,15 @@ export function createCafeServer(
     } catch {
       // Continue to tracking
     }
-    res.redirect(`/tracking?orderId=${encodeURIComponent(order.id)}`);
+    res.redirect(`/customer/tracking?orderId=${encodeURIComponent(order.id)}`);
   });
 
   // Cashfree Mock Checkout (for local development & instant testing)
   app.get('/api/cashfree-mock/checkout', (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+      res.status(404).json({ error: 'Endpoint not available in production' });
+      return;
+    }
     const gatewayReference = String(req.query.orderId || '');
     const session = String(req.query.session || '');
     const order = getCafeOrderByGatewayReference(gatewayReference);
@@ -783,6 +762,10 @@ export function createCafeServer(
   });
 
   app.post('/api/cashfree-mock/pay', express.urlencoded({ extended: true }), async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+      res.status(404).json({ error: 'Endpoint not available in production' });
+      return;
+    }
     const gatewayReference = String(req.body.orderId || '');
     const order = getCafeOrderByGatewayReference(gatewayReference);
     if (upiGateway instanceof CashfreeGateway && order) {
@@ -843,13 +826,13 @@ export function createCafeServer(
     keyPrefix: 'customer-feedback',
   });
 
-  // OpenAPI & Swagger UI (restricted to owner/manager in production)
+  // OpenAPI & Swagger UI (restricted to admin in production)
   const docsGuard = (req: Request, res: Response, next: NextFunction) => {
     if (process.env.NODE_ENV !== 'production') {
       next();
       return;
     }
-    const auth = checkStaffRoles(req, ['owner', 'manager']);
+    const auth = checkStaffRoles(req, ['admin']);
     if (!auth.allowed) {
       res.status(auth.httpStatus ?? 401).json({ error: auth.error });
       return;
@@ -874,7 +857,7 @@ export function createCafeServer(
     });
   });
 
-  app.get('/api/audit', requireRoles(['owner', 'manager']), async (req, res, next) => {
+  app.get('/api/audit', requireRoles(['admin']), async (req, res, next) => {
     try {
       const requestedLimit = Number(req.query.limit ?? 100);
       if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 200) {
@@ -1023,11 +1006,11 @@ export function createCafeServer(
 
   app.get(
     '/api/orders',
-    requireRoles(['owner', 'manager', 'cashier', 'barista', 'server', 'kitchen', 'waiter']),
+    requireRoles(['admin', 'kitchen']),
     (req, res) => {
       const staffSession = getStaffSession(req);
       const orders =
-        staffSession?.role === 'barista' || (staffSession?.role as string) === 'kitchen'
+        staffSession?.role === 'kitchen'
           ? store.getBootstrap({ staffSession, customerSession: null }).orders
           : store.getOrders();
       res.json({ orders });
@@ -1042,7 +1025,7 @@ export function createCafeServer(
         res.status(401).json({ error: 'Staff PIN authentication required for POS orders' });
         return;
       }
-      if (input.isPosTerminal && !hasStaffRole(staffSession, ['owner', 'manager', 'cashier', 'server'])) {
+      if (input.isPosTerminal && !hasStaffRole(staffSession, ['admin'])) {
         res.status(403).json({ error: 'Your role cannot create POS terminal orders' });
         return;
       }
@@ -1220,7 +1203,7 @@ export function createCafeServer(
 
   app.post(
     '/api/orders/:id/pay-counter',
-    requireRoles(['owner', 'manager', 'cashier', 'server']),
+    requireRoles(['admin']),
     async (req, res, next) => {
       try {
         const orderId = String(req.params.id);
@@ -1246,7 +1229,7 @@ export function createCafeServer(
 
   app.post(
     '/api/orders/:id/refund',
-    requireRoles(['owner', 'manager']),
+    requireRoles(['admin']),
     async (req, res, next) => {
       try {
         const orderId = String(req.params.id);
@@ -1272,7 +1255,47 @@ export function createCafeServer(
     }
   );
 
-  app.get('/api/activity-log', requireRoles(['owner', 'manager']), (_req, res) => {
+  app.post(
+    '/api/orders/:id/cancel-item',
+    requireRoles(['admin', 'kitchen']),
+    async (req, res, next) => {
+      try {
+        const orderId = String(req.params.id);
+        const input = parseBody(cancelOrderItemSchema, req.body || {});
+        const staffSession = getStaffSession(req);
+        const result = store.cancelOrderItemAndRefund(
+          orderId,
+          input.menuItemId,
+          input.quantity,
+          input.reason,
+          staffSession?.staffName,
+          staffSession?.role
+        );
+        if (!result) {
+          res.status(404).json({ error: 'Order not found' });
+          return;
+        }
+        await store.flushToPersistence();
+        emitSync('order:updated', { order: result.order });
+        emitSync('order:item-cancelled', {
+          order: result.order,
+          refundAmount: result.refundAmount,
+          cancelledItem: result.cancelledItem,
+        });
+        res.status(200).json({
+          ok: true,
+          order: result.order,
+          refundAmount: result.refundAmount,
+          cancelledItem: result.cancelledItem,
+          message: `Cancelled ${result.cancelledItem.name} and initiated ₹${result.refundAmount} refund`,
+        });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.get('/api/activity-log', requireRoles(['admin']), (_req, res) => {
     res.json({ ok: true, activities: store.getActivityLog() });
   });
 
@@ -1285,7 +1308,7 @@ export function createCafeServer(
 
   app.post(
     ['/api/orders/:id/status', '/api/orders/:id/transition'],
-    requireRoles(['owner', 'manager', 'barista', 'kitchen', 'cashier', 'server', 'waiter']),
+    requireRoles(['admin', 'kitchen']),
     async (req, res, next) => {
       try {
         const orderId = String(req.params.id);
@@ -1299,7 +1322,7 @@ export function createCafeServer(
           orderId,
           status,
           staffSession?.staffName || 'Staff',
-          staffSession?.role || 'manager'
+          staffSession?.role || 'admin'
         );
         if (!updateResult) {
           res.status(404).json({ error: 'Order not found' });
@@ -1322,7 +1345,7 @@ export function createCafeServer(
 
   app.patch(
     '/api/orders/:id/status',
-    requireRoles(['owner', 'manager', 'barista', 'kitchen', 'cashier', 'server', 'waiter']),
+    requireRoles(['admin', 'kitchen']),
     async (req, res, next) => {
       try {
         const orderId = String(req.params.id);
@@ -1336,7 +1359,7 @@ export function createCafeServer(
           orderId,
           status,
           staffSession?.staffName || 'Staff',
-          staffSession?.role || 'manager'
+          staffSession?.role || 'admin'
         );
         if (!updateResult) {
           res.status(404).json({ error: 'Order not found' });
@@ -1359,7 +1382,7 @@ export function createCafeServer(
 
   app.post(
     '/api/orders/:id/advance',
-    requireRoles(['owner', 'manager', 'barista', 'kitchen', 'cashier', 'server', 'waiter']),
+    requireRoles(['admin', 'kitchen']),
     async (req, res, next) => {
       try {
         const updated = store.advanceOrderStatus(String(req.params.id));
@@ -1380,7 +1403,7 @@ export function createCafeServer(
 
   app.post(
     '/api/orders/:id/toggle-item',
-    requireRoles(['owner', 'manager', 'barista', 'kitchen', 'cashier', 'server', 'waiter']),
+    requireRoles(['admin', 'kitchen']),
     (req, res, next) => {
       try {
         const { menuItemId } = parseBody(toggleKotItemSchema, req.body);
@@ -1409,9 +1432,22 @@ export function createCafeServer(
 
       const staffSession = getStaffSession(req);
       const customerSession = getCustomerSession(req);
-      if (!staffSession && customerSession && !canCustomerAccessOrder(customerSession, orderId)) {
-        res.status(403).json({ error: 'You do not have permission to leave feedback for this order.' });
-        return;
+      if (staffSession) {
+        if (!hasStaffRole(staffSession, ['admin'])) {
+          res.status(403).json({ error: 'Your role cannot submit order feedback.' });
+          return;
+        }
+      } else if (customerSession) {
+        if (!canCustomerAccessOrder(customerSession, orderId)) {
+          res.status(403).json({ error: 'You do not have permission to leave feedback for this order.' });
+          return;
+        }
+      } else {
+        const phone = typeof req.body?.customerPhone === 'string' ? req.body.customerPhone.trim() : '';
+        if (existingOrder.customerId && !phone) {
+          res.status(401).json({ error: 'Customer session or phone verification required to leave feedback for this order.' });
+          return;
+        }
       }
 
       const input = parseBody(orderFeedbackSchema, req.body);
@@ -1446,7 +1482,7 @@ export function createCafeServer(
 
   app.post(
     '/api/menu/:id/toggle-availability',
-    requireRoles(['owner', 'manager', 'barista', 'kitchen', 'cashier']),
+    requireRoles(['admin', 'kitchen']),
     async (req, res, next) => {
       try {
         const item = store.toggleMenuItemAvailability(String(req.params.id));
@@ -1465,7 +1501,7 @@ export function createCafeServer(
 
   app.post(
     '/api/menu/items',
-    requireRoles(['owner', 'manager']),
+    requireRoles(['admin']),
     async (req, res, next) => {
       try {
         const input = parseBody(addMenuItemSchema, req.body);
@@ -1496,7 +1532,7 @@ export function createCafeServer(
     }
   });
 
-  app.post('/api/tables', requireRoles(['owner', 'manager']), (req, res, next) => {
+  app.post('/api/tables', requireRoles(['admin']), (req, res, next) => {
     try {
       const input = parseBody(addTableSchema, req.body);
       const outcome = store.addTable(input);
@@ -1513,7 +1549,7 @@ export function createCafeServer(
 
   app.post(
     '/api/tables/:id/check-in',
-    requireRoles(['owner', 'manager', 'server', 'cashier']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const updated = store.checkInTable(String(req.params.id));
@@ -1531,7 +1567,7 @@ export function createCafeServer(
 
   app.post(
     '/api/tables/transfer',
-    requireRoles(['owner', 'manager', 'server', 'cashier']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const { sourceTableId, targetTableId } = parseBody(tableTransferMergeSchema, req.body);
@@ -1550,7 +1586,7 @@ export function createCafeServer(
 
   app.post(
     '/api/tables/merge',
-    requireRoles(['owner', 'manager', 'server', 'cashier']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const { sourceTableId, targetTableId } = parseBody(tableTransferMergeSchema, req.body);
@@ -1570,7 +1606,7 @@ export function createCafeServer(
   // Inventory
   app.post(
     '/api/inventory',
-    requireRoles(['owner', 'manager', 'cashier']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const input = parseBody(addIngredientSchema, req.body);
@@ -1585,11 +1621,17 @@ export function createCafeServer(
 
   app.post(
     '/api/inventory/:id/restock',
-    requireRoles(['owner', 'manager', 'cashier', 'barista', 'kitchen']),
+    requireRoles(['admin', 'kitchen']),
     (req, res, next) => {
       try {
-        const { addedQty } = parseBody(restockIngredientSchema, req.body ?? {});
-        const item = store.restockIngredient(String(req.params.id), addedQty);
+        const { addedQty, unitCost } = parseBody(restockIngredientSchema, req.body ?? {});
+        const staff = getStaffSession(req);
+        const item = store.restockIngredient(
+          String(req.params.id),
+          addedQty,
+          unitCost,
+          staff?.staffName
+        );
         if (!item) {
           res.status(404).json({ error: 'Ingredient not found' });
           return;
@@ -1604,7 +1646,7 @@ export function createCafeServer(
 
   app.post(
     '/api/inventory/receive',
-    requireRoles(['owner', 'manager', 'cashier']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const input = parseBody(stockReceiptSchema, req.body);
@@ -1625,7 +1667,7 @@ export function createCafeServer(
 
   app.post(
     '/api/inventory/waste',
-    requireRoles(['owner', 'manager', 'barista', 'kitchen']),
+    requireRoles(['admin', 'kitchen']),
     (req, res, next) => {
       try {
         const input = parseBody(stockWasteSchema, req.body);
@@ -1646,7 +1688,7 @@ export function createCafeServer(
 
   app.post(
     '/api/inventory/transfer',
-    requireRoles(['owner', 'manager', 'barista', 'kitchen']),
+    requireRoles(['admin', 'kitchen']),
     (req, res, next) => {
       try {
         const input = parseBody(stockTransferSchema, req.body);
@@ -1667,7 +1709,7 @@ export function createCafeServer(
 
   app.post(
     '/api/inventory/count',
-    requireRoles(['owner', 'manager']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const input = parseBody(stockCountSchema, req.body);
@@ -1682,7 +1724,7 @@ export function createCafeServer(
 
   app.post(
     '/api/inventory/count/:id/approve',
-    requireRoles(['owner', 'manager']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const count = store.approveStockCount(
@@ -1704,7 +1746,7 @@ export function createCafeServer(
 
   app.post(
     '/api/inventory/purchase-orders',
-    requireRoles(['owner', 'manager', 'cashier']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const input = parseBody(purchaseOrderSchema, req.body);
@@ -1722,7 +1764,7 @@ export function createCafeServer(
 
   app.post(
     '/api/inventory/purchase-orders/receive',
-    requireRoles(['owner', 'manager', 'cashier']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const input = parseBody(receivePurchaseOrderSchema, req.body);
@@ -1745,7 +1787,7 @@ export function createCafeServer(
 
   app.post(
     '/api/inventory/request-reorder',
-    requireRoles(['owner', 'manager', 'cashier', 'barista', 'kitchen', 'server', 'waiter']),
+    requireRoles(['admin', 'kitchen']),
     (req, res, next) => {
       try {
         const { id, note } = parseBody(requestReorderSchema, req.body);
@@ -1767,7 +1809,7 @@ export function createCafeServer(
   // CRM & DPDP export
   app.post(
     '/api/customers',
-    requireRoles(['owner', 'manager', 'cashier']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const input = parseBody(addCustomerSchema, req.body);
@@ -1796,7 +1838,7 @@ export function createCafeServer(
   });
 
   // Loyalty
-  app.post('/api/loyalty/rules', requireRoles(['owner', 'manager']), (req, res, next) => {
+  app.post('/api/loyalty/rules', requireRoles(['admin']), (req, res, next) => {
     try {
       const input = parseBody(addLoyaltyRuleSchema, req.body);
       const rule = store.addLoyaltyRule(input);
@@ -1808,7 +1850,7 @@ export function createCafeServer(
   });
 
   // Campaigns
-  app.post('/api/campaigns', requireRoles(['owner', 'manager']), (req, res, next) => {
+  app.post('/api/campaigns', requireRoles(['admin']), (req, res, next) => {
     try {
       const input = parseBody(createCampaignSchema, req.body);
       const campaign = store.createCampaign(input);
@@ -1819,7 +1861,7 @@ export function createCafeServer(
     }
   });
 
-  app.post('/api/campaigns/:id/toggle', requireRoles(['owner', 'manager']), (req, res, next) => {
+  app.post('/api/campaigns/:id/toggle', requireRoles(['admin']), (req, res, next) => {
     try {
       const event =
         req.body && typeof (req.body as { event?: unknown }).event === 'string'
@@ -1837,8 +1879,8 @@ export function createCafeServer(
     }
   });
 
-  // Staff management is restricted to Manager / Owner and Super Admin.
-  app.post('/api/staff', requireRoles(['owner', 'manager']), (req, res, next) => {
+  // Staff management is restricted to Admin.
+  app.post('/api/staff', requireRoles(['admin']), (req, res, next) => {
     try {
       const input = parseBody(addStaffSchema, req.body);
       const member = store.addStaff(input);
@@ -1849,7 +1891,7 @@ export function createCafeServer(
     }
   });
 
-  app.post('/api/staff/:id/toggle-duty', requireRoles(['owner', 'manager']), (req, res) => {
+  app.post('/api/staff/:id/toggle-duty', requireRoles(['admin']), (req, res) => {
     const member = store.toggleStaffDuty(String(req.params.id));
     if (!member) {
       res.status(404).json({ error: 'Staff member not found' });
@@ -1859,8 +1901,8 @@ export function createCafeServer(
     res.json({ member });
   });
 
-  // Settings (Manager / Owner and Super Admin only; never bypass auth via managerPinRequired)
-  app.put('/api/settings', requireRoles(['owner', 'manager']), (req, res, next) => {
+  // Settings are admin-only; never bypass PIN authentication.
+  app.put('/api/settings', requireRoles(['admin']), (req, res, next) => {
     try {
       const input = parseBody(cafeSettingsSchema, req.body);
       const settings = store.saveSettings(input);
@@ -1871,7 +1913,7 @@ export function createCafeServer(
     }
   });
 
-  app.post('/api/settings/reset', requireRoles(['owner', 'manager']), (_req, res) => {
+  app.post('/api/settings/reset', requireRoles(['admin']), (_req, res) => {
     const settings = store.resetSettings();
     emitSync('settings:updated', { settings });
     res.json({ settings });

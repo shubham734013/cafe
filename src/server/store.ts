@@ -33,7 +33,6 @@ import type {
 import {
   calculateCartTotals,
   computeInventoryStatus,
-  restockIngredientItem,
   convertRecipeAmountToInventoryUnit,
 } from '../utils/cafeLogic';
 import {
@@ -751,10 +750,36 @@ export class CafeStore {
       youpiWebhookDeliveries?: unknown;
       youpiUtrClaims?: unknown;
     };
+    const persistedSettings = persisted.cafeSettings as
+      | (Partial<CafeSettings> & { managerPinRequired?: boolean })
+      | undefined;
+    const { managerPinRequired: _legacyManagerPinRequired, ...currentSettings } =
+      persistedSettings ?? {};
+    const staffRoster = (Array.isArray(parsed.staffRoster)
+      ? parsed.staffRoster
+      : base.staffRoster
+    ).map((member) => {
+      const isAdmin = /admin|owner|manager|cashier/i.test(member.role);
+      const role: StaffMember['role'] = isAdmin ? 'Admin' : 'Kitchen';
+      return {
+        ...member,
+        role,
+        roleIcon: role === 'Admin' ? 'shield_person' : 'skillet',
+      };
+    });
     return {
       ...base,
       ...persisted,
+      cafeSettings: {
+        ...base.cafeSettings,
+        ...currentSettings,
+        adminPinRequired:
+          persistedSettings?.adminPinRequired ??
+          persistedSettings?.managerPinRequired ??
+          base.cafeSettings.adminPinRequired,
+      },
       orders,
+      staffRoster,
       menuItems: base.menuItems,
       customerReviews: Array.isArray(parsed.customerReviews)
         ? parsed.customerReviews.slice(0, 500)
@@ -928,7 +953,7 @@ export class CafeStore {
     const customerSession = actor.customerSession;
 
     if (staffSession) {
-      if (staffSession.role === 'barista' || (staffSession.role as string) === 'kitchen') {
+      if (staffSession.role === 'kitchen') {
         return clone({
           ...publicState,
           orders: publicState.orders.map((order) => ({
@@ -966,8 +991,8 @@ export class CafeStore {
         });
       }
 
-      const canSeeCustomers = hasStaffRole(staffSession, ['owner', 'manager', 'cashier']);
-      const canSeeStaffPhones = hasStaffRole(staffSession, ['owner', 'manager']);
+      const canSeeCustomers = hasStaffRole(staffSession, ['admin']);
+      const canSeeStaffPhones = hasStaffRole(staffSession, ['admin']);
       return clone({
         ...publicState,
         customers: canSeeCustomers ? publicState.customers : [],
@@ -1023,7 +1048,7 @@ export class CafeStore {
         gstin: '',
         serviceChargePct: 0,
         qrOrderingEnabled: true,
-        managerPinRequired: false,
+        adminPinRequired: false,
         kotPrinterConnected: false,
         posPrinterConnected: false,
         upiVpa: '',
@@ -1061,6 +1086,10 @@ export class CafeStore {
       kitchenRoute ||
       ['kitchen-display-system', 'pos-orders', 'kitchen-tables'].includes(screen)
     ) {
+      // In production, unauthenticated requests cannot access internal kitchen operational data
+      if (process.env.NODE_ENV === 'production' && !actor.staffSession) {
+        return this.getBootstrap(actor);
+      }
       return this.getBootstrap({
         staffSession: {
           role: 'kitchen',
@@ -1267,7 +1296,7 @@ export class CafeStore {
       title: `Order #${order.id} Paid`,
       description: `Order ${order.kotNumber} settled at counter via ${modeLabel} (₹${order.total})`,
       actorName: staffName || 'Staff',
-      actorRole: 'cashier',
+      actorRole: 'admin',
       severity: 'success',
       orderId: order.id,
       amount: order.total,
@@ -1295,7 +1324,7 @@ export class CafeStore {
       hour: '2-digit',
       minute: '2-digit',
     });
-    order.refundedBy = staffName || 'Manager';
+    order.refundedBy = staffName || 'Admin';
 
     // Restock inventory burned for this order if it was deducted
     if (this.stockDeductedOrderIds.has(order.id)) {
@@ -1328,7 +1357,7 @@ export class CafeStore {
                 unitCost: ing.unitCost,
                 referenceId: order.id,
                 note: `Stock restored for refunded order ${order.id}`,
-                actorName: staffName || 'Manager',
+                actorName: staffName || 'Admin',
               });
             }
           });
@@ -1356,7 +1385,7 @@ export class CafeStore {
       title: `Order #${order.id} Refunded`,
       description: `₹${order.total} refunded · Reason: ${order.refundReason}`,
       actorName: staffName || 'Staff',
-      actorRole: staffRole || 'manager',
+      actorRole: staffRole || 'admin',
       severity: 'warning',
       orderId: order.id,
       amount: order.total,
@@ -1364,6 +1393,152 @@ export class CafeStore {
 
     this.touch();
     return clone(order);
+  }
+
+  public cancelOrderItemAndRefund(
+    orderId: string,
+    menuItemId: string,
+    quantityToCancel?: number,
+    reason?: string,
+    staffName?: string,
+    staffRole?: string
+  ): { order: CafeOrder; refundAmount: number; cancelledItem: CartItem } | null {
+    const order = this.ordersById.get(orderId);
+    if (!order) return null;
+    if (order.paymentStatus === 'refunded' || order.paymentStatus === 'cancelled') {
+      throw new Error(`Order #${orderId} has already been ${order.paymentStatus}.`);
+    }
+
+    const itemIndex = order.items.findIndex(
+      (i) => i.menuItemId === menuItemId && i.status !== 'cancelled'
+    );
+    if (itemIndex === -1) {
+      throw new Error(`Item ${menuItemId} is not active in Order #${orderId}.`);
+    }
+
+    const item = order.items[itemIndex];
+    const qtyToCancel = Math.min(item.quantity, Math.max(1, quantityToCancel || item.quantity));
+    const isPaid = order.paymentStatus === 'paid';
+
+    // Calculate item refund amount
+    const itemRefundAmount = Math.round(item.price * qtyToCancel * 100) / 100;
+    const effectiveRefund = Math.min(order.total, itemRefundAmount);
+
+    const nowTime = new Date().toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const effectiveReason = reason?.trim() || 'Item cancelled in kitchen';
+    const effectiveStaffName = staffName || 'Kitchen Staff';
+
+    // Restore stock if inventory was already deducted for this order
+    if (this.stockDeductedOrderIds.has(order.id)) {
+      const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
+      const burn = recipeCatalog[item.menuItemId];
+      if (burn) {
+        burn.forEach(({ ingredientId, amount }) => {
+          const ingIndex = this.state.inventory.findIndex((i) => i.id === ingredientId);
+          if (ingIndex !== -1) {
+            const ing = this.state.inventory[ingIndex];
+            const restoreQty = Math.round(amount * qtyToCancel * 100) / 100;
+            const newQty = Math.round((ing.quantity + restoreQty) * 100) / 100;
+            this.state.inventory[ingIndex] = {
+              ...ing,
+              quantity: newQty,
+              status: computeInventoryStatus(newQty, ing.minThreshold),
+              fillPct: Math.min(100, Math.round((newQty / ing.maxCapacity) * 100)),
+            };
+            this.recordStockMovement({
+              ingredientId: ing.id,
+              ingredientName: ing.name,
+              type: 'refund',
+              quantityDelta: restoreQty,
+              beforeQuantity: ing.quantity,
+              afterQuantity: newQty,
+              unit: ing.unit,
+              unitCost: ing.unitCost,
+              referenceId: order.id,
+              note: `Stock restored for cancelled ${item.name} (${qtyToCancel}x) from Order #${order.id}`,
+              actorName: effectiveStaffName,
+            });
+          }
+        });
+      }
+    }
+
+    let returnedCancelledItem: CartItem;
+
+    if (qtyToCancel === item.quantity) {
+      item.status = 'cancelled';
+      item.cancelledQuantity = qtyToCancel;
+      item.cancelledReason = effectiveReason;
+      item.cancelledAt = nowTime;
+      item.cancelledBy = effectiveStaffName;
+      item.refundAmount = effectiveRefund;
+      item.checked = true;
+      returnedCancelledItem = { ...item };
+    } else {
+      item.quantity -= qtyToCancel;
+      returnedCancelledItem = {
+        ...item,
+        quantity: qtyToCancel,
+        status: 'cancelled',
+        cancelledQuantity: qtyToCancel,
+        cancelledReason: effectiveReason,
+        cancelledAt: nowTime,
+        cancelledBy: effectiveStaffName,
+        refundAmount: effectiveRefund,
+        checked: true,
+      };
+      order.items.splice(itemIndex + 1, 0, returnedCancelledItem);
+    }
+
+    if (isPaid) {
+      order.refundAmount = Math.round(((order.refundAmount || 0) + effectiveRefund) * 100) / 100;
+      order.refundReason = `Item refund: ${item.name} (${qtyToCancel}x) - ${effectiveReason}`;
+      order.refundedAt = nowTime;
+      order.refundedBy = effectiveStaffName;
+    } else {
+      const remainingActiveItems = order.items.filter((i) => i.status !== 'cancelled');
+      const newSubtotal = remainingActiveItems.reduce((acc, i) => acc + i.price * i.quantity, 0);
+      const newTax = Math.round(newSubtotal * 0.05 * 100) / 100;
+      order.subtotal = newSubtotal;
+      order.tax = newTax;
+      order.total = Math.max(0, newSubtotal + newTax - (order.discount || 0));
+    }
+
+    const activeItems = order.items.filter((i) => i.status !== 'cancelled');
+    if (activeItems.length === 0) {
+      order.paymentStatus = isPaid ? 'refunded' : 'cancelled';
+      order.status = 'served';
+      if (order.serviceMode === 'dine-in' && order.tableNumber) {
+        const table = this.tablesById.get(order.tableNumber);
+        if (table && table.activeOrderId === order.id) {
+          const updatedTable: CafeTable = {
+            ...table,
+            status: 'available',
+            activeOrderId: undefined,
+            elapsedLabel: '0m',
+          };
+          this.tablesById.set(updatedTable.id, updatedTable);
+          this.state.tables = this.state.tables.map((t) => (t.id === updatedTable.id ? updatedTable : t));
+        }
+      }
+    }
+
+    this.recordActivity({
+      type: 'order_refunded',
+      title: `Item Cancelled & Refunded: ${item.name}`,
+      description: `₹${effectiveRefund} ${isPaid ? 'refunded' : 'deducted'} for ${qtyToCancel}× ${item.name} (Order #${order.kotNumber || order.id}) · Reason: ${effectiveReason}`,
+      actorName: effectiveStaffName,
+      actorRole: staffRole || 'kitchen',
+      severity: 'warning',
+      orderId: order.id,
+      amount: effectiveRefund,
+    });
+
+    this.touch();
+    return { order: clone(order), refundAmount: effectiveRefund, cancelledItem: returnedCancelledItem };
   }
 
   public hasProcessedPaymentEvent(eventId: string): boolean {
@@ -1618,8 +1793,8 @@ export class CafeStore {
       type: 'order_created',
       title: `Order #${newOrder.id} Placed`,
       description: `${newOrder.serviceMode.toUpperCase()} · KOT ${newOrder.kotNumber} · ₹${newOrder.total} (${newOrder.items.length} items)`,
-      actorName: input.isPosTerminal ? 'POS Cashier' : 'Customer',
-      actorRole: input.isPosTerminal ? 'cashier' : 'customer',
+      actorName: input.isPosTerminal ? 'Admin' : 'Customer',
+      actorRole: input.isPosTerminal ? 'admin' : 'customer',
       severity: 'info',
       orderId: newOrder.id,
       amount: newOrder.total,
@@ -1702,7 +1877,7 @@ export class CafeStore {
     orderId: string,
     newStatus: OrderStatus,
     actorName = 'Staff',
-    actorRole = 'manager'
+    actorRole = 'admin'
   ): { order: CafeOrder; lowStockAlerts: InventoryIngredient[] } | null {
     const target = this.ordersById.get(orderId);
     if (!target) return null;
@@ -1770,7 +1945,7 @@ export class CafeStore {
     const target = this.ordersById.get(orderId);
     if (!target) return null;
     const nextStatus = transitionOrderStatus(target.status);
-    const result = this.updateOrderStatus(orderId, nextStatus, 'Kitchen Barista', 'barista');
+    const result = this.updateOrderStatus(orderId, nextStatus, 'Kitchen Staff', 'kitchen');
     return result ? result.order : null;
   }
 
@@ -1836,7 +2011,7 @@ export class CafeStore {
       title: `Product Added: ${newItem.name}`,
       description: `New menu item added to ${newItem.category} (₹${newItem.price})`,
       actorName: 'Admin',
-      actorRole: 'owner',
+      actorRole: 'admin',
       severity: 'info',
     });
     this.touch();
@@ -1858,7 +2033,7 @@ export class CafeStore {
         ? `${item.name} is now available for ordering`
         : `${item.name} marked out of stock`,
       actorName: 'Staff',
-      actorRole: 'manager',
+      actorRole: 'admin',
       severity: item.isAvailable ? 'info' : 'warning',
     });
     this.touch();
@@ -2075,34 +2250,50 @@ export class CafeStore {
     return this.moveTableParty('merge', sourceTableId, targetTableId);
   }
 
-  public restockIngredient(id: string, addedQty?: number): InventoryIngredient | null {
-    const exists = this.state.inventory.some((i) => i.id === id);
-    if (!exists) return null;
-    this.state.inventory = restockIngredientItem(this.state.inventory, id, addedQty);
-    const updated = this.state.inventory.find((i) => i.id === id) ?? null;
-    if (updated) {
-      // restockIngredientItem already applied the quantity change; record the stock movement.
-      const movementQty =
-        addedQty ??
-        (updated.unit === 'g' ? 1000 : updated.unit === 'pcs' ? 10 : 2.5);
-      this.recordStockMovement({
+  public restockIngredient(
+    id: string,
+    addedQty: number,
+    unitCost: number,
+    actorName = 'Admin'
+  ): InventoryIngredient | null {
+    const existing = this.state.inventory.find((item) => item.id === id);
+    if (!existing) return null;
+    const movementQty = addedQty;
+    const item = this.updateIngredientQuantity(
+      id,
+      movementQty,
+      'receipt',
+      undefined,
+      'Manual restock',
+      actorName,
+      unitCost
+    );
+    if (!item) return null;
+    const updated = this.state.inventory.find((ingredient) => ingredient.id === id);
+    if (!updated) return null;
+    updated.maxCapacity = Math.max(updated.maxCapacity, updated.quantity);
+    updated.fillPct = Math.min(100, Math.round((updated.quantity / updated.maxCapacity) * 100));
+    if (!this.state.inventoryBatches) this.state.inventoryBatches = [];
+    this.state.inventoryBatches = [
+      {
+        id: `batch-${crypto.randomUUID().slice(0, 10)}`,
         ingredientId: updated.id,
         ingredientName: updated.name,
-        type: 'receipt',
-        quantityDelta: movementQty,
-        beforeQuantity: Math.max(0, updated.quantity - movementQty),
-        afterQuantity: updated.quantity,
+        batchNumber: `REC-${Date.now()}`,
+        quantity: movementQty,
         unit: updated.unit,
         unitCost: updated.unitCost,
-        note: 'Manual restock',
-        actorName: 'Inventory Manager',
-      });
-      updated.reorderRequested = false;
-      updated.reorderRequestedAt = undefined;
-      updated.reorderNote = undefined;
-    }
+        receivedAt: new Date().toISOString(),
+        supplier: updated.supplier,
+        status: 'active',
+      },
+      ...this.state.inventoryBatches,
+    ];
+    updated.reorderRequested = false;
+    updated.reorderRequestedAt = undefined;
+    updated.reorderNote = undefined;
     this.touch();
-    return updated ? clone(updated) : null;
+    return clone(updated);
   }
 
   private recordStockMovement(input: Omit<StockMovement, 'id' | 'createdAt'>): StockMovement {
@@ -2122,7 +2313,8 @@ export class CafeStore {
     type: StockMovement['type'],
     referenceId?: string,
     note?: string,
-    actorName?: string
+    actorName?: string,
+    unitCost?: number
   ): InventoryIngredient | null {
     const index = this.state.inventory.findIndex((item) => item.id === ingredientId);
     if (index === -1) return null;
@@ -2134,6 +2326,7 @@ export class CafeStore {
     const updated: InventoryIngredient = {
       ...ingredient,
       quantity: afterQuantity,
+      unitCost: unitCost ?? ingredient.unitCost,
       status: computeInventoryStatus(afterQuantity, ingredient.minThreshold),
       fillPct: Math.min(100, Math.round((afterQuantity / ingredient.maxCapacity) * 100)),
       movementType: quantityDelta >= 0 ? 'in' : 'out',
@@ -2147,7 +2340,7 @@ export class CafeStore {
       beforeQuantity: ingredient.quantity,
       afterQuantity,
       unit: ingredient.unit,
-      unitCost: ingredient.unitCost,
+      unitCost: updated.unitCost,
       referenceId,
       note,
       actorName,
@@ -2157,15 +2350,19 @@ export class CafeStore {
 
   public receiveStock(
     input: z.infer<typeof stockReceiptSchema>,
-    actorName = 'Inventory Manager'
+    actorName = 'Admin'
   ): InventoryIngredient | null {
+    const currentItem = this.state.inventory.find((item) => item.id === input.ingredientId);
+    if (!currentItem) return null;
+    const unitCost = input.unitCost ?? currentItem.unitCost;
     const item = this.updateIngredientQuantity(
       input.ingredientId,
       input.quantity,
       'receipt',
       undefined,
       input.note || `Stock received${input.supplier ? ` from ${input.supplier}` : ''}`,
-      actorName
+      actorName,
+      unitCost
     );
     if (!item) return null;
     if (!this.state.inventoryBatches) this.state.inventoryBatches = [];
@@ -2176,7 +2373,7 @@ export class CafeStore {
       batchNumber: input.batchNumber || `REC-${Date.now()}`,
       quantity: input.quantity,
       unit: item.unit,
-      unitCost: input.unitCost,
+      unitCost,
       receivedAt: new Date().toISOString(),
       expiryDate: input.expiryDate || undefined,
       supplier: input.supplier || item.supplier,
@@ -2223,7 +2420,7 @@ export class CafeStore {
 
   public transferStock(
     input: z.infer<typeof stockTransferSchema>,
-    actorName = 'Inventory Manager'
+    actorName = 'Admin'
   ): InventoryIngredient | null {
     const item = this.updateIngredientQuantity(
       input.ingredientId,
@@ -2239,7 +2436,7 @@ export class CafeStore {
 
   public createStockCount(
     input: z.infer<typeof stockCountSchema>,
-    actorName = 'Inventory Manager'
+    actorName = 'Admin'
   ): StockCount {
     const lines: StockCountLine[] = input.physicalCounts.map((entry) => {
       const item = this.state.inventory.find((candidate) => candidate.id === entry.ingredientId);
@@ -2276,7 +2473,7 @@ export class CafeStore {
     return clone(count);
   }
 
-  public approveStockCount(countId: string, actorName = 'Inventory Manager'): StockCount | null {
+  public approveStockCount(countId: string, actorName = 'Admin'): StockCount | null {
     const count = this.state.stockCounts?.find((entry) => entry.id === countId);
     if (!count || count.status === 'approved') return count ? clone(count) : null;
     for (const line of count.lines) {
@@ -2299,7 +2496,7 @@ export class CafeStore {
 
   public createPurchaseOrder(
     input: z.infer<typeof purchaseOrderSchema>,
-    actorName = 'Inventory Manager'
+    actorName = 'Admin'
   ): PurchaseOrder {
     const lines: PurchaseOrderLine[] = input.lines.map((line) => {
       const item = this.state.inventory.find((candidate) => candidate.id === line.ingredientId);
@@ -2346,7 +2543,7 @@ export class CafeStore {
 
   public receivePurchaseOrder(
     input: z.infer<typeof receivePurchaseOrderSchema>,
-    actorName = 'Inventory Manager'
+    actorName = 'Admin'
   ): PurchaseOrder | null {
     const purchaseOrder = this.state.purchaseOrders?.find(
       (entry) => entry.id === input.purchaseOrderId
@@ -2414,8 +2611,8 @@ export class CafeStore {
       type: 'stock_updated',
       title: `Kitchen Stock Alert: ${item.name}`,
       description: `Kitchen requested reorder for ${item.name} (${item.quantity} ${item.unit} in stock). ${item.reorderNote}`,
-      actorName: staffName || 'Kitchen Chef',
-      actorRole: 'chef',
+      actorName: staffName || 'Kitchen Staff',
+      actorRole: 'kitchen',
       severity: 'warning',
     });
     this.touch();
@@ -2544,16 +2741,7 @@ export class CafeStore {
       initials,
       name: input.name,
       role: input.role,
-      roleIcon:
-        /owner/i.test(input.role) || input.role === 'Store Manager'
-          ? 'shield_person'
-          : /kitchen/i.test(input.role)
-            ? 'skillet'
-            : /server/i.test(input.role)
-              ? 'table_bar'
-              : input.role === 'Cashier'
-                ? 'point_of_sale'
-                : 'coffee_maker',
+      roleIcon: input.role === 'Admin' ? 'shield_person' : 'skillet',
       shiftLabel: input.shiftLabel,
       shiftBucket: 'afternoon',
       isOnDuty: true,
