@@ -131,22 +131,20 @@ import { CoffeeBrewLoader } from './components/CoffeeBrewLoader';
 import {
   AdminDashboardSkeleton,
   CustomerCartSkeleton,
+  CustomerHomeScreenSkeleton,
+  InventoryStockSkeleton,
   KitchenDisplaySkeleton,
+  LiveTrackingSkeleton,
   MenuScreenSkeleton,
+  PosTerminalSkeleton,
+  ScreenSkeleton,
+  TableLayoutSkeleton,
 } from './components/SkeletonLoaders';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-function ScreenFallback() {
-  return (
-    <div className="flex flex-col items-center justify-center py-12">
-      <CoffeeBrewLoader
-        size="sm"
-        title="Brewing Workspace"
-        subtitle="Extracting fresh data..."
-      />
-    </div>
-  );
+function ScreenFallback({ screen }: { screen?: ScreenId } = {}) {
+  return <ScreenSkeleton screen={screen} />;
 }
 
 export default function App() {
@@ -1295,7 +1293,7 @@ export default function App() {
 
   if (activeScreen === 'splash') {
     return (
-      <Suspense fallback={<ScreenFallback />}>
+      <Suspense fallback={<ScreenSkeleton screen={activeScreen} />}>
         <SplashScreen
           errorMessage={isError ? errorMessage : undefined}
           onRetry={() => void refetch()}
@@ -1330,7 +1328,7 @@ export default function App() {
       onNavigate={handleNavigate}
     >
       {activeScreen === 'home' && (
-        <Suspense fallback={<ScreenFallback />}>
+        <Suspense fallback={<CustomerHomeScreenSkeleton />}>
           <CustomerHomeScreen
             cartCount={customerTotals.itemCount}
             cart={customerCart}
@@ -1405,7 +1403,7 @@ export default function App() {
       )}
 
       {activeScreen === 'tracking' && (
-        <Suspense fallback={<ScreenFallback />}>
+        <Suspense fallback={<LiveTrackingSkeleton />}>
           <LiveTrackingScreen
             activeOrder={activeTrackedOrder}
             allOrders={orders}
@@ -1423,7 +1421,7 @@ export default function App() {
       )}
 
       {activeScreen === 'rewards' && (
-        <Suspense fallback={<ScreenFallback />}>
+        <Suspense fallback={<ScreenSkeleton screen={activeScreen} />}>
           <CustomerRewardsScreen
             points={rewardPoints}
             campaigns={campaigns}
@@ -1438,7 +1436,7 @@ export default function App() {
       )}
 
       {activeScreen === 'profile' && (
-        <Suspense fallback={<ScreenFallback />}>
+        <Suspense fallback={<ScreenSkeleton screen={activeScreen} />}>
           <CustomerProfileScreen
             onNotify={showToast}
             onBrowseMenu={() => handleNavigate('menu', 'customer')}
@@ -1452,7 +1450,7 @@ export default function App() {
       )}
 
       {activeScreen === 'login' && (
-        <Suspense fallback={<ScreenFallback />}>
+        <Suspense fallback={<ScreenSkeleton screen={activeScreen} />}>
           <CustomerLoginScreen
             onNotify={showToast}
             hasCartItems={customerCart.length > 0}
@@ -1472,13 +1470,13 @@ export default function App() {
       )}
 
       {activeScreen === 'privacy-policy' && (
-        <Suspense fallback={<ScreenFallback />}>
+        <Suspense fallback={<ScreenSkeleton screen={activeScreen} />}>
           <PrivacyPolicyScreen onBack={() => handleNavigate('menu', 'customer')} />
         </Suspense>
       )}
 
       {activeScreen === 'terms-and-conditions' && (
-        <Suspense fallback={<ScreenFallback />}>
+        <Suspense fallback={<ScreenSkeleton screen={activeScreen} />}>
           <TermsAndConditionsScreen onBack={() => handleNavigate('menu', 'customer')} />
         </Suspense>
       )}
@@ -1506,7 +1504,7 @@ export default function App() {
           )}
         </div>
       ) : (
-      <Suspense fallback={<ScreenFallback />}>
+      <Suspense fallback={<ScreenSkeleton screen={activeScreen} />}>
         {activeScreen === 'staff-home' && authSession.session?.role && (
           <StaffWorkspaceHome
             role={authSession.session.role}
