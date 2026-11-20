@@ -1431,6 +1431,9 @@ export default function App() {
               handleNavigate('cart', 'customer');
               showToast(`Coupon ${code} selected for your cart`);
             }}
+            onNavigateProfile={() => handleNavigate('profile', 'customer')}
+            onBrowseMenu={() => handleNavigate('menu', 'customer')}
+            onNavigateCart={() => handleNavigate('cart', 'customer')}
           />
         </Suspense>
       )}
