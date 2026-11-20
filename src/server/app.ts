@@ -51,6 +51,7 @@ import {
   updateCustomerCrmIdentityCookie,
 } from './auth';
 import { createRateLimiter, createTableRateLimiter } from './rateLimit';
+import { noSqlInjectionSanitizer, safeJsonForHtml, verifyCaptchaToken } from './security';
 import { InvalidDomainTransitionError } from '../state/cafeStateMachines';
 import type { CafeOrder, ScreenId, StaffRole } from '../types/cafe';
 import { cafeOpenApiSpec } from './openapi';
@@ -634,9 +635,9 @@ export function createCafeServer(
 
   <script>
     (function() {
-      const session = ${JSON.stringify(session)};
-      const mode = ${JSON.stringify(mode)};
-      const orderId = ${JSON.stringify(order.id)};
+      const session = ${safeJsonForHtml(session)};
+      const mode = ${safeJsonForHtml(mode)};
+      const orderId = ${safeJsonForHtml(order.id)};
 
       function showError(msg) {
         document.getElementById('status-box').classList.add('hidden');
@@ -787,6 +788,7 @@ export function createCafeServer(
   });
 
   app.use(express.json({ limit: '1mb' }));
+  app.use(noSqlInjectionSanitizer);
 
   app.use('/api', (req, res, next) => {
     if (req.path === '/health' || store.isPersistenceHealthy()) {
@@ -824,6 +826,16 @@ export function createCafeServer(
     windowMs: 60_000,
     maxRequests: 5,
     keyPrefix: 'customer-feedback',
+  });
+  const brevoConfirmationLimiter = createRateLimiter({
+    windowMs: 60_000,
+    maxRequests: 5,
+    keyPrefix: 'brevo-confirmation',
+  });
+  const tableReservationLimiter = createRateLimiter({
+    windowMs: 60_000,
+    maxRequests: 10,
+    keyPrefix: 'table-reservation',
   });
 
   // OpenAPI & Swagger UI (restricted to admin in production)
@@ -977,8 +989,13 @@ export function createCafeServer(
   });
 
   // Customer Brevo Email Confirmation endpoint
-  app.post('/api/auth/brevo-confirmation', async (req, res, next) => {
+  app.post('/api/auth/brevo-confirmation', brevoConfirmationLimiter, async (req, res, next) => {
     try {
+      const captchaCheck = await verifyCaptchaToken((req.body as { captchaToken?: string })?.captchaToken);
+      if (!captchaCheck.valid) {
+        res.status(403).json({ error: captchaCheck.error || 'CAPTCHA verification failed' });
+        return;
+      }
       const input = parseBody(brevoConfirmationSchema, req.body);
       const result = await sendBrevoConfirmationEmail({
         toName: input.name,
@@ -990,7 +1007,7 @@ export function createCafeServer(
         ok: result.success,
         simulated: result.simulated ?? false,
         messageId: result.messageId,
-        code: result.code,
+        code: process.env.NODE_ENV === 'production' ? undefined : result.code,
         error: result.error,
       });
     } catch (err) {
@@ -1517,8 +1534,13 @@ export function createCafeServer(
   );
 
   // Tables
-  app.post('/api/tables/reserve', (req, res, next) => {
+  app.post('/api/tables/reserve', tableReservationLimiter, async (req, res, next) => {
     try {
+      const captchaCheck = await verifyCaptchaToken((req.body as { captchaToken?: string })?.captchaToken);
+      if (!captchaCheck.valid) {
+        res.status(403).json({ error: captchaCheck.error || 'CAPTCHA verification failed' });
+        return;
+      }
       const input = parseBody(reserveTableSchema, req.body);
       const outcome = store.reserveTable(input);
       if (outcome.notFound) {

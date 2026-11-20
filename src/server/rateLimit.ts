@@ -22,9 +22,9 @@ export function getTrustedClientIp(req: Request): string {
     const xff = req.headers['x-forwarded-for'];
     if (typeof xff === 'string' && xff.trim()) {
       const parts = xff.split(',').map((p) => p.trim()).filter(Boolean);
-      // Last entry added by immediate trusted proxy or right-to-left evaluation
+      // Rightmost entry is appended by the immediate trusted proxy, preventing client header spoofing
       if (parts.length > 0) {
-        return parts[0];
+        return parts[parts.length - 1];
       }
     }
   }
