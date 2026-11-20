@@ -7,7 +7,6 @@ import {
   syncSupabaseCustomerSession,
   subscribeToSupabaseAuth,
   logoutCustomer,
-  isLiveSupabase,
   type CustomerAuthSession,
 } from '../lib/supabaseClient';
 
@@ -94,7 +93,7 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
           ? `Account created! Brevo confirmation email sent to ${email.trim()}.`
           : 'Account created! Welcome to Seth Sawariya Cafe.',
       });
-      onNotify(`Welcome, ${name.trim()}! 50 bonus reward points added.`);
+      onNotify(`Welcome, ${name.trim()}! Your account is ready.`);
       setTimeout(() => {
         onSuccess?.();
       }, 1200);
@@ -174,10 +173,18 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
   };
 
   const handleLogout = async () => {
-    await logoutCustomer();
-    setCurrentSession(null);
-    setStatusBanner({ type: 'success', message: 'You have logged out successfully.' });
-    onNotify('Logged out from customer account');
+    try {
+      await logoutCustomer();
+      setStatusBanner({ type: 'success', message: 'You have logged out successfully.' });
+      onNotify('Logged out from customer account');
+    } catch (error) {
+      setStatusBanner({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Could not complete sign out.',
+      });
+    } finally {
+      setCurrentSession(getLocalCustomerSession());
+    }
   };
 
   // If already logged in
@@ -268,11 +275,6 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
           <h1 className="text-xl sm:text-2xl font-black text-on-surface tracking-tight font-sans">
             {activeTab === 'register' ? 'Join Our Cafe Club' : 'Welcome Back'}
           </h1>
-          <p className="text-xs text-on-surface-variant">
-            {activeTab === 'register'
-              ? 'Enter your name, mobile & email to unlock free reward points.'
-              : 'Sign in to access your orders, points, and saved profile.'}
-          </p>
         </div>
 
         {/* Tab Switcher (Register vs Login) */}
@@ -459,16 +461,6 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
               </div>
             </div>
 
-            {/* Brevo Confirmation Badge */}
-            <div className="p-2.5 rounded-xl bg-surface-container-lowest border border-outline-variant/20 flex items-center gap-2 text-[11px] text-on-surface-variant">
-              <span className="material-symbols-outlined text-[16px] text-[#C59B67] shrink-0">
-                mark_email_read
-              </span>
-              <span>
-                Instant confirmation email sent via <strong>Brevo's Free Plan</strong>.
-              </span>
-            </div>
-
             <button
               type="submit"
               disabled={isLoading}
@@ -550,16 +542,6 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
               )}
             </button>
           </form>
-        )}
-
-        {/* Real Supabase Auth Status Notice */}
-        {!isLiveSupabase && (
-          <div className="p-3 rounded-2xl bg-surface-container border border-outline-variant/20 text-on-surface-variant text-[11px] leading-relaxed flex items-start gap-2">
-            <span className="material-symbols-outlined text-[16px] text-primary shrink-0 mt-0.5">verified_user</span>
-            <div>
-              <span className="font-bold text-on-surface">Real Supabase Auth:</span> Live authentication requires <code className="px-1 py-0.5 bg-surface-container-highest rounded text-[10px] text-primary font-mono">VITE_SUPABASE_URL</code> and <code className="px-1 py-0.5 bg-surface-container-highest rounded text-[10px] text-primary font-mono">VITE_SUPABASE_ANON_KEY</code> in <code className="px-1 py-0.5 bg-surface-container-highest rounded text-[10px] text-primary font-mono">.env</code>.
-            </div>
-          </div>
         )}
 
         {/* Continue as Guest */}

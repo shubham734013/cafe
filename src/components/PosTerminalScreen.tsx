@@ -143,10 +143,10 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
   return (
     <div className="flex flex-col w-full pb-6 gap-4">
       {/* Top Banner & Fast Actions */}
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-surface-container-low p-2.5 rounded-xl shadow-md border border-outline-variant/20">
+      <div className="flex flex-wrap items-center justify-between gap-2 liquid-glass p-3 rounded-2xl shadow-xl border border-white/[0.08]">
         <div className="flex items-center gap-2">
           {/* Service Mode Selector */}
-          <div className="flex gap-1 bg-surface-container-high p-1 rounded-lg">
+          <div className="flex gap-1 bg-surface-container-high/60 backdrop-blur-md p-1 rounded-xl border border-white/[0.06]">
             {([
               ['dine-in', 'Dine-In'],
               ['takeaway', 'Takeaway'],
@@ -156,9 +156,9 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                 key={mode}
                 type="button"
                 onClick={() => onServiceModeChange(mode)}
-                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   serviceMode === mode
-                    ? 'bg-primary text-on-primary shadow-sm'
+                    ? 'bg-primary text-on-primary shadow-md'
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
@@ -172,7 +172,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
               aria-label="Select table"
               value={selectedTable || 'T1'}
               onChange={(event) => onTableChange(event.target.value)}
-              className="rounded-lg bg-surface-container-high px-3 py-1.5 text-xs font-bold text-on-surface border border-outline-variant/30"
+              className="rounded-xl bg-surface-container-high/60 backdrop-blur-md px-3 py-1.5 text-xs font-bold text-on-surface border border-white/[0.08] focus:ring-1 focus:ring-primary"
             >
               {tables.map((table) => (
                 <option key={table.id} value={table.id}>
@@ -255,10 +255,10 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
               return (
                 <div
                   key={item.id}
-                  className={`group relative overflow-hidden rounded-2xl bg-surface-container-low hover:bg-surface-container text-left shadow-sm hover:shadow-md transition-all border flex flex-col justify-between ${
+                  className={`group relative overflow-hidden rounded-2xl liquid-glass-card text-left transition-all border flex flex-col justify-between ${
                     !isAvailable
                       ? 'border-error/40 opacity-75 grayscale-[20%]'
-                      : 'border-outline-variant/15 hover:border-primary/40'
+                      : 'border-white/[0.08] hover:border-primary/50'
                   }`}
                 >
                   <button
@@ -297,7 +297,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                       <span className="block truncate text-xs sm:text-sm font-bold text-on-surface">
                         {item.name}
                       </span>
-                      <div className="flex items-center justify-between rounded-lg bg-surface-container-lowest/80 border border-outline-variant/10 px-2 py-1.5">
+                      <div className="flex items-center justify-between rounded-xl liquid-glass-subcard px-2.5 py-1.5">
                         <span className="text-xs sm:text-sm font-black text-primary">₹{item.price}</span>
                         <span className="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider">
                           {item.station}
@@ -330,7 +330,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
         </section>
 
         {/* Right Column: Order Bill & Tender Panel (5 Cols) */}
-        <section className="lg:col-span-5 flex flex-col gap-3.5 rounded-2xl bg-surface-container-low p-4 sm:p-5 shadow-lg border border-outline-variant/20">
+        <section className="lg:col-span-5 flex flex-col gap-3.5 rounded-2xl liquid-glass p-4 sm:p-5 shadow-2xl border border-white/[0.08]">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-black uppercase tracking-wider text-on-surface flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-[20px]">shopping_cart</span>
@@ -427,7 +427,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
               {posCart.map((item) => (
                 <div
                   key={item.menuItemId}
-                  className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-surface-container-lowest/80 border border-outline-variant/15 hover:border-outline-variant/30 transition-all"
+                  className="flex items-center justify-between gap-2 p-2.5 rounded-xl liquid-glass-subcard transition-all"
                 >
                   <div className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-bold text-on-surface">
@@ -442,7 +442,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                       type="button"
                       aria-label={`Decrease ${item.name}`}
                       onClick={() => onUpdatePosQty(item.menuItemId, -1)}
-                      className="grid h-7 w-7 place-items-center rounded-lg bg-surface-container-high hover:bg-surface-bright text-xs font-bold cursor-pointer transition-colors"
+                      className="grid h-7 w-7 place-items-center rounded-lg bg-surface-container-high/80 hover:bg-surface-bright text-xs font-bold cursor-pointer transition-colors border border-white/[0.06]"
                     >
                       −
                     </button>
@@ -451,7 +451,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                       type="button"
                       aria-label={`Increase ${item.name}`}
                       onClick={() => onUpdatePosQty(item.menuItemId, 1)}
-                      className="grid h-7 w-7 place-items-center rounded-lg bg-primary text-on-primary text-xs font-bold cursor-pointer hover:brightness-110 transition-all"
+                      className="grid h-7 w-7 place-items-center rounded-lg bg-primary text-on-primary text-xs font-bold cursor-pointer hover:brightness-110 shadow-sm transition-all"
                     >
                       +
                     </button>
@@ -462,7 +462,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
           )}
 
           {/* Pricing Totals Breakdown Inset Sub-Card */}
-          <div className="flex flex-col gap-1.5 rounded-xl bg-surface-container-lowest/80 border border-outline-variant/15 p-3 text-xs">
+          <div className="flex flex-col gap-1.5 rounded-xl liquid-glass-subcard p-3.5 text-xs">
             <div className="flex justify-between text-on-surface-variant">
               <span>Subtotal:</span>
               <span className="font-semibold text-on-surface tabular-nums">{formatINR(totals.subtotal)}</span>
@@ -477,7 +477,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
               <span>Taxes (5% GST):</span>
               <span className="tabular-nums">{formatINR(totals.tax)}</span>
             </div>
-            <div className="flex items-center justify-between font-black text-on-surface pt-1.5 border-t border-outline-variant/15">
+            <div className="flex items-center justify-between font-black text-on-surface pt-1.5 border-t border-white/[0.08]">
               <span className="text-sm font-bold">Payable Amount</span>
               <span className="text-xl text-primary font-black tabular-nums">{formatINR(totals.total)}</span>
             </div>

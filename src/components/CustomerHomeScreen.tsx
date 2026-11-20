@@ -372,7 +372,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                   return (
                     <div
                       key={`mobile-home-${dish.id}`}
-                      className="bg-surface-container-low rounded-2xl p-3.5 border border-outline-variant/15 shadow-sm hover:shadow-md transition-all flex items-start justify-between gap-3 relative"
+                      className="liquid-glass-card rounded-2xl p-3.5 shadow-lg transition-all flex items-start justify-between gap-3 relative"
                     >
                       {/* Left: Info */}
                       <div
@@ -463,7 +463,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
                   return (
                     <div
                       key={`desktop-home-${dish.id}`}
-                      className="bg-surface-container-low rounded-2xl overflow-hidden border border-outline-variant/15 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col group"
+                      className="liquid-glass-card rounded-2xl overflow-hidden shadow-lg transition-all duration-300 flex flex-col group"
                     >
                       {/* Left Dish Photo */}
                       <div

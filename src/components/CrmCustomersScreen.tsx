@@ -410,22 +410,22 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
               return (
                 <div
                   key={customer.id}
-                  className="relative overflow-hidden flex flex-col justify-between p-4 rounded-2xl bg-surface-container-low hover:bg-surface-container border border-outline-variant/15 hover:border-outline-variant/30 shadow-md transition-all space-y-3.5"
+                  className="relative overflow-hidden flex flex-col justify-between p-4 rounded-2xl liquid-glass-card shadow-xl transition-all space-y-3.5"
                 >
                   {isVip && (
-                    <div className="absolute -right-8 -top-8 w-24 h-24 bg-primary/10 rounded-full blur-xl pointer-events-none" />
+                    <div className="absolute -right-8 -top-8 w-24 h-24 bg-primary/20 rounded-full blur-xl pointer-events-none" />
                   )}
 
                   {/* Header Row: Avatar + Name/Phone + Action Buttons */}
                   <div className="flex items-center justify-between gap-2.5 relative">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div
-                        className={`relative w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
+                        className={`relative w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold shrink-0 shadow-sm ${
                           isVip
                             ? 'bg-gradient-to-tr from-primary-container to-primary text-on-primary shadow-md'
                             : isLoyal
-                              ? 'bg-secondary-container/30 text-secondary border border-secondary/20'
-                              : 'bg-surface-container-high text-primary font-bold'
+                              ? 'bg-secondary-container/30 text-secondary border border-secondary/30'
+                              : 'bg-surface-container-high/90 text-primary font-bold border border-white/[0.08]'
                         }`}
                       >
                         {customer.initials}
@@ -451,7 +451,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                                   ? 'bg-secondary-container/30 text-secondary border border-secondary/20'
                                   : isRegular
                                     ? 'bg-tertiary-container/30 text-tertiary border border-tertiary/20'
-                                    : 'bg-surface-container-high text-on-surface-variant'
+                                    : 'bg-surface-container-high text-on-surface-variant border border-white/[0.06]'
                             }`}
                           >
                             {customer.segment}
@@ -476,7 +476,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                             ? onExportCustomerPii(customer)
                             : onNotify(`Exported DPDP JSON for ${customer.name}`)
                         }
-                        className="w-9 h-9 rounded-xl bg-surface-container-high/80 hover:bg-surface-container-high border border-outline-variant/15 flex items-center justify-center text-primary active:scale-95 transition-all cursor-pointer"
+                        className="w-9 h-9 rounded-xl liquid-glass-pill flex items-center justify-center text-primary active:scale-95 transition-all cursor-pointer hover:border-primary/40"
                         title="Download DPDP Record"
                       >
                         <span className="material-symbols-outlined text-[17px]">download</span>
@@ -485,7 +485,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                         type="button"
                         aria-label={`Call ${customer.name}`}
                         onClick={() => onNotify(`Dialing ${customer.name} (+91 ${customer.phone})`)}
-                        className="w-9 h-9 rounded-xl bg-surface-container-high/80 hover:bg-surface-container-high border border-outline-variant/15 flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-95 transition-all cursor-pointer"
+                        className="w-9 h-9 rounded-xl liquid-glass-pill flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-95 transition-all cursor-pointer hover:border-white/20"
                         title="Call Customer"
                       >
                         <span className="material-symbols-outlined text-[17px]">call</span>
@@ -496,7 +496,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                         onClick={() =>
                           onNotify(`Opened WhatsApp greeting for ${customer.name}`)
                         }
-                        className="w-9 h-9 rounded-xl bg-surface-container-high/80 hover:bg-surface-container-high border border-outline-variant/15 flex items-center justify-center text-tertiary hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+                        className="w-9 h-9 rounded-xl liquid-glass-pill flex items-center justify-center text-tertiary hover:brightness-110 active:scale-95 transition-all cursor-pointer hover:border-tertiary/40"
                         title="Chat on WhatsApp"
                       >
                         <span className="material-symbols-outlined text-[17px]">chat</span>
@@ -505,7 +505,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                   </div>
 
                   {/* Middle Metrics Inset Card */}
-                  <div className="grid grid-cols-3 gap-2 py-3 px-3.5 rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 text-center items-center">
+                  <div className="grid grid-cols-3 gap-2 py-3 px-3.5 rounded-xl liquid-glass-subcard text-center items-center">
                     <div className="flex flex-col">
                       <span className="text-[11px] text-outline font-medium mb-0.5">Visits</span>
                       <span className="text-xs sm:text-sm text-on-surface font-bold tabular-nums">

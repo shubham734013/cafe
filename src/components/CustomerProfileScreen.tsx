@@ -187,14 +187,21 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
               <div className="mt-3 space-y-2 w-full">
                 <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold">
                   <span className="material-symbols-outlined text-[13px]">verified</span>
-                  Supabase Verified
+                  Account connected
                 </span>
                 <button
                   type="button"
                   onClick={async () => {
-                    await logoutCustomer();
-                    setAuthSession(null);
-                    onNotify('Logged out from account');
+                    try {
+                      await logoutCustomer();
+                      onNotify('Logged out from account');
+                    } catch (error) {
+                      setPhoneVerificationError(
+                        error instanceof Error ? error.message : 'Could not complete sign out.'
+                      );
+                    } finally {
+                      setAuthSession(null);
+                    }
                   }}
                   className="block w-full py-1.5 rounded-lg bg-surface-container-high hover:bg-surface-container text-xs text-on-surface font-semibold cursor-pointer transition-colors"
                 >

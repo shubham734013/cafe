@@ -748,21 +748,21 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
           {supplierGroups.map(([supplier, vendorItems]) => (
             <div
               key={supplier}
-              className="p-4 sm:p-5 rounded-2xl bg-surface-container-low hover:bg-surface-container border border-outline-variant/15 hover:border-outline-variant/30 flex flex-col justify-between gap-3 shadow-md hover:shadow-lg transition-all"
+              className="p-4 sm:p-5 rounded-2xl liquid-glass-card flex flex-col justify-between gap-3 shadow-xl transition-all"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-surface-container-high flex items-center justify-center shrink-0 border border-outline-variant/10 text-primary">
+                  <div className="w-9 h-9 rounded-xl bg-surface-container-high/80 flex items-center justify-center shrink-0 border border-white/[0.08] text-primary shadow-sm">
                     <span className="material-symbols-outlined text-[18px]">local_shipping</span>
                   </div>
                   <span className="text-sm font-bold text-on-surface truncate">{supplier}</span>
                 </div>
-                <span className="px-2.5 py-0.5 rounded-full bg-surface-container-high border border-outline-variant/15 text-[10px] text-primary font-bold uppercase tracking-wider shrink-0">
+                <span className="px-2.5 py-0.5 rounded-full bg-surface-container-high/80 border border-white/[0.08] text-[10px] text-primary font-bold uppercase tracking-wider shrink-0">
                   {vendorItems.length} SKUs
                 </span>
               </div>
 
-              <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-2.5 text-xs text-on-surface-variant">
+              <div className="rounded-xl liquid-glass-subcard p-2.5 text-xs text-on-surface-variant">
                 <span className="text-[10px] text-outline font-semibold uppercase tracking-wider block mb-0.5">Supplies</span>
                 <p className="truncate text-on-surface font-medium">
                   {vendorItems.map((v) => v.name).join(', ')}
@@ -772,7 +772,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
               <button
                 type="button"
                 onClick={() => onNotify(`Purchase order draft created for ${supplier}`)}
-                className="w-full py-2 rounded-xl bg-surface-container-high hover:bg-surface-bright border border-outline-variant/15 text-primary text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                className="w-full py-2 rounded-xl liquid-glass-pill text-primary text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 hover:border-primary/40"
               >
                 <span className="material-symbols-outlined text-[15px]">post_add</span>
                 <span>Create Vendor PO</span>

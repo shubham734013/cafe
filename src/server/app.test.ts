@@ -137,6 +137,15 @@ test('health and public bootstrap remain available and retired YouPI routes stay
   assert.equal(health.ok, true);
   assert.equal(health.service, 'seth-sawariya-cafeos');
 
+  const identityWithoutAuth = await fetch(`${baseUrl}/api/customer/identity`, {
+    method: 'POST',
+  });
+  assert.equal(identityWithoutAuth.status, 401);
+  const clearIdentityResponse = await fetch(`${baseUrl}/api/customer/identity`, {
+    method: 'DELETE',
+  });
+  assert.equal(clearIdentityResponse.status, 204);
+
   const bootstrapResponse = await fetch(
     `${baseUrl}/api/bootstrap?screen=splash&scope=main`
   );
@@ -906,6 +915,84 @@ test('customer feedback is validated and recorded for the cafe team', async (t) 
     body: JSON.stringify({ customerName: 'Asha', rating: 6, comment: 'No' }),
   });
   assert.equal(invalidRes.status, 400);
+});
+
+test('segment offers are shown and redeemable only for matching CRM customers', async () => {
+  const store = new CafeStore(null);
+  const vipCustomer = store.addCustomer({
+    name: 'Sam Lee',
+    phone: '9876543210',
+    segment: 'vip',
+    favorites: 'Cold Coffee',
+    dpdpConsent: true,
+  });
+  const generalCampaign = store.createCampaign({
+    title: 'Cafe Special',
+    code: 'CAFEALL',
+    validityLabel: 'This week',
+    description: 'Current offer for all customers',
+    targetSegment: 'all',
+  });
+  const vipCampaign = store.createCampaign({
+    title: 'VIP Special',
+    code: 'VIPONLY',
+    validityLabel: 'This week',
+    description: 'Offer for VIP customers',
+    targetSegment: 'vip',
+  });
+  const regularCampaign = store.createCampaign({
+    title: 'Regular Special',
+    code: 'REGONLY',
+    validityLabel: 'This week',
+    description: 'Offer for regular customers',
+    targetSegment: 'regular',
+  });
+
+  assert.equal(store.findCustomerIdByPhone('+91 98765 43210'), vipCustomer.id);
+  const bootstrap = store.getBootstrap({
+    staffSession: null,
+    customerSession: {
+      customerId: 'browser-customer',
+      crmCustomerId: vipCustomer.id,
+      orderIds: [],
+      issuedAt: Date.now(),
+      exp: Date.now() + 60_000,
+    },
+  });
+  assert.deepEqual(
+    bootstrap.campaigns.map((campaign) => campaign.id),
+    [vipCampaign.id, generalCampaign.id]
+  );
+
+  await assert.rejects(
+    store.createOrder(
+      {
+        outletId: 'seth-sawariya-main',
+        serviceMode: 'takeaway',
+        paymentMode: 'cash',
+        couponCode: 'VIPONLY',
+        cookingNote: '',
+        isPosTerminal: false,
+        items: [
+          {
+            menuItemId: 'cappuccino',
+            name: 'Cappuccino',
+            price: 0,
+            quantity: 1,
+            note: '',
+            imageUrl: '',
+            station: 'Barista',
+          },
+        ],
+      },
+      'regular'
+    ),
+    /not available for your customer account/
+  );
+  assert.equal(
+    store.getBootstrap().campaigns.some((campaign) => campaign.id === regularCampaign.id),
+    true
+  );
 });
 
 test('order refund requires staff auth, updates paymentStatus to refunded, and records activity log', async (t) => {

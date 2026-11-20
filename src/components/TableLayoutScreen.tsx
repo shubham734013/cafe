@@ -327,10 +327,10 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
           return (
             <div
               key={table.id}
-              className={`rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between shadow-md hover:shadow-lg transition-all border relative overflow-hidden space-y-3 ${
+              className={`rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between shadow-xl transition-all border relative overflow-hidden space-y-3 liquid-glass-card ${
                 isOccupied
-                  ? 'bg-surface-container-low border-error/30'
-                  : 'bg-surface-container-low border-outline-variant/15 hover:border-outline-variant/30'
+                  ? 'border-error/40'
+                  : 'border-white/[0.08] hover:border-primary/40'
               } ${isSelected ? 'ring-2 ring-primary/60' : ''}`}
             >
               <div className={`absolute top-0 left-0 w-full h-1.5 ${accentBarColor}`} />
@@ -376,7 +376,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
 
               {/* Middle Metrics Inset Sub-Card */}
               {isOccupied ? (
-                <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-2.5 flex flex-col gap-1">
+                <div className="rounded-xl liquid-glass-subcard p-2.5 flex flex-col gap-1">
                   <span className="text-[11px] text-on-surface-variant font-medium truncate">
                     #{activeOrder?.id || table.activeOrderId || (readOnly ? 'Order unavailable' : 'SSCB421')}
                   </span>
@@ -395,7 +395,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
                   </div>
                 </div>
               ) : isReserved ? (
-                <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-2.5 flex flex-col">
+                <div className="rounded-xl liquid-glass-subcard p-2.5 flex flex-col">
                   <span className="text-xs text-on-surface font-bold truncate">
                     {readOnly ? 'Reserved' : table.reservedBy}
                   </span>
@@ -406,7 +406,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
                   )}
                 </div>
               ) : (
-                <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-2.5 flex flex-col justify-center">
+                <div className="rounded-xl liquid-glass-subcard p-2.5 flex flex-col justify-center">
                   <p className="text-xs text-on-surface-variant font-medium truncate">{table.zone}</p>
                   <p className="text-[10px] text-tertiary font-bold mt-0.5">Ready for guests</p>
                 </div>

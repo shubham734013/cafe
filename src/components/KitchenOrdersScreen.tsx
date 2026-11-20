@@ -228,12 +228,12 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
               <div
                 key={order.id}
                 onClick={() => setSelectedOrderId(order.id)}
-                className={`group rounded-2xl bg-surface-container-low hover:bg-surface-container border transition-all cursor-pointer shadow-md hover:shadow-lg flex flex-col justify-between p-4 sm:p-5 space-y-3.5 ${
+                className={`group rounded-2xl liquid-glass-card transition-all cursor-pointer shadow-xl flex flex-col justify-between p-4 sm:p-5 space-y-3.5 ${
                   isUrgent && !isServed
                     ? 'border-error/50 ring-1 ring-error/30'
                     : isReady
                       ? 'border-emerald-500/40 ring-1 ring-emerald-500/20'
-                      : 'border-outline-variant/15 hover:border-outline-variant/30'
+                      : 'border-white/[0.08] hover:border-primary/40'
                 }`}
               >
                 {/* Header: KOT Number, Channel, Status Badge */}
@@ -278,7 +278,7 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
                   </div>
 
                   {/* Items Checklist Inset Container */}
-                  <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-2.5 space-y-1">
+                  <div className="rounded-xl liquid-glass-subcard p-2.5 space-y-1">
                     {order.items.map((item) => (
                       <div
                         key={item.menuItemId}

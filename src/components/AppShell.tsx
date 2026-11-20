@@ -5,6 +5,7 @@ import { isKitchenPath } from '../routing/routes';
 import { canStaffRoleAccessScreen, formatStaffRoleLabel } from '../utils/rbac';
 import { CafeBrandEmblem } from './CafeBrandEmblem';
 import { CafeImage } from './CafeImage';
+import { LiquidGlassShader } from './LiquidGlassShader';
 
 interface AppShellProps {
   activeScreen: ScreenId;
@@ -161,18 +162,21 @@ export const AppShell: React.FC<AppShellProps> = ({
 
   return (
     <div
-      className={`min-h-screen w-full overflow-x-hidden flex flex-col md:flex-row ${
+      className={`min-h-screen w-full overflow-x-hidden flex flex-col md:flex-row relative ${
         !isStaffWorkspace && isLightTheme
           ? 'bg-[#FAF7F2] text-[#221A15]'
-          : 'bg-surface text-on-surface'
+          : 'bg-[#0B0F17]/90 text-on-surface'
       }`}
     >
+      {/* Liquid Glass Fluid Shader Background (Active in Dark Mode) */}
+      {!isLightTheme && <LiquidGlassShader intensity={0.9} />}
+
       {/* Desktop Left Workspace Rail */}
       <aside
-        className={`hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 z-40 p-4 justify-between ${
+        className={`hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 z-40 p-4 justify-between transition-all ${
           !isStaffWorkspace && isLightTheme
             ? 'bg-[#F4EFEA] border-r border-[#E5DDD2] text-[#221A15]'
-            : 'bg-surface-container-lowest border-r border-outline-variant/15 text-on-surface shadow-[1px_0_12px_rgba(0,0,0,0.3)]'
+            : 'bg-surface-container-lowest/65 backdrop-blur-2xl border-r border-white/[0.08] text-on-surface shadow-[1px_0_24px_rgba(0,0,0,0.45)]'
         }`}
       >
         <div className="space-y-4 overflow-y-auto no-scrollbar">
@@ -320,14 +324,18 @@ export const AppShell: React.FC<AppShellProps> = ({
       <div className="flex-1 flex flex-col md:pl-64 min-h-screen w-full min-w-0">
         {/* Top Header */}
         <header
-          className={`fixed top-0 left-0 right-0 md:left-64 z-30 pt-safe bg-surface/85 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.25)] ${
+          className={`fixed top-0 left-0 right-0 md:left-64 z-30 pt-safe transition-all ${
+            isLightTheme
+              ? 'bg-surface/85 backdrop-blur-xl border-b border-outline-variant/15'
+              : 'bg-surface-container-lowest/65 backdrop-blur-2xl border-b border-white/[0.08] shadow-[0_4px_30px_rgba(0,0,0,0.35)]'
+          } ${
             !isStaffWorkspace ? 'md:hidden' : ''
           }`}
         >
           <div className="h-14 md:h-16 px-4 max-w-7xl mx-auto flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
               {isStaffWorkspace ? (
-                <div className="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-primary-container shrink-0 md:hidden">
+                <div className="w-9 h-9 rounded-xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-primary shrink-0 md:hidden shadow-sm">
                   <span className="material-symbols-outlined text-[20px]">local_cafe</span>
                 </div>
               ) : (
@@ -349,18 +357,18 @@ export const AppShell: React.FC<AppShellProps> = ({
             </div>
 
             {/* Right Header Controls */}
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
                 aria-label={isLightTheme ? 'Switch to Dark Theme' : 'Switch to Light Theme'}
                 onClick={toggleTheme}
-                className="px-2.5 py-1 rounded-full bg-surface-container hover:bg-surface-container-high flex items-center gap-1 text-xs font-bold text-on-surface transition-all cursor-pointer shadow-sm border border-outline-variant/15"
+                className="liquid-glass-pill px-3 py-1.5 rounded-full hover:bg-surface-container-high/80 flex items-center gap-1.5 text-xs font-bold text-on-surface transition-all cursor-pointer shadow-sm active:scale-95"
               >
-                <span className="material-symbols-outlined text-[15px] text-amber-400">
+                <span className="material-symbols-outlined text-[16px] text-amber-400">
                   {isLightTheme ? 'light_mode' : 'dark_mode'}
                 </span>
                 <span className="text-[11px] font-bold hidden sm:inline">
-                  {isLightTheme ? 'Light' : 'Dark'}
+                  {isLightTheme ? 'Light' : 'Liquid Glass'}
                 </span>
               </button>
 
@@ -494,7 +502,11 @@ export const AppShell: React.FC<AppShellProps> = ({
 
         {/* Mobile Bottom Tab Bar */}
         {(!isStaffWorkspace || isStaff) && (
-          <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 pb-safe bg-surface-container-lowest/95 backdrop-blur-xl shadow-[0_-1px_12px_rgba(0,0,0,0.35)]">
+          <nav className={`md:hidden fixed bottom-0 left-0 right-0 z-40 pb-safe transition-all ${
+            isLightTheme
+              ? 'bg-[#F4EFEA]/95 border-t border-[#E5DDD2]'
+              : 'bg-surface-container-lowest/70 backdrop-blur-2xl border-t border-white/[0.08] shadow-[0_-8px_32px_rgba(0,0,0,0.45)]'
+          }`}>
           {isStaff ? (
             <div className="flex items-center justify-around h-16 px-1">
               {visibleMobileStaffTabs.map((tab) => {
@@ -504,15 +516,15 @@ export const AppShell: React.FC<AppShellProps> = ({
                     key={tab.id}
                     type="button"
                     onClick={() => onNavigate(tab.id, 'staff')}
-                    className={`relative flex flex-col items-center justify-center min-w-[54px] min-h-[44px] px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+                    className={`relative flex flex-col items-center justify-center min-w-[54px] min-h-[44px] px-2 py-1 rounded-xl transition-all cursor-pointer ${
                       active
-                        ? 'text-primary-container bg-surface-container-high/70 font-bold'
+                        ? 'text-primary bg-primary/15 border border-primary/25 font-bold shadow-xs'
                         : 'text-on-surface-variant hover:text-on-surface'
                     }`}
                   >
                     <span
                       className={`material-symbols-outlined text-[22px] ${
-                        active ? 'icon-filled' : ''
+                        active ? 'icon-filled text-primary' : ''
                       }`}
                     >
                       {tab.icon}
@@ -526,9 +538,9 @@ export const AppShell: React.FC<AppShellProps> = ({
                 type="button"
                 data-testid="mobile-staff-more-btn"
                 onClick={() => setMoreDrawerOpen(true)}
-                className={`relative flex flex-col items-center justify-center min-w-[54px] min-h-[44px] px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+                className={`relative flex flex-col items-center justify-center min-w-[54px] min-h-[44px] px-2 py-1 rounded-xl transition-all cursor-pointer ${
                   !isActiveInMobilePrimaryTabs || moreDrawerOpen
-                    ? 'text-primary-container bg-surface-container-high/70 font-bold'
+                    ? 'text-primary bg-primary/15 border border-primary/25 font-bold'
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
@@ -544,11 +556,7 @@ export const AppShell: React.FC<AppShellProps> = ({
               </button>}
             </div>
           ) : (
-            <div className={`flex items-center justify-around h-16 px-2 backdrop-blur-xl border-t ${
-              isLightTheme
-                ? 'bg-[#F4EFEA]/95 border-[#E5DDD2]'
-                : 'bg-surface-container-lowest/95 border-outline-variant/15'
-            }`}>
+            <div className="flex items-center justify-around h-16 px-2">
               {CUSTOMER_NAV.filter((tab) => tab.id !== 'cart').map((tab) => {
                 const active = activeScreen === tab.id;
                 return (

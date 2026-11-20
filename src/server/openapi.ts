@@ -105,6 +105,31 @@ export const cafeOpenApiSpec = {
                   diningMode: { type: 'string', enum: ['dine-in', 'takeaway', 'delivery'] },
                 },
               },
+              '/customer/identity': {
+                post: {
+                  tags: ['Auth & Settings'],
+                  summary: 'Link a Supabase-verified customer phone to one CRM profile',
+                  parameters: [
+                    {
+                      name: 'Authorization',
+                      in: 'header',
+                      required: true,
+                      schema: { type: 'string' },
+                      description: 'Bearer Supabase access token',
+                    },
+                  ],
+                  responses: {
+                    '200': { description: 'Phone verification and CRM match result' },
+                    '401': { description: 'Supabase customer session is invalid' },
+                    '503': { description: 'Supabase identity verification is not configured' },
+                  },
+                },
+                delete: {
+                  tags: ['Auth & Settings'],
+                  summary: 'Clear the signed-in customer CRM offer identity',
+                  responses: { '204': { description: 'Customer CRM identity cleared' } },
+                },
+              },
             },
           },
         },
@@ -245,6 +270,27 @@ export const cafeOpenApiSpec = {
       post: {
         tags: ['Campaigns & Staff'],
         summary: 'Create promo campaign',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  code: { type: 'string' },
+                  validityLabel: { type: 'string' },
+                  description: { type: 'string' },
+                  targetSegment: {
+                    type: 'string',
+                    enum: ['all', 'vip', 'loyal', 'regular', 'new', 'risk'],
+                    default: 'all',
+                  },
+                },
+              },
+            },
+          },
+        },
         responses: { '201': { description: 'Campaign created' } },
       },
     },

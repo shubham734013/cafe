@@ -190,7 +190,7 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
             return (
               <article
                 key={order.id}
-                className="flex flex-col justify-between gap-3.5 rounded-2xl bg-surface-container-low hover:bg-surface-container border border-outline-variant/15 hover:border-outline-variant/30 p-4 sm:p-5 shadow-md hover:shadow-lg transition-all"
+                className="flex flex-col justify-between gap-3.5 rounded-2xl liquid-glass-card p-4 sm:p-5 shadow-xl transition-all"
               >
                 {/* Header Row */}
                 <button
@@ -199,7 +199,7 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
                   className="flex items-start justify-between gap-3 text-left w-full cursor-pointer"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-11 h-11 rounded-xl bg-surface-container-high flex items-center justify-center shrink-0 border border-outline-variant/10">
+                    <div className="w-11 h-11 rounded-xl bg-surface-container-high/80 flex items-center justify-center shrink-0 border border-white/[0.08] shadow-sm">
                       <span className="material-symbols-outlined text-[20px] text-primary">
                         {isDineIn ? 'restaurant' : isDelivery ? 'delivery_dining' : 'takeout_dining'}
                       </span>
@@ -246,7 +246,7 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
                           UPI PENDING
                         </span>
                       )}
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-surface-container-high text-on-surface-variant">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-surface-container-high/80 text-on-surface-variant border border-white/[0.06]">
                         {ORDER_STATUS_META[order.status].kotBadgeLabel}
                       </span>
                     </div>
@@ -254,7 +254,7 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
                 </button>
 
                 {/* Items Inset Sub-Card */}
-                <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-3 space-y-1 text-xs text-on-surface-variant">
+                <div className="rounded-xl liquid-glass-subcard p-3 space-y-1 text-xs text-on-surface-variant">
                   {order.items.map((item) => (
                     <div key={item.menuItemId} className="flex justify-between gap-2 py-0.5">
                       <span className="truncate text-on-surface font-medium">

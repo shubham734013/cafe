@@ -99,14 +99,14 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
         <button
           type="button"
           onClick={onNavigateCart}
-          className="border border-outline-variant/20 rounded-xl px-3.5 sm:px-4 py-2 flex items-center gap-2 text-xs sm:text-sm font-semibold text-on-surface bg-surface-container-low hover:bg-surface-container shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
+          className="liquid-glass-pill rounded-xl px-3.5 sm:px-4 py-2 flex items-center gap-2 text-xs sm:text-sm font-semibold text-on-surface shadow-xs transition-all cursor-pointer active:scale-95 shrink-0 hover:border-primary/40"
         >
           <span className="material-symbols-outlined text-[19px] text-primary">
             shopping_bag
           </span>
           <span>Cart</span>
           {cartCount > 0 && (
-            <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-primary text-on-primary tabular-nums">
+            <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-primary text-on-primary tabular-nums shadow-sm">
               {cartCount}
             </span>
           )}
@@ -145,10 +145,10 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
               key={cat}
               type="button"
               onClick={() => onCategoryChange(cat)}
-              className={`px-3.5 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap transition-all cursor-pointer active:scale-95 ${
+              className={`px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap transition-all cursor-pointer active:scale-95 ${
                 isActive
-                  ? 'bg-primary text-on-primary font-bold shadow-md border border-primary'
-                  : 'bg-surface-container-low border border-outline-variant/20 text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                  ? 'bg-primary text-on-primary font-bold shadow-lg border border-primary/50'
+                  : 'liquid-glass-pill text-on-surface-variant hover:text-on-surface hover:border-white/20'
               }`}
             >
               {cat}
@@ -159,8 +159,8 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
 
       {/* Empty State */}
       {visibleItems.length === 0 ? (
-        <div className="p-10 sm:p-12 text-center bg-surface-container-low rounded-3xl border border-outline-variant/15 text-on-surface-variant text-sm shadow-xs">
-          <div className="w-16 h-16 rounded-full bg-surface-container border border-outline-variant/20 text-outline mx-auto flex items-center justify-center mb-3">
+        <div className="p-10 sm:p-12 text-center liquid-glass rounded-3xl border border-white/[0.08] text-on-surface-variant text-sm shadow-xl">
+          <div className="w-16 h-16 rounded-full bg-surface-container/70 border border-white/[0.08] text-outline mx-auto flex items-center justify-center mb-3">
             <span className="material-symbols-outlined text-[28px]">search_off</span>
           </div>
           <h3 className="font-sans font-bold text-base text-on-surface">No items found</h3>
@@ -173,7 +173,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
               setSearchQuery('');
               onCategoryChange('All');
             }}
-            className="mt-4 px-4 py-2 rounded-xl bg-primary text-on-primary font-bold text-xs hover:brightness-110 cursor-pointer shadow-sm"
+            className="mt-4 px-4 py-2 rounded-xl bg-primary text-on-primary font-bold text-xs hover:brightness-110 cursor-pointer shadow-md"
           >
             View All Dishes
           </button>
@@ -189,7 +189,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
               return (
                 <div
                   key={`mobile-${item.id}`}
-                  className="bg-surface-container-low rounded-2xl p-3.5 border border-outline-variant/15 shadow-sm hover:shadow-md transition-all flex items-start justify-between gap-3 relative"
+                  className="liquid-glass-card rounded-2xl p-3.5 shadow-lg transition-all flex items-start justify-between gap-3 relative"
                 >
                   {/* Left Column: Veg badge, Title, Price, Description */}
                   <div
@@ -302,7 +302,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
               return (
                 <div
                   key={`desktop-${item.id}`}
-                  className="bg-surface-container-low rounded-2xl overflow-hidden border border-outline-variant/15 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col group"
+                  className="liquid-glass-card rounded-2xl overflow-hidden shadow-lg transition-all duration-300 flex flex-col group"
                 >
                   {/* Food Image Container */}
                   <div

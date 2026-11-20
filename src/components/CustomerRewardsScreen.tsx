@@ -4,12 +4,14 @@ import { PromoCampaign } from '../types/cafe';
 interface CustomerRewardsScreenProps {
   points: number;
   campaigns: PromoCampaign[];
+  hasMatchedCustomerProfile: boolean;
   onRedeemCoupon: (code: string) => void;
 }
 
 export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
   points,
   campaigns,
+  hasMatchedCustomerProfile,
   onRedeemCoupon,
 }) => {
   const activeCampaigns = campaigns.filter((campaign) => campaign.status === 'active');
@@ -51,7 +53,7 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
     <div className="flex flex-col w-full pb-8 gap-4">
       <div className="pt-1 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-on-surface">Rewards</h1>
+          <h1 className="text-xl font-bold text-on-surface">Beans &amp; Offers</h1>
           <p className="text-xs text-on-surface-variant">Earn Beans with order reviews and use them on future orders.</p>
         </div>
       </div>
@@ -86,8 +88,9 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
         <h2 className="text-base font-bold text-on-surface">Personalized offers</h2>
         {personalizedOffers.length === 0 ? (
           <p className="rounded-xl bg-surface-container p-4 text-sm text-on-surface-variant">
-            No personalized offers are available for your customer group right now. Verify your
-            phone in Account to access offers assigned to your CRM group.
+            {hasMatchedCustomerProfile
+              ? 'No segment-specific offers are active for your customer group right now.'
+              : 'Verify your phone in Account and match it with a cafe customer profile to see offers assigned to your group.'}
           </p>
         ) : (
           <div className="space-y-2">

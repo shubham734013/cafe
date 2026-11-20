@@ -105,7 +105,7 @@ export async function sendBrevoConfirmationEmail(
       </table>
 
       <div class="perks-badge">
-        🎁 <strong>Special Welcome Gift:</strong> 50 Complimentary Cafe Reward Points aapke account mein credit kar diye gaye hain. Aap inhe apne agle order par discount ke liye redeem kar sakte hain!
+        Earn 25 Beans by rating a served order. Redeem 2 Beans for ₹1 off a future order.
       </div>
     </div>
 

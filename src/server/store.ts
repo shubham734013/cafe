@@ -85,6 +85,7 @@ export interface CafeBootstrapState {
   customerReviews: CustomerReview[];
   rewardPoints: number;
   activityLog?: CafeActivityLogItem[];
+  customerHasMatchedProfile?: boolean;
   stockMovements: StockMovement[];
   inventoryBatches: InventoryBatch[];
   purchaseOrders: PurchaseOrder[];
@@ -1032,6 +1033,7 @@ export class CafeStore {
           total + (order.loyaltyPointsAwarded ?? 0) - (order.pointsRedeemed ?? 0),
         0
       ),
+      customerHasMatchedProfile: Boolean(customerSegment),
     });
   }
 
@@ -2437,11 +2439,10 @@ export class CafeStore {
   public findCustomerIdByPhone(phone: string): string | null {
     const normalizedPhone = normalizePhone(phone);
     if (!normalizedPhone) return null;
-    return (
-      this.state.customers.find(
-        (customer) => normalizePhone(customer.phone) === normalizedPhone
-      )?.id ?? null
+    const matches = this.state.customers.filter(
+      (customer) => normalizePhone(customer.phone) === normalizedPhone
     );
+    return matches.length === 1 ? matches[0].id : null;
   }
 
   public getCustomerSegment(customerId?: string): CustomerSegment | undefined {

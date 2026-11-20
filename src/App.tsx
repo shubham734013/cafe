@@ -1340,6 +1340,7 @@ export default function App() {
           <CustomerRewardsScreen
             points={rewardPoints}
             campaigns={campaigns}
+            hasMatchedCustomerProfile={Boolean(data.customerHasMatchedProfile)}
             onRedeemCoupon={(code) => {
               setCouponCode(code);
               handleNavigate('cart', 'customer');
