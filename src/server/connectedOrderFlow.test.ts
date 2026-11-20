@@ -40,7 +40,7 @@ test('End-to-End Connected Order Lifecycle: Customer QR -> Accept (Stock Deduct)
   const loginRes = await fetch(`${baseUrl}/api/auth/pin`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pin: '1234' }), // manager PIN in development
+    body: JSON.stringify({ pin: '7777' }), // development admin PIN
   });
   assert.equal(loginRes.status, 200);
   const staffCookie = loginRes.headers.get('set-cookie')?.split(';')[0] || '';
@@ -217,11 +217,11 @@ test('Product Add Form Recipe in Grams per 1 pc accurately deducts stock based o
     unitCost: 800,
   });
 
-  // 2. Staff logs in with PIN to obtain manager auth cookie
+  // 2. Staff logs in with PIN to obtain admin auth cookie
   const loginRes = await fetch(`${baseUrl}/api/auth/pin`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pin: '1234' }),
+    body: JSON.stringify({ pin: '7777' }),
   });
   assert.equal(loginRes.status, 200);
   const staffCookie = loginRes.headers.get('set-cookie')?.split(';')[0] || '';
@@ -323,4 +323,131 @@ test('Product Add Form Recipe in Grams per 1 pc accurately deducts stock based o
 
   const beansAfterSecond = store.getInventory().find((i) => i.id === beans.id)!;
   assert.equal(beansAfterSecond.quantity, 4.84); // 4.94 - 0.10 = 4.84 kg
+});
+
+test('Kitchen can cancel particular item from order, restore stock, and initiate refund', async (t) => {
+  const { baseUrl, store, close } = await startServer();
+  t.after(close);
+
+  // Setup ingredient and recipes
+  const cheese = store.addIngredient({
+    name: 'Mozzarella Cheese',
+    quantity: 10,
+    unit: 'kg',
+    minThreshold: 2,
+    supplier: 'Dairy Farms',
+    unitCost: 400,
+  });
+  store.setRecipe('margherita-pizza', [{ ingredientId: cheese.id, amount: 0.2 }]);
+
+  // 1. Staff logs in with admin PIN
+  const loginRes = await fetch(`${baseUrl}/api/auth/pin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin: '7777' }),
+  });
+  assert.equal(loginRes.status, 200);
+  const staffCookie = loginRes.headers.get('set-cookie')?.split(';')[0] || '';
+
+  // 2. Customer places order with 2 items: Margherita Pizza and Classic Burger
+  const orderRes = await fetch(`${baseUrl}/api/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      serviceMode: 'dine-in',
+      tableNumber: 'T2',
+      items: [
+        {
+          menuItemId: 'margherita-pizza',
+          name: 'Margherita Pizza',
+          price: 249,
+          quantity: 1,
+          station: 'Kitchen',
+        },
+        {
+          menuItemId: 'classic-cheeseburger',
+          name: 'Classic Burger',
+          price: 189,
+          quantity: 1,
+          station: 'Grill',
+        },
+      ],
+      idempotencyKey: `kitchen-cancel-test-${Date.now()}`,
+    }),
+  });
+  assert.equal(orderRes.status, 201);
+  const orderId = ((await orderRes.json()) as any).order.id;
+
+  // Mark order as paid online to test refund issuance
+  store.attachGatewayPayment(orderId, 'test-gw-order-id', 'paid', 'TESTUTR999');
+
+  // Accept order in kitchen (deducts cheese: 1 x 0.2kg = 0.2kg)
+  await fetch(`${baseUrl}/api/orders/${orderId}/status`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: staffCookie,
+    },
+    body: JSON.stringify({ status: 'accepted' }),
+  });
+
+  const cheeseAfterDeduct = store.getInventory().find((i) => i.id === cheese.id)!;
+  assert.equal(cheeseAfterDeduct.quantity, 9.8); // 10.0 - 0.2 = 9.8kg
+
+  // 3. Kitchen cancels only Margherita Pizza due to burnt/out of stock
+  const cancelItemRes = await fetch(`${baseUrl}/api/orders/${orderId}/cancel-item`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: staffCookie,
+    },
+    body: JSON.stringify({
+      menuItemId: 'margherita-pizza',
+      reason: 'Burnt in stone oven by accident',
+      quantity: 1,
+    }),
+  });
+  assert.equal(cancelItemRes.status, 200);
+  const cancelBody = (await cancelItemRes.json()) as any;
+  assert.equal(cancelBody.ok, true);
+  assert.equal(cancelBody.cancelledItem.status, 'cancelled');
+  assert.equal(cancelBody.cancelledItem.cancelledReason, 'Burnt in stone oven by accident');
+  assert.equal(cancelBody.refundAmount, 249);
+  assert.equal(cancelBody.order.refundAmount, 249);
+
+  // 4. Verify stock of cheese was restored back to 10.0kg!
+  const cheeseAfterRefund = store.getInventory().find((i) => i.id === cheese.id)!;
+  assert.equal(cheeseAfterRefund.quantity, 10);
+
+  // 5. Verify the Burger is STILL active in the order!
+  const burgerItem = cancelBody.order.items.find((i: any) => i.menuItemId === 'classic-cheeseburger');
+  assert.ok(burgerItem);
+  assert.notEqual(burgerItem.status, 'cancelled');
+
+  // 6. Verify activity log recorded item cancellation
+  const actRes = await fetch(`${baseUrl}/api/activity-log`, {
+    headers: { Cookie: staffCookie },
+  });
+  assert.equal(actRes.status, 200);
+  const activities = ((await actRes.json()) as any).activities;
+  const cancelActivity = activities.find((a: any) => a.orderId === orderId && a.title.includes('Item Cancelled & Refunded'));
+  assert.ok(cancelActivity);
+  assert.ok(cancelActivity.description.includes('249'));
+
+  // 7. Kitchen cancels remaining item (Burger) -> whole order becomes refunded
+  const cancelSecondRes = await fetch(`${baseUrl}/api/orders/${orderId}/cancel-item`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: staffCookie,
+    },
+    body: JSON.stringify({
+      menuItemId: 'classic-cheeseburger',
+      reason: 'Customer cancelled rest of order',
+    }),
+  });
+  assert.equal(cancelSecondRes.status, 200);
+  const finalOrder = ((await cancelSecondRes.json()) as any).order;
+  assert.equal(finalOrder.paymentStatus, 'refunded');
+  assert.equal(finalOrder.status, 'served'); // completed/removed from kitchen queue
 });

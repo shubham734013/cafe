@@ -1,14 +1,6 @@
 export type WorkspaceMode = 'customer' | 'staff';
 
-export type StaffRole =
-  | 'super-admin'
-  | 'owner'
-  | 'manager'
-  | 'cashier'
-  | 'barista'
-  | 'server'
-  | 'kitchen'
-  | 'waiter';
+export type StaffRole = 'admin' | 'kitchen';
 
 export interface AuthSessionState {
   authenticated: boolean;
@@ -123,6 +115,12 @@ export interface CartItem {
   imageUrl: string;
   station: MenuItem['station'];
   checked?: boolean;
+  status?: 'active' | 'cancelled';
+  cancelledQuantity?: number;
+  cancelledReason?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
+  refundAmount?: number;
 }
 
 export interface CardPaymentMetadata {
@@ -361,7 +359,7 @@ export interface StaffMember {
   id: string;
   initials: string;
   name: string;
-  role: string;
+  role: 'Admin' | 'Kitchen';
   roleIcon: string;
   shiftLabel: string;
   shiftBucket: Exclude<StaffShiftFilter, 'all' | 'active'> | 'afternoon' | 'evening';
@@ -384,7 +382,7 @@ export interface CafeSettings {
   gstin: string;
   serviceChargePct: number;
   qrOrderingEnabled: boolean;
-  managerPinRequired: boolean;
+  adminPinRequired: boolean;
   kotPrinterConnected: boolean;
   posPrinterConnected: boolean;
   upiVpa?: string;

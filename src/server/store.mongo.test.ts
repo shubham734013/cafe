@@ -43,7 +43,7 @@ test(
       await firstStore.flushToPersistence();
       assert.notEqual(firstStore.getBootstrap().updatedAt, initialUpdatedAt);
       await firstStore.recordAuditEvent({
-        actorRole: 'manager',
+        actorRole: 'admin',
         actorName: 'Test Manager',
         method: 'PUT',
         path: '/api/settings',

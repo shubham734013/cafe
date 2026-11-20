@@ -5,6 +5,7 @@ import {
   registerCustomer,
   loginCustomer,
   loginWithGoogle,
+  createLocalTestCustomerSession,
   getLocalCustomerSession,
   saveLocalCustomerSession,
   clearLocalCustomerSession,
@@ -75,4 +76,24 @@ test('local customer session management saves and clears valid session data', ()
   clearLocalCustomerSession();
   const afterClear = getLocalCustomerSession();
   assert.equal(afterClear, null);
+});
+
+test('local test customer sessions are unavailable outside development builds', () => {
+  if (import.meta.env?.DEV === true) return;
+
+  saveLocalCustomerSession({
+    id: 'local-test-customer',
+    name: 'Test Customer',
+    email: 'test.customer@localhost',
+    phone: '',
+    provider: 'email',
+    confirmed: false,
+    isLocalTestAccount: true,
+    createdAt: new Date().toISOString(),
+  });
+  assert.equal(getLocalCustomerSession(), null);
+  assert.throws(
+    () => createLocalTestCustomerSession(),
+    /Local test customer login is available only in development/
+  );
 });

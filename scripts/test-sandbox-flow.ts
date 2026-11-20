@@ -168,7 +168,7 @@ async function runSandboxTestSuite() {
   const pinLoginRes = await fetch(`${BASE_URL}/api/auth/pin`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pin: '1234' }), // Manager PIN
+    body: JSON.stringify({ pin: '7777' }), // Admin PIN
   });
   assert.equal(pinLoginRes.status, 200);
   const staffCookie = pinLoginRes.headers.get('set-cookie') || '';
@@ -183,7 +183,7 @@ async function runSandboxTestSuite() {
   assert.equal(counterPayRes.status, 200);
   const counterPayData = await counterPayRes.json();
   assert.equal(counterPayData.order.paymentStatus, 'paid');
-  console.log(`  ✅ Counter order #${counterOrder.id} settled as PAID by Cashier! Ref: "${counterPayData.order.paymentRef}"`);
+  console.log(`  ✅ Counter order #${counterOrder.id} settled as PAID by Admin! Ref: "${counterPayData.order.paymentRef}"`);
 
   // Step 8: Staff Advance Order Status (Placed -> Preparing -> Ready -> Served)
   console.log('\nStep 8: Advancing KOT Ticket in Kitchen...');

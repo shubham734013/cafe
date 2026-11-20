@@ -3,6 +3,8 @@ import {
   registerCustomer,
   loginCustomer,
   loginWithGoogle,
+  createLocalTestCustomerSession,
+  clearLocalCustomerSession,
   getLocalCustomerSession,
   syncSupabaseCustomerSession,
   subscribeToSupabaseAuth,
@@ -10,7 +12,6 @@ import {
   isLiveSupabase,
   type CustomerAuthSession,
 } from '../lib/supabaseClient';
-import { CustomerCard, CustomerPage, CustomerText } from './CustomerMotion';
 
 interface CustomerLoginScreenProps {
   onNotify: (message: string) => void;
@@ -18,6 +19,7 @@ interface CustomerLoginScreenProps {
   onBrowseMenu: () => void;
   hasCartItems?: boolean;
   onReturnToCart?: () => void;
+  onLocalTestSessionChange?: (session: CustomerAuthSession | null) => void;
 }
 
 export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
@@ -26,6 +28,7 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
   onBrowseMenu,
   hasCartItems = false,
   onReturnToCart,
+  onLocalTestSessionChange,
 }) => {
   const [activeTab, setActiveTab] = useState<'register' | 'login'>('register');
   const [name, setName] = useState('');
@@ -174,7 +177,30 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
     }
   };
 
+  const handleLocalTestLogin = () => {
+    try {
+      const session = createLocalTestCustomerSession();
+      setCurrentSession(session);
+      onLocalTestSessionChange?.(session);
+      onNotify('Signed in as the local test customer.');
+      setTimeout(() => onSuccess?.(), 800);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Could not start the local test session.';
+      setStatusBanner({ type: 'error', message });
+      onNotify(message);
+    }
+  };
+
   const handleLogout = async () => {
+    if (currentSession?.isLocalTestAccount) {
+      clearLocalCustomerSession();
+      setCurrentSession(null);
+      onLocalTestSessionChange?.(null);
+      setStatusBanner({ type: 'success', message: 'Local test session cleared.' });
+      onNotify('Logged out from the local test customer.');
+      return;
+    }
     try {
       await logoutCustomer();
       setStatusBanner({ type: 'success', message: 'You have logged out successfully.' });
@@ -192,21 +218,23 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
   // If already logged in
   if (currentSession) {
     return (
-      <CustomerPage className="flex flex-col items-center justify-center min-h-[65vh] p-4">
-        <CustomerCard className="w-full max-w-md bg-surface-container-low border border-outline-variant/30 rounded-3xl p-6 shadow-2xl text-center space-y-5">
+      <div className="flex flex-col items-center justify-center min-h-[65vh] p-4">
+        <div className="w-full max-w-md bg-surface-container-low border border-outline-variant/30 rounded-3xl p-6 shadow-2xl text-center space-y-5">
           <div className="w-16 h-16 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 mx-auto flex items-center justify-center">
             <span className="material-symbols-outlined text-[32px]">check_circle</span>
           </div>
 
           <div>
             <span className="inline-block px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[11px] font-bold uppercase tracking-wider mb-2">
-              Customer Account
+              {currentSession.isLocalTestAccount ? 'Local Test Account' : 'Customer Account'}
             </span>
             <h2 className="text-xl font-bold text-on-surface">
-              <CustomerText>Welcome, {currentSession.name}</CustomerText>
+              Welcome, {currentSession.name}
             </h2>
             <p className="text-xs text-on-surface-variant mt-1">
-              Signed in via {currentSession.provider === 'google' ? 'Google' : 'Supabase Auth'}
+              {currentSession.isLocalTestAccount
+                ? 'Development-only local session'
+                : `Signed in via ${currentSession.provider === 'google' ? 'Google' : 'Supabase Auth'}`}
             </p>
           </div>
 
@@ -223,13 +251,20 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
                 <span className="font-semibold text-on-surface">{currentSession.phone}</span>
               </div>
             )}
-            <div className="flex justify-between">
-              <span className="text-on-surface-variant">Brevo Confirmation:</span>
-              <span className="font-bold text-emerald-400 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[14px]">verified</span>
-                Delivered
-              </span>
-            </div>
+            {currentSession.isLocalTestAccount ? (
+              <div className="flex justify-between">
+                <span className="text-on-surface-variant">Authentication:</span>
+                <span className="font-bold text-primary">Local only</span>
+              </div>
+            ) : (
+              <div className="flex justify-between">
+                <span className="text-on-surface-variant">Brevo Confirmation:</span>
+                <span className="font-bold text-emerald-400 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[14px]">verified</span>
+                  Delivered
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2 pt-2">
@@ -261,23 +296,21 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
               Log Out of Account
             </button>
           </div>
-          </CustomerCard>
-        </CustomerPage>
+        </div>
+      </div>
     );
   }
 
   return (
-    <CustomerPage className="flex flex-col items-center justify-center min-h-[70vh] py-6 px-4">
-      <CustomerCard className="w-full max-w-md bg-surface-container-low border border-outline-variant/30 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+    <div className="flex flex-col items-center justify-center min-h-[70vh] py-6 px-4">
+      <div className="w-full max-w-md bg-surface-container-low border border-outline-variant/30 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
         {/* Brand Header */}
         <div className="text-center space-y-1.5">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#C59B67]/15 border border-[#C59B67]/30 text-[#C59B67] text-[10px] font-bold tracking-widest uppercase">
             <span>Seth Sawariya Cafe</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-on-surface tracking-tight font-sans">
-            <CustomerText>
-              {activeTab === 'register' ? 'Join Our Cafe Club' : 'Welcome Back'}
-            </CustomerText>
+            {activeTab === 'register' ? 'Join Our Cafe Club' : 'Welcome Back'}
           </h1>
           <p className="text-xs text-on-surface-variant">
             {activeTab === 'register'
@@ -573,6 +606,17 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
           </div>
         )}
 
+        {import.meta.env.DEV && (
+          <button
+            type="button"
+            onClick={handleLocalTestLogin}
+            disabled={isLoading || isGoogleLoading}
+            className="w-full h-11 rounded-xl border border-primary/30 bg-primary/10 text-primary font-bold text-xs sm:text-sm transition-all hover:bg-primary/15 disabled:opacity-50"
+          >
+            Continue as Local Test Customer
+          </button>
+        )}
+
         {/* Continue as Guest */}
         <div className="pt-2 text-center">
           <button
@@ -584,7 +628,7 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
             <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
           </button>
         </div>
-      </CustomerCard>
-    </CustomerPage>
+      </div>
+    </div>
   );
 };

@@ -96,7 +96,7 @@ export function StaffWorkspaceHome({ role, onNavigate }: StaffWorkspaceHomeProps
           {formatStaffRoleLabel(role)} workspace
         </p>
         <h1 className="mt-1 text-2xl font-bold text-on-surface">
-          {role === 'manager' || role === 'owner' ? 'Manager Workspace' : `${formatStaffRoleLabel(role)} Hub`}
+          {role === 'admin' ? 'Admin Workspace' : `${formatStaffRoleLabel(role)} Hub`}
         </h1>
         <p className="mt-1 text-xs text-on-surface-variant">
           Select an operational module to begin.

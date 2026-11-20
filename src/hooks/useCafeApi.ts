@@ -18,13 +18,11 @@ import type {
   CustomerFeedbackInput,
   createCampaignSchema,
   createOrderSchema,
-  reserveTableSchema,
   orderFeedbackSchema,
 } from '../shared/schemas';
 import type {
   AuthSessionState,
   CafeOrder,
-  CafeTable,
   CustomerReview,
   MenuItem,
   PaymentMode,
@@ -68,7 +66,7 @@ async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
   return data as T;
 }
 
-export async function authenticateManagerPinApi(pin: string): Promise<AuthSessionState> {
+export async function authenticateStaffPinApi(pin: string): Promise<AuthSessionState> {
   return apiJson<AuthSessionState>('/api/auth/pin', {
     method: 'POST',
     body: JSON.stringify({ pin }),
@@ -141,6 +139,7 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
     socket.on('order:new', handleOrderEvent);
     socket.on('order:updated', invalidateRouteData);
     socket.on('order:refunded', invalidateRouteData);
+    socket.on('order:item-cancelled', invalidateRouteData);
     socket.on('table:updated', invalidateRouteData);
     socket.on('inventory:updated', invalidateRouteData);
     socket.on('stock:low', invalidateRouteData);
@@ -157,6 +156,7 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
       socket.off('order:new', handleOrderEvent);
       socket.off('order:updated', invalidateRouteData);
       socket.off('order:refunded', invalidateRouteData);
+      socket.off('order:item-cancelled', invalidateRouteData);
       socket.off('table:updated', invalidateRouteData);
       socket.off('inventory:updated', invalidateRouteData);
       socket.off('stock:low', invalidateRouteData);
@@ -172,7 +172,7 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: BOOTSTRAP_QUERY_KEY });
 
   const loginPinMutation = useMutation({
-    mutationFn: (pin: string) => authenticateManagerPinApi(pin),
+    mutationFn: (pin: string) => authenticateStaffPinApi(pin),
     onSuccess: async (sessionData) => {
       queryClient.setQueryData(AUTH_SESSION_QUERY_KEY, sessionData);
       await invalidate();
@@ -250,6 +250,22 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
     onSuccess: invalidate,
   });
 
+  const cancelOrderItemMutation = useMutation({
+    mutationFn: (payload: { orderId: string; menuItemId: string; quantity?: number; reason?: string }) =>
+      apiJson<{ ok: boolean; order: CafeOrder; refundAmount: number; cancelledItem: CartItem; message: string }>(
+        `/api/orders/${encodeURIComponent(payload.orderId)}/cancel-item`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            menuItemId: payload.menuItemId,
+            quantity: payload.quantity,
+            reason: payload.reason,
+          }),
+        }
+      ),
+    onSuccess: invalidate,
+  });
+
   const toggleKotItemMutation = useMutation({
     mutationFn: (payload: { orderId: string; menuItemId: string }) =>
       apiJson<{ order: CafeOrder }>(
@@ -312,15 +328,6 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
     onSuccess: invalidate,
   });
 
-  const reserveTableMutation = useMutation({
-    mutationFn: (payload: z.infer<typeof reserveTableSchema>) =>
-      apiJson<{ table: CafeTable }>('/api/tables/reserve', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: invalidate,
-  });
-
   const checkInTableMutation = useMutation({
     mutationFn: (tableId: string) =>
       apiJson(`/api/tables/${encodeURIComponent(tableId)}/check-in`, { method: 'POST' }),
@@ -346,10 +353,10 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
   });
 
   const restockItemMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiJson(`/api/inventory/${encodeURIComponent(id)}/restock`, {
+    mutationFn: (payload: { id: string; addedQty: number; unitCost: number }) =>
+      apiJson(`/api/inventory/${encodeURIComponent(payload.id)}/restock`, {
         method: 'POST',
-        body: JSON.stringify({}),
+        body: JSON.stringify({ addedQty: payload.addedQty, unitCost: payload.unitCost }),
       }),
     onSuccess: invalidate,
   });
@@ -534,12 +541,12 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
     advanceOrderMutation,
     payCounterOrderMutation,
     refundOrderMutation,
+    cancelOrderItemMutation,
     toggleKotItemMutation,
     toggleMenuAvailabilityMutation,
     addMenuItemMutation,
     submitOrderFeedbackMutation,
     submitCustomerFeedbackMutation,
-    reserveTableMutation,
     checkInTableMutation,
     addTableMutation,
     transferTableMutation,

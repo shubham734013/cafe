@@ -14,7 +14,7 @@ npm run dev
 
 Before starting the app, replace every `CAFE_*_PIN` placeholder in `.env` with a unique 4-digit PIN. Configure `MONGODB_URI` and `MONGODB_DB_NAME` for the MongoDB instance to use. CafeOS exits with a startup error if it cannot connect to MongoDB.
 
-The server and Vite frontend run together. The default local URL is `http://localhost:3000`. Staff PINs and the session signing secret are configured through the `CAFE_*` variables in `.env`; replace the development values before deploying.
+The server and Vite frontend run together. The default local URL is `http://localhost:3000`. Admin and Kitchen PINs use `CAFE_ADMIN_PIN` and `CAFE_KITCHEN_PIN`; the session signing secret uses `CAFE_AUTH_SECRET`. Replace development values before deploying.
 
 ## Payments
 
@@ -39,14 +39,12 @@ npm run build
 
 Customer pages use `/customer`, `/customer/menu`, `/customer/cart`, `/customer/tracking`, and `/customer/rewards`. The customer interface does not link to staff portals.
 
-Staff pages require a staff PIN session. Managers and owners share permissions across `/manager` and `/admin` routes. Administrative modules live under `/admin/...`; the kitchen portal is separate at `/kitchen`.
+Staff pages require a staff PIN session. The app has three role workspaces: Customer, Admin, and Kitchen. Admin modules live under `/admin/...`, customer ordering under `/customer/...`, and kitchen operations under `/kitchen/...`.
 
 | Role | Default route |
 |---|---|
-| Super Admin | `/admin` |
-| Manager / Owner | `/admin` |
-| Cashier | `/manager/pos` |
-| Barista | `/kitchen` |
-| Server | `/manager/tables` |
+| Admin | `/admin` |
+| Customer | `/customer` |
+| Kitchen | `/kitchen` |
 
-Navigation is filtered by role, and server APIs enforce role checks. Guest orders use a server-issued customer identity and a signed browser session.
+Navigation is filtered by role, and server APIs enforce role checks. Customer orders use a server-issued customer identity and a signed browser session.

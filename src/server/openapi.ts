@@ -244,6 +244,21 @@ export const cafeOpenApiSpec = {
         tags: ['Inventory'],
         summary: 'Restock an ingredient SKU',
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['addedQty', 'unitCost'],
+                properties: {
+                  addedQty: { type: 'number', exclusiveMinimum: 0 },
+                  unitCost: { type: 'number', minimum: 0 },
+                },
+              },
+            },
+          },
+        },
         responses: { '200': { description: 'Ingredient restocked' } },
       },
     },

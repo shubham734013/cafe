@@ -70,7 +70,7 @@ test('PostgreSQL migration 001 creates all 11 tables with enums, constraints, an
   // 5. Insert Staff with password_hash
   db.public.none(`
     INSERT INTO staff (id, cafe_id, name, role, password_hash)
-    VALUES ('staff_1', 'cafe_main', 'Vikram Seth', 'owner', 'scrypt:salt:hash123');
+    VALUES ('staff_1', 'cafe_main', 'Vikram Seth', 'admin', 'scrypt:salt:hash123');
   `);
 
   // 6. Insert Category & Menu Item

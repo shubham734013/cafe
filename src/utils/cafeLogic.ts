@@ -171,8 +171,11 @@ export interface KotCardPhaseInfo {
 export function deriveKotCardPhase(
   order: Pick<CafeOrder, 'status' | 'items'>
 ): KotCardPhaseInfo {
-  const totalCount = order.items.length;
-  const checkedCount = order.items.filter((i) => Boolean(i.checked)).length;
+  const activeItems = order.items.filter((i) => i.status !== 'cancelled');
+  const totalCount = activeItems.length > 0 ? activeItems.length : order.items.length;
+  const checkedCount = activeItems.length > 0
+    ? activeItems.filter((i) => Boolean(i.checked)).length
+    : order.items.filter((i) => Boolean(i.checked)).length;
   const allItemsChecked = totalCount > 0 && checkedCount === totalCount;
   const isPrepared = order.status === 'ready' || order.status === 'served';
 

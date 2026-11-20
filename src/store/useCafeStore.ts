@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import {
   getPathForScreen,
+  isAdminPath,
   isKitchenPath,
-  isManagerPath,
   resolveCafeRoute,
 } from '../routing/routes';
 import { deriveWorkspaceMode } from '../state/cafeStateMachines';
@@ -12,6 +12,7 @@ import type {
   MenuItem,
   ScreenId,
   ServiceMode,
+  StaffRole,
   WorkspaceMode,
 } from '../types/cafe';
 
@@ -122,7 +123,11 @@ interface CafeClientState {
   couponCode: string;
   cookingNote: string;
   trackedOrderId: string;
-  navigate: (screen: ScreenId, mode?: WorkspaceMode, options?: { replace?: boolean }) => void;
+  navigate: (
+    screen: ScreenId,
+    mode?: WorkspaceMode,
+    options?: { replace?: boolean; role?: StaffRole }
+  ) => void;
   setServiceMode: (mode: ServiceMode) => void;
   setSelectedTable: (table: string) => void;
   setMenuCategory: (cat: MenuCategory) => void;
@@ -158,8 +163,11 @@ export const useCafeStore = create<CafeClientState>((set) => ({
       if (typeof window !== 'undefined') {
         const url = new URL(window.location.href);
         url.pathname = getPathForScreen(screen, {
-          kitchen: isKitchenPath(window.location.pathname),
-          manager: isManagerPath(window.location.pathname),
+          kitchen:
+            isKitchenPath(window.location.pathname) || options?.role === 'kitchen',
+          admin:
+            !isKitchenPath(window.location.pathname) &&
+            (options?.role === 'admin' || isAdminPath(window.location.pathname)),
         });
         url.searchParams.delete('screen');
         const nextUrl = `${url.pathname}${url.search}${url.hash}`;

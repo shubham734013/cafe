@@ -18,6 +18,7 @@ import type {
   CustomerProfile,
   InventoryIngredient,
   LoyaltyRule,
+  MenuItem,
   PaymentMode,
   PromoCampaign,
   ScreenId,
@@ -190,12 +191,12 @@ export default function App() {
     advanceOrderMutation,
     payCounterOrderMutation,
     refundOrderMutation,
+    cancelOrderItemMutation,
     toggleKotItemMutation,
     toggleMenuAvailabilityMutation,
     addMenuItemMutation,
     submitOrderFeedbackMutation,
     submitCustomerFeedbackMutation,
-    reserveTableMutation,
     checkInTableMutation,
     addTableMutation,
     transferTableMutation,
@@ -223,6 +224,10 @@ export default function App() {
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
+  const [restockTarget, setRestockTarget] = useState<InventoryIngredient | null>(null);
+  const [restockQuantity, setRestockQuantity] = useState('');
+  const [restockUnitCost, setRestockUnitCost] = useState('');
+  const [restockError, setRestockError] = useState<string | null>(null);
   const checkoutInFlightRef = useRef(false);
   const customerAttemptKeyRef = useRef<{ signature: string; key: string } | null>(null);
   const posAttemptKeyRef = useRef<{ signature: string; key: string } | null>(null);
@@ -291,6 +296,23 @@ export default function App() {
     toast.error(message);
   }, []);
 
+  const [cartAddedNotice, setCartAddedNotice] = useState<{
+    itemName: string;
+    quantity: number;
+  } | null>(null);
+
+  const handleAddCustomerItem = useCallback(
+    (item: MenuItem, quantity = 1) => {
+      addCustomerItem(item, quantity);
+      setCartAddedNotice({ itemName: item.name, quantity });
+    },
+    [addCustomerItem]
+  );
+
+  const dismissCartAddedNotice = useCallback(() => {
+    setCartAddedNotice(null);
+  }, []);
+
   const handleStartPayment = useCallback(
     async (orderId: string) => {
       const isMobile =
@@ -342,12 +364,20 @@ export default function App() {
           toast.error(
             `${formatStaffRoleLabel(authSession.session?.role)} access does not permit that module.`
           );
-          navigate(fallbackScreen, 'staff');
+          navigate(fallbackScreen, 'staff', {
+            ...(authSession.session?.role ? { role: authSession.session.role } : {}),
+          });
           window.scrollTo({ top: 0, behavior: 'smooth' });
           return;
         }
       }
-      navigate(screen, mode);
+      navigate(
+        screen,
+        mode,
+        targetMode === 'staff' && authSession.session?.role
+          ? { role: authSession.session.role }
+          : undefined
+      );
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
     [authSession.authenticated, authSession.session?.role, navigate]
@@ -369,7 +399,10 @@ export default function App() {
       authSession.session?.role &&
       !canStaffRoleAccessScreen(authSession.session.role, activeScreen as StaffScreenId)
     ) {
-      navigate(getDefaultStaffScreenForRole(authSession.session.role), 'staff', { replace: true });
+      navigate(getDefaultStaffScreenForRole(authSession.session.role), 'staff', {
+        replace: true,
+        role: authSession.session.role,
+      });
     }
   }, [
     activeScreen,
@@ -404,7 +437,10 @@ export default function App() {
               canStaffRoleAccessScreen(role, activeScreen as StaffScreenId)
             ? activeScreen
           : getDefaultStaffScreenForRole(role);
-      navigate(targetScreen, 'staff', { replace: true });
+      navigate(targetScreen, 'staff', {
+        replace: true,
+        ...(role ? { role } : {}),
+      });
       showToast(`Signed in as ${formatStaffRoleLabel(role)}`);
     } catch (err) {
       setPinError(err instanceof Error ? err.message : 'Invalid staff PIN');
@@ -698,6 +734,25 @@ export default function App() {
     [refundOrderMutation, showErrorToast, showToast]
   );
 
+  const handleCancelKotItem = useCallback(
+    async (orderId: string, menuItemId: string, reason?: string, quantity?: number) => {
+      try {
+        const res = await cancelOrderItemMutation.mutateAsync({
+          orderId,
+          menuItemId,
+          reason,
+          quantity,
+        });
+        showToast(res.message || `Item cancelled and ₹${res.refundAmount} refunded`);
+        return res;
+      } catch (err) {
+        showErrorToast(err, 'Failed to cancel item & refund');
+        throw err;
+      }
+    },
+    [cancelOrderItemMutation, showErrorToast, showToast]
+  );
+
   const handleExportCsv = useCallback(() => {
     triggerBlobDownload('seth-sawariya-cafe-orders.csv', formatOrderCsv(orders), 'text/csv;charset=utf-8;');
     showToast('Exported Seth Sawariya CafeOS CSV report');
@@ -805,22 +860,52 @@ export default function App() {
   );
 
   const handleRestockItem = useCallback(
-    async (id: string) => {
-      try {
-        const res = (await restockItemMutation.mutateAsync(id)) as {
-          item?: InventoryIngredient;
-        };
-        if (res.item) {
-          showToast(
-            `Restocked ${res.item.name} -> ${res.item.quantity} ${res.item.unit} (${res.item.status})`
-          );
-        }
-      } catch (err) {
-        showErrorToast(err, 'Failed to restock ingredient');
+    (id: string) => {
+      const item = inventory.find((ingredient) => ingredient.id === id);
+      if (!item) {
+        showErrorToast(new Error('Ingredient not found'), 'Failed to restock ingredient');
+        return;
       }
+      setRestockTarget(item);
+      setRestockQuantity('');
+      setRestockUnitCost(String(item.unitCost));
+      setRestockError(null);
     },
-    [restockItemMutation, showErrorToast, showToast]
+    [inventory, showErrorToast]
   );
+
+  const handleSubmitRestock = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!restockTarget) return;
+    const quantity = Number(restockQuantity);
+    const unitCost = Number(restockUnitCost);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setRestockError('Enter a restock quantity greater than zero.');
+      return;
+    }
+    if (!Number.isFinite(unitCost) || unitCost < 0) {
+      setRestockError('Enter a valid non-negative unit price.');
+      return;
+    }
+    const totalCost = quantity * unitCost;
+    if (!Number.isFinite(totalCost)) {
+      setRestockError('The total cost is too large.');
+      return;
+    }
+    try {
+      await restockItemMutation.mutateAsync({
+        id: restockTarget.id,
+        addedQty: quantity,
+        unitCost,
+      });
+      showToast(
+        `Restocked ${quantity} ${restockTarget.unit} of ${restockTarget.name} · ₹${unitCost.toFixed(2)}/${restockTarget.unit} · Total ₹${totalCost.toFixed(2)}`
+      );
+      setRestockTarget(null);
+    } catch (error) {
+      showErrorToast(error, 'Failed to restock ingredient');
+    }
+  };
 
   const handleRequestIngredientReorder = useCallback(
     async (ingredientId: string, note?: string) => {
@@ -1102,18 +1187,10 @@ export default function App() {
   const handleAddStaff = useCallback(
     async (member: Omit<StaffMember, 'id'>) => {
       try {
-        const allowedRoles = [
-          'Owner',
-          'Owner & Store Lead',
-          'Barista',
-          'Kitchen Line',
-          'Server / Steward',
-          'Cashier',
-          'Store Manager',
-        ] as const;
+        const allowedRoles = ['Admin', 'Kitchen'] as const;
         const role = allowedRoles.includes(member.role as (typeof allowedRoles)[number])
           ? (member.role as (typeof allowedRoles)[number])
-          : 'Barista';
+          : 'Kitchen';
         await addStaffMutation.mutateAsync({
           name: member.name,
           role,
@@ -1227,6 +1304,8 @@ export default function App() {
       activeScreen={activeScreen}
       workspaceMode={workspaceMode}
       cartCount={customerTotals.itemCount}
+      cartAddedNotice={cartAddedNotice}
+      onDismissCartAddedNotice={dismissCartAddedNotice}
       liveKotCount={liveKotCount}
       cafeName={cafeSettings.cafeName}
       authSession={authSession}
@@ -1247,31 +1326,22 @@ export default function App() {
       {activeScreen === 'home' && (
         <Suspense fallback={<ScreenFallback />}>
           <CustomerHomeScreen
-            serviceMode={serviceMode}
-            selectedTable={selectedTable}
-            tables={tables}
             cartCount={customerTotals.itemCount}
+            cart={customerCart}
             orders={orders}
             customerReviews={customerReviews}
             menuItems={menuItems}
             firstOrderEligible={Boolean(data.firstOrderEligible)}
-            onSelectServiceAndTable={(mode, table) => {
-              setServiceMode(mode);
-              setSelectedTable(table);
-            }}
+            showFirstOrderOffer={!customerSession || Boolean(data.firstOrderEligible)}
             onNavigateMenu={(cat) => {
               if (cat) setMenuCategory(cat);
               handleNavigate('menu', 'customer');
             }}
             onNavigateCart={() => handleNavigate('cart', 'customer')}
             onNavigateRewards={() => handleNavigate('rewards', 'customer')}
-            onNavigateAdmin={() => handleNavigate('admin-dashboard', 'staff')}
-            onAddToCart={addCustomerItem}
+            onAddToCart={handleAddCustomerItem}
+            onUpdateQty={updateCustomerQty}
             onSubmitFeedback={handleSubmitCustomerFeedback}
-            onReserveTable={async (input) => {
-              const res = await reserveTableMutation.mutateAsync(input);
-              return res.table;
-            }}
             onNotify={showToast}
           />
         </Suspense>
@@ -1288,7 +1358,7 @@ export default function App() {
             cart={customerCart}
             cartTotal={customerTotals.total}
             cartCount={customerTotals.itemCount}
-            onAddToCart={addCustomerItem}
+            onAddToCart={handleAddCustomerItem}
             onUpdateQty={updateCustomerQty}
             onNavigateCart={() => handleNavigate('cart', 'customer')}
             onNavigateHome={() => handleNavigate('home', 'customer')}
@@ -1368,6 +1438,7 @@ export default function App() {
             onBrowseMenu={() => handleNavigate('menu', 'customer')}
             onIdentityUpdated={() => void refetch()}
             onNavigateLogin={() => handleNavigate('login', 'customer')}
+            onSessionChange={setCustomerSession}
           />
         </Suspense>
       )}
@@ -1378,6 +1449,7 @@ export default function App() {
             onNotify={showToast}
             hasCartItems={customerCart.length > 0}
             onReturnToCart={() => handleNavigate('cart', 'customer')}
+            onLocalTestSessionChange={setCustomerSession}
             onSuccess={() => {
               if (customerCart.length > 0) {
                 showToast('Signed in successfully! You can now place your order.');
@@ -1451,6 +1523,7 @@ export default function App() {
             isConnected={socketConnected}
             onRefresh={() => void refetch()}
             onToggleKotItem={handleToggleKotItem}
+            onCancelKotItem={handleCancelKotItem}
             onAdvanceOrderStatus={handleAdvanceOrderStatus}
             onRequestReorder={handleRequestIngredientReorder}
             onNotify={showToast}
@@ -1462,6 +1535,7 @@ export default function App() {
             orders={orders}
             onAdvanceOrderStatus={handleAdvanceOrderStatus}
             onToggleKotItem={handleToggleKotItem}
+            onCancelKotItem={handleCancelKotItem}
             onNotify={showToast}
           />
         )}
@@ -1491,6 +1565,7 @@ export default function App() {
             orders={orders}
             onAdvanceOrderStatus={handleAdvanceOrderStatus}
             onToggleKotItem={handleToggleKotItem}
+            onCancelKotItem={handleCancelKotItem}
             onRefresh={() => void refetch()}
             onNotify={showToast}
           />
@@ -1613,16 +1688,16 @@ export default function App() {
         {activeScreen === 'staff-roles' && (
           <StaffRolesScreen
             roster={staffRoster}
-            managerPinRequired={cafeSettings.managerPinRequired}
+            adminPinRequired={cafeSettings.adminPinRequired}
             authSession={authSession}
             onLoginPin={(pin) => loginPinMutation.mutateAsync(pin)}
             onLogoutPin={async () => {
               await logoutPinMutation.mutateAsync();
             }}
-            onToggleManagerPin={(enabled) => {
+            onToggleAdminPin={(enabled) => {
               void handleSaveSettings({
                 ...cafeSettings,
-                managerPinRequired: enabled,
+                adminPinRequired: enabled,
               });
             }}
             onAddStaff={handleAddStaff}
@@ -1641,6 +1716,95 @@ export default function App() {
         )}
       </Suspense>
       )}
+
+      <Dialog
+        open={Boolean(restockTarget)}
+        onOpenChange={(open) => {
+          if (!restockItemMutation.isPending && !open) {
+            setRestockTarget(null);
+            setRestockError(null);
+          }
+        }}
+      >
+        <DialogContent className="bg-surface-container border border-outline-variant/20 text-on-surface sm:max-w-md rounded-3xl p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-black text-on-surface">
+              Restock {restockTarget?.name}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-on-surface-variant">
+              Enter the received quantity and price per {restockTarget?.unit}. The total is
+              calculated automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(event) => void handleSubmitRestock(event)} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="space-y-1.5">
+                <span className="block text-xs font-bold text-on-surface">
+                  Received quantity ({restockTarget?.unit})
+                </span>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="any"
+                  required
+                  autoFocus
+                  value={restockQuantity}
+                  onChange={(event) => setRestockQuantity(event.target.value)}
+                  placeholder="e.g. 5"
+                  className="w-full rounded-xl border border-outline-variant/20 bg-surface px-3 py-2.5 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-[#FF6422]/50"
+                />
+              </label>
+              <label className="space-y-1.5">
+                <span className="block text-xs font-bold text-on-surface">
+                  Price per {restockTarget?.unit} (₹)
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                  value={restockUnitCost}
+                  onChange={(event) => setRestockUnitCost(event.target.value)}
+                  placeholder="Unit price"
+                  className="w-full rounded-xl border border-outline-variant/20 bg-surface px-3 py-2.5 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-[#FF6422]/50"
+                />
+              </label>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
+              <span className="text-sm font-bold text-on-surface-variant">Total cost</span>
+              <span className="text-lg font-black text-[#FF6422] tabular-nums">
+                ₹
+                {(
+                  (Number(restockQuantity) || 0) *
+                  (Number(restockUnitCost) || 0)
+                ).toFixed(2)}
+              </span>
+            </div>
+            {restockError && (
+              <p className="text-xs font-semibold text-red-500" role="alert">
+                {restockError}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={restockItemMutation.isPending}
+                onClick={() => setRestockTarget(null)}
+                className="flex-1 rounded-full bg-surface-container-high px-4 py-3 text-xs font-bold text-on-surface transition-colors hover:bg-surface-variant disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={restockItemMutation.isPending}
+                className="flex-1 rounded-full bg-[#FF6422] px-4 py-3 text-xs font-bold text-white transition-colors hover:bg-[#E55518] disabled:opacity-50"
+              >
+                {restockItemMutation.isPending ? 'Saving...' : 'Confirm restock'}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Global Staff Role PIN Unlock Modal */}
       <Dialog
@@ -1675,7 +1839,7 @@ export default function App() {
                 onClick={() => setPinInput('7777')}
                 className="p-3 rounded-2xl bg-surface hover:bg-surface-variant border border-outline-variant/15 text-left transition-all cursor-pointer"
               >
-                <span className="block text-xs font-black text-on-surface">👑 Owner (Full Admin & POS)</span>
+                <span className="block text-xs font-black text-on-surface">👑 Admin (Full Access)</span>
                 <span className="text-[11px] text-[#FF6422] font-mono font-bold">PIN: 7777</span>
               </button>
               <button

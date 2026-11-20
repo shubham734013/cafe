@@ -100,13 +100,14 @@ export const addIngredientSchema = z.object({
 });
 
 export const restockIngredientSchema = z.object({
-  addedQty: z.coerce.number().positive().optional(),
+  addedQty: z.coerce.number().positive(),
+  unitCost: z.coerce.number().nonnegative(),
 });
 
 export const stockReceiptSchema = z.object({
   ingredientId: z.string().trim().min(1),
   quantity: z.coerce.number().positive(),
-  unitCost: z.coerce.number().nonnegative().optional().default(0),
+  unitCost: z.coerce.number().nonnegative().optional(),
   supplier: z.string().trim().max(80).optional().default(''),
   batchNumber: z.string().trim().max(80).optional().default(''),
   expiryDate: z.string().trim().max(30).optional(),
@@ -243,15 +244,7 @@ export const createCampaignSchema = z.object({
 
 export const addStaffSchema = z.object({
   name: z.string().trim().min(2, 'Staff name is required').max(80),
-  role: z.enum([
-    'Owner',
-    'Owner & Store Lead',
-    'Barista',
-    'Kitchen Line',
-    'Server / Steward',
-    'Cashier',
-    'Store Manager',
-  ]),
+  role: z.enum(['Admin', 'Kitchen']),
   shiftLabel: z.string().trim().min(3, 'Shift timing is required').max(40),
   phone: z
     .string()
@@ -275,7 +268,7 @@ export const cafeSettingsSchema = z.object({
     .transform((v) => v.toUpperCase()),
   serviceChargePct: z.coerce.number().min(0).max(20),
   qrOrderingEnabled: z.boolean(),
-  managerPinRequired: z.boolean(),
+  adminPinRequired: z.boolean(),
   kotPrinterConnected: z.boolean(),
   posPrinterConnected: z.boolean(),
 });
@@ -307,6 +300,13 @@ export type CustomerFeedbackInput = z.infer<typeof customerFeedbackSchema>;
 export const orderRefundSchema = z.object({
   reason: z.string().trim().min(2, 'Enter refund reason').max(200).default('Customer requested refund'),
 });
+
+export const cancelOrderItemSchema = z.object({
+  menuItemId: z.string().trim().min(1, 'Menu Item ID is required'),
+  quantity: z.number().int().positive().optional(),
+  reason: z.string().trim().min(2, 'Enter cancellation reason').max(200).default('Item cancelled in kitchen'),
+});
+export type CancelOrderItemInput = z.infer<typeof cancelOrderItemSchema>;
 
 export const orderPayCounterSchema = z.object({
   paymentMode: z.enum(['cash', 'card', 'upi']).optional().default('cash'),

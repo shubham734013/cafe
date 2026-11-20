@@ -117,20 +117,6 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortByLowFirst, setSortByLowFirst] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
-  const [restockingIds, setRestockingIds] = useState<Set<string>>(() => new Set());
-
-  const handleRestock = async (id: string) => {
-    setRestockingIds((prev) => new Set(prev).add(id));
-    try {
-      await onRestockItem(id);
-    } finally {
-      setRestockingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
-  };
 
   const form = useForm<AddIngredientValues>({
     resolver: zodResolver(addIngredientSchema),
@@ -267,21 +253,19 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
         header: 'Action',
         enableSorting: false,
         cell: ({ row }) => {
-          const busy = restockingIds.has(row.original.id);
           return (
             <button
               type="button"
-              disabled={busy}
-              onClick={() => void handleRestock(row.original.id)}
+              onClick={() => onRestockItem(row.original.id)}
               className="px-2.5 py-1 rounded bg-primary-container/20 text-primary text-[11px] font-bold hover:bg-primary-container/30 cursor-pointer disabled:opacity-50"
             >
-              {busy ? 'Restocking...' : 'Restock'}
+              Restock
             </button>
           );
         },
       },
     ],
-    [restockingIds]
+    [onRestockItem]
   );
 
   const handleOpenAdd = () => {

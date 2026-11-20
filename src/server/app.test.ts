@@ -71,6 +71,53 @@ async function startTestServer(gateway?: UpiGatewayClient) {
   return { baseUrl, store, close };
 }
 
+test('persisted staff roles migrate to Admin and Kitchen', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cafe-staff-role-migration-'));
+  const snapshotPath = join(directory, 'state.json');
+  const seed = new CafeStore(null).getBootstrap();
+  const staffMember = (id: string, role: string) => ({
+    id,
+    initials: 'TS',
+    name: 'Test Staff',
+    role,
+    roleIcon: 'badge',
+    shiftLabel: '10 AM – 6 PM',
+    shiftBucket: 'morning',
+    isOnDuty: true,
+    statLeft: 'Test',
+    statRight: 'On duty',
+    stationBadge: 'Test Station',
+    stationIcon: 'verified_user',
+  });
+  try {
+    writeFileSync(
+      snapshotPath,
+      JSON.stringify({
+        ...seed,
+        staffRoster: [
+          staffMember('old-admin', 'Owner & Store Lead'),
+          staffMember('old-kitchen', 'Head Barista'),
+          staffMember('old-server', 'Server / Steward'),
+        ],
+        cafeSettings: {
+          ...seed.cafeSettings,
+          adminPinRequired: undefined,
+          managerPinRequired: false,
+        },
+      })
+    );
+    const migrated = new CafeStore(snapshotPath).getBootstrap();
+    assert.deepEqual(
+      migrated.staffRoster.map((member) => member.role),
+      ['Admin', 'Kitchen', 'Kitchen']
+    );
+    assert.equal(migrated.cafeSettings.adminPinRequired, false);
+    assert.equal('managerPinRequired' in migrated.cafeSettings, false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 async function createTestOrder(store: CafeStore) {
   const { order } = await store.createOrder({
     outletId: 'seth-sawariya-main',
@@ -507,7 +554,7 @@ test('Cashfree checkout uses persistent unique references and resolves them back
   assert.equal(returnResponse.status, 302);
   assert.equal(
     returnResponse.headers.get('location'),
-    `/tracking?orderId=${encodeURIComponent(order.id)}`
+    `/customer/tracking?orderId=${encodeURIComponent(order.id)}`
   );
   assert.equal(store.getOrder(order.id)?.paymentStatus, 'paid');
 
@@ -557,26 +604,33 @@ test('staff authentication and role-restricted routes still work', async (t) => 
   });
   assert.equal(invalidPinResponse.status, 401);
 
-  const cashierCookie = await loginWithPin(baseUrl, '2345');
+  const removedRolePinResponse = await fetch(`${baseUrl}/api/auth/pin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin: '2345' }),
+  });
+  assert.equal(removedRolePinResponse.status, 401);
+
+  const kitchenCookie = await loginWithPin(baseUrl, '3456');
   const sessionResponse = await fetch(`${baseUrl}/api/auth/session`, {
-    headers: { Cookie: cashierCookie },
+    headers: { Cookie: kitchenCookie },
   });
   assert.equal(sessionResponse.status, 200);
   const { session } = (await sessionResponse.json()) as { session: { role: string } };
-  assert.equal(session.role, 'cashier');
+  assert.equal(session.role, 'kitchen');
 
   const settingsResponse = await fetch(`${baseUrl}/api/settings/reset`, {
     method: 'POST',
-    headers: { Cookie: cashierCookie },
+    headers: { Cookie: kitchenCookie },
   });
   assert.equal(settingsResponse.status, 403);
 
-  const managerCookie = await loginWithPin(baseUrl, '1234');
-  const managerSettingsResponse = await fetch(`${baseUrl}/api/settings/reset`, {
+  const adminCookie = await loginWithPin(baseUrl, '7777');
+  const adminSettingsResponse = await fetch(`${baseUrl}/api/settings/reset`, {
     method: 'POST',
-    headers: { Cookie: managerCookie },
+    headers: { Cookie: adminCookie },
   });
-  assert.equal(managerSettingsResponse.status, 200);
+  assert.equal(adminSettingsResponse.status, 200);
 });
 
 test('table QR links remain independent of payment processing', () => {
@@ -1110,7 +1164,7 @@ test('order refund requires staff auth, updates paymentStatus to refunded, and r
   assert.equal(unauthRes.status, 401);
 
   // 2. Authenticate as manager
-  const cookie = await loginWithPin(baseUrl, '1234');
+  const cookie = await loginWithPin(baseUrl, '7777');
 
   // 3. Authenticated refund request
   const refundRes = await fetch(`${baseUrl}/api/orders/${targetOrder.id}/refund`, {
@@ -1194,6 +1248,20 @@ test('professional inventory operations record receipts, waste, counts, and purc
   assert.equal(store.getInventory().find((item) => item.id === milk.id)?.quantity, 32);
   assert.ok(store.getStockMovements().some((movement) => movement.type === 'stock_count'));
   assert.ok(store.getInventoryBatches().some((batch) => batch.batchNumber === 'MILK-002'));
+
+  const restocked = store.restockIngredient(milk.id, 3, 44, 'Test Admin');
+  assert.equal(restocked?.quantity, 35);
+  assert.equal(restocked?.unitCost, 44);
+  const restockMovement = store
+    .getStockMovements()
+    .find((movement) => movement.ingredientId === milk.id && movement.note === 'Manual restock');
+  assert.equal(restockMovement?.quantityDelta, 3);
+  assert.equal(restockMovement?.unitCost, 44);
+  assert.ok(
+    store
+      .getInventoryBatches()
+      .some((batch) => batch.ingredientId === milk.id && batch.unitCost === 44)
+  );
 });
 
 test('kitchen staff can raise stock alert and request reorder for low ingredients', async (t) => {
@@ -1209,13 +1277,13 @@ test('kitchen staff can raise stock alert and request reorder for low ingredient
     unitCost: 1,
   });
 
-  // Authenticate as barista (PIN: 3456)
-  const baristaCookie = await loginWithPin(baseUrl, '3456');
+  // Authenticate as kitchen (PIN: 3456)
+  const kitchenCookie = await loginWithPin(baseUrl, '3456');
 
   // Request reorder for milk
   const reorderRes = await fetch(`${baseUrl}/api/inventory/request-reorder`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: baristaCookie },
+    headers: { 'Content-Type': 'application/json', Cookie: kitchenCookie },
     body: JSON.stringify({
       id: milk.id,
       note: 'Only 1 carton remaining in hot station fridge',
@@ -1230,25 +1298,33 @@ test('kitchen staff can raise stock alert and request reorder for low ingredient
   assert.equal(reorderBody.item.reorderRequested, true);
   assert.equal(reorderBody.item.reorderNote, 'Only 1 carton remaining in hot station fridge');
 
-  // Verify manager can see it in activity log
-  const managerCookie = await loginWithPin(baseUrl, '1234');
+  // Verify admin can see it in the activity log
+  const adminCookie = await loginWithPin(baseUrl, '7777');
   const actRes = await fetch(`${baseUrl}/api/activity-log`, {
-    headers: { Cookie: managerCookie },
+    headers: { Cookie: adminCookie },
   });
   assert.equal(actRes.status, 200);
   const actData = (await actRes.json()) as { activities: Array<{ title: string; type: string }> };
   const alertEvent = actData.activities.find((a) => a.title.includes('Kitchen Stock Alert: Milk'));
   assert.ok(alertEvent);
 
-  // When manager restocks, reorderRequested is cleared
+  // When admin restocks, reorderRequested is cleared
   const restockRes = await fetch(`${baseUrl}/api/inventory/${milk.id}/restock`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: managerCookie },
-    body: JSON.stringify({ addedQty: 10 }),
+    headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+    body: JSON.stringify({ addedQty: 10, unitCost: 58 }),
   });
   assert.equal(restockRes.status, 200);
-  const restockBody = (await restockRes.json()) as { item: { reorderRequested?: boolean } };
+  const restockBody = (await restockRes.json()) as {
+    item: { reorderRequested?: boolean; unitCost: number };
+  };
   assert.equal(restockBody.item.reorderRequested, false);
+  assert.equal(restockBody.item.unitCost, 58);
+  const restockMovement = store
+    .getStockMovements()
+    .find((movement) => movement.ingredientId === milk.id && movement.note === 'Manual restock');
+  assert.equal(restockMovement?.quantityDelta, 10);
+  assert.equal(restockMovement?.unitCost, 58);
 });
 
 test('brevo confirmation email endpoint validates input and dispatches confirmation', async (t) => {

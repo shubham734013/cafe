@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { CAFE_ASSETS } from '../data/cafeSeedData';
 import { CafeImage } from './CafeImage';
-import { CustomerCard, CustomerPage, CustomerText } from './CustomerMotion';
 import {
   getLocalCustomerSession,
   isLiveSupabase,
   logoutCustomer,
+  clearLocalCustomerSession,
   requestCustomerPhoneOtp,
   syncCustomerIdentityWithCafe,
   verifyCustomerPhoneOtp,
+  type CustomerAuthSession,
 } from '../lib/supabaseClient';
 
 interface CustomerProfileScreenProps {
@@ -16,6 +17,7 @@ interface CustomerProfileScreenProps {
   onBrowseMenu: () => void;
   onNavigateLogin?: () => void;
   onIdentityUpdated?: () => void;
+  onSessionChange?: (session: CustomerAuthSession | null) => void;
 }
 
 interface CustomerProfile {
@@ -57,6 +59,7 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
   onBrowseMenu,
   onNavigateLogin,
   onIdentityUpdated,
+  onSessionChange,
 }) => {
   const [profile, setProfile] = useState<CustomerProfile>(loadProfile);
   const [savedProfile, setSavedProfile] = useState<CustomerProfile>(loadProfile);
@@ -150,12 +153,10 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
   };
 
   return (
-    <CustomerPage className="flex flex-col w-full pb-8 gap-4">
+    <div className="flex flex-col w-full pb-8 gap-4">
       <div className="flex items-center justify-between pt-1">
         <div>
-          <h1 className="text-xl font-bold text-on-surface tracking-tight">
-            <CustomerText>Personal Profile</CustomerText>
-          </h1>
+          <h1 className="text-xl font-bold text-on-surface tracking-tight">Personal Profile</h1>
           <p className="text-xs text-on-surface-variant mt-0.5">Manage your customer details</p>
         </div>
         <button
@@ -169,7 +170,7 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
       </div>
 
       <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-        <CustomerCard className="lg:col-span-4 rounded-xl bg-surface-container-low p-5 shadow-md border border-outline-variant/20">
+        <section className="lg:col-span-4 rounded-xl bg-surface-container-low p-5 shadow-md border border-outline-variant/20">
           <div className="flex flex-col items-center text-center">
             <div className="relative w-24 h-24 rounded-full p-1 bg-primary/20">
               {profile.name ? (
@@ -188,15 +189,27 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
             <p className="text-xs text-on-surface-variant">{profile.email || 'Email not added'}</p>
             {authSession ? (
               <div className="mt-3 space-y-2 w-full">
-                <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold">
-                  <span className="material-symbols-outlined text-[13px]">verified</span>
-                  Account connected
+                <span className={`inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full border font-semibold ${
+                  authSession.isLocalTestAccount
+                    ? 'bg-primary/10 border-primary/30 text-primary'
+                    : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                }`}>
+                  <span className="material-symbols-outlined text-[13px]">
+                    {authSession.isLocalTestAccount ? 'science' : 'verified'}
+                  </span>
+                  {authSession.isLocalTestAccount
+                    ? 'Local test account (development only)'
+                    : 'Account connected'}
                 </span>
                 <button
                   type="button"
                   onClick={async () => {
                     try {
-                      await logoutCustomer();
+                      if (authSession.isLocalTestAccount) {
+                        clearLocalCustomerSession();
+                      } else {
+                        await logoutCustomer();
+                      }
                       onNotify('Logged out from account');
                     } catch (error) {
                       setPhoneVerificationError(
@@ -204,6 +217,7 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
                       );
                     } finally {
                       setAuthSession(null);
+                      onSessionChange?.(null);
                     }
                   }}
                   className="block w-full py-1.5 rounded-lg bg-surface-container-high hover:bg-surface-container text-xs text-on-surface font-semibold cursor-pointer transition-colors"
@@ -229,9 +243,9 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
               </div>
             )}
           </div>
-        </CustomerCard>
+        </section>
 
-        <CustomerCard delay={0.08} className="lg:col-span-8 rounded-xl bg-surface-container-low p-4 shadow-md border border-outline-variant/20">
+        <section className="lg:col-span-8 rounded-xl bg-surface-container-low p-4 shadow-md border border-outline-variant/20">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-on-surface">Personal Information</h2>
             {hasChanges && (
@@ -428,8 +442,8 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
               {saving ? 'Saving...' : 'Save Profile'}
             </button>
           </div>
-        </CustomerCard>
+        </section>
       </form>
-    </CustomerPage>
+    </div>
   );
 };

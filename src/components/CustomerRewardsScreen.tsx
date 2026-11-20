@@ -1,6 +1,5 @@
 import React from 'react';
 import { PromoCampaign } from '../types/cafe';
-import { CustomerCard, CustomerPage, CustomerText } from './CustomerMotion';
 
 interface CustomerRewardsScreenProps {
   points: number;
@@ -23,10 +22,9 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
     (campaign) => campaign.targetSegment && campaign.targetSegment !== 'all'
   );
 
-  const renderOffer = (campaign: PromoCampaign, personalized = false, delay = 0) => (
-    <CustomerCard
+  const renderOffer = (campaign: PromoCampaign, personalized = false) => (
+    <div
       key={campaign.id}
-      delay={delay}
       className="rounded-xl bg-surface-container p-4 flex items-center justify-between gap-3"
     >
       <div className="min-w-0">
@@ -48,21 +46,19 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
       >
         Apply
       </button>
-    </CustomerCard>
+    </div>
   );
 
   return (
-    <CustomerPage className="flex flex-col w-full pb-8 gap-4">
+    <div className="flex flex-col w-full pb-8 gap-4">
       <div className="pt-1 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-on-surface">
-            <CustomerText>Beans &amp; Offers</CustomerText>
-          </h1>
+          <h1 className="text-xl font-bold text-on-surface">Beans &amp; Offers</h1>
           <p className="text-xs text-on-surface-variant">Earn Beans with order reviews and use them on future orders.</p>
         </div>
       </div>
 
-      <CustomerCard className="rounded-2xl bg-gradient-to-br from-surface-container-high to-surface-container-low p-5 shadow-lg relative overflow-hidden">
+      <div className="rounded-2xl bg-gradient-to-br from-surface-container-high to-surface-container-low p-5 shadow-lg relative overflow-hidden">
         <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-primary-container/15 blur-2xl pointer-events-none" />
         <div>
           <span className="text-xs text-on-surface-variant uppercase tracking-wider font-medium">
@@ -70,12 +66,12 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
           </span>
           <div className="text-3xl font-bold text-primary mt-1 tabular-nums">{points}</div>
         </div>
-      </CustomerCard>
+      </div>
 
-      <CustomerCard delay={0.06} className="rounded-xl bg-surface-container p-4 text-sm text-on-surface-variant">
+      <p className="rounded-xl bg-surface-container p-4 text-sm text-on-surface-variant">
         Rate each served order to earn 25 Beans. Every 2 Beans gives ₹1 off, up to 50% of your
         order subtotal.
-      </CustomerCard>
+      </p>
 
       <section className="space-y-3">
         <h2 className="text-base font-bold text-on-surface">Current offers</h2>
@@ -84,9 +80,7 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
             No active offers right now.
           </p>
         ) : (
-          <div className="space-y-2">
-            {currentOffers.map((campaign, index) => renderOffer(campaign, false, index * 0.06))}
-          </div>
+          <div className="space-y-2">{currentOffers.map((campaign) => renderOffer(campaign))}</div>
         )}
       </section>
 
@@ -100,12 +94,10 @@ export const CustomerRewardsScreen: React.FC<CustomerRewardsScreenProps> = ({
           </p>
         ) : (
           <div className="space-y-2">
-            {personalizedOffers.map((campaign, index) =>
-              renderOffer(campaign, true, index * 0.06)
-            )}
+            {personalizedOffers.map((campaign) => renderOffer(campaign, true))}
           </div>
         )}
       </section>
-    </CustomerPage>
+    </div>
   );
 };

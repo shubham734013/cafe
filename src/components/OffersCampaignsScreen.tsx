@@ -277,84 +277,119 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
             return (
               <div
                 key={camp.id}
-                className="flex flex-col justify-between p-4 rounded-xl bg-surface-container-low shadow-md relative overflow-hidden"
+                className="relative overflow-hidden flex flex-col justify-between p-4 sm:p-5 rounded-3xl liquid-glass-card shadow-2xl transition-all space-y-4 border border-white/[0.08]"
               >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div
-                        className={`w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0 ${iconColor}`}
-                      >
-                        <span className="material-symbols-outlined text-[22px]">{camp.icon}</span>
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <h2 className="text-sm font-bold text-on-surface truncate">{camp.title}</h2>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${statusMeta.badgeClass}`}
-                          >
-                            {camp.status}
-                          </span>
-                          {camp.targetSegment && camp.targetSegment !== 'all' && (
-                            <span className="px-1.5 py-0.5 rounded bg-primary-container/10 text-primary text-[10px] font-semibold">
-                              {camp.targetSegment}
-                            </span>
-                          )}
-                          <span className="text-on-surface-variant text-xs">
-                            • {camp.validityLabel}
-                          </span>
-                        </div>
-                      </div>
+                {camp.status === 'active' && (
+                  <div className="absolute -right-8 -top-8 w-24 h-24 bg-primary/15 rounded-full blur-xl pointer-events-none" />
+                )}
+
+                {/* Header Row: Avatar + Title & Promo Code + Action Buttons */}
+                <div className="flex items-center justify-between gap-2.5 relative">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div
+                      className={`relative w-12 h-12 rounded-full flex items-center justify-center text-sm font-black shrink-0 shadow-md ${
+                        camp.tone === 'tertiary'
+                          ? 'bg-gradient-to-tr from-tertiary/30 to-tertiary/10 text-tertiary border border-tertiary/40'
+                          : camp.tone === 'secondary'
+                            ? 'bg-gradient-to-tr from-secondary/30 to-secondary/10 text-secondary border border-secondary/40'
+                            : 'bg-gradient-to-tr from-primary/30 to-primary/10 text-primary border border-primary/40'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[22px]">{camp.icon}</span>
+                      {camp.status === 'active' && (
+                        <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background flex items-center justify-center bg-emerald-500" />
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container-highest text-primary font-mono text-xs font-bold tracking-wider shrink-0">
-                      <span className="material-symbols-outlined text-[13px]">sell</span>
-                      <span>{camp.code}</span>
-                    </div>
-                  </div>
-
-                  <p className="mt-2.5 text-xs text-on-surface-variant leading-relaxed">
-                    {camp.description}
-                  </p>
-                </div>
-
-                <div className="mt-4 pt-2.5 flex items-center justify-between bg-surface-container/60 -mx-4 -mb-4 px-4 py-2.5">
-                  <div className="flex items-center gap-2.5 text-xs">
-                    <span className="text-on-surface font-semibold flex items-center gap-1">
-                      <span
-                        className={`material-symbols-outlined text-[15px] ${statusMeta.metricColor}`}
-                      >
-                        {statusMeta.metricIcon}
-                      </span>
-                      {camp.usedLabel}
-                    </span>
-                    {camp.revenueLabel && (
-                      <>
-                        <span className="text-on-surface-variant">•</span>
-                        <span className={`${iconColor} font-semibold tabular-nums`}>
-                          {camp.revenueLabel}
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm sm:text-base text-on-surface font-extrabold truncate tracking-tight">
+                          {camp.title}
                         </span>
-                      </>
-                    )}
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase shrink-0 ${statusMeta.badgeClass}`}
+                        >
+                          {camp.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-on-surface-variant/80 text-xs sm:text-sm mt-0.5 font-mono font-bold tracking-wider text-primary">
+                        <span className="material-symbols-outlined text-[15px] shrink-0">
+                          sell
+                        </span>
+                        <span>{camp.code}</span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  {/* Action Icon Buttons */}
+                  <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
                       aria-label={`Share ${camp.title}`}
                       onClick={() => onNotify(`Copied promo ${camp.code} share link`)}
-                      className="w-8 h-8 rounded flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high cursor-pointer"
+                      className="w-10 h-10 rounded-2xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-on-surface-variant hover:text-primary active:scale-95 transition-all cursor-pointer shadow-sm hover:border-primary/40"
+                      title="Share Promo Code"
                     >
-                      <span className="material-symbols-outlined text-[16px]">share</span>
+                      <span className="material-symbols-outlined text-[18px]">share</span>
                     </button>
                     <button
                       type="button"
                       aria-label={`Toggle ${camp.title}`}
                       onClick={() => onToggleCampaignStatus(camp.id)}
-                      className="px-2 py-1 rounded text-[11px] font-semibold text-primary hover:bg-surface-container-high cursor-pointer"
+                      className={`w-10 h-10 rounded-2xl border flex items-center justify-center active:scale-95 transition-all cursor-pointer shadow-sm ${
+                        camp.status === 'active'
+                          ? 'bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25'
+                          : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25'
+                      }`}
+                      title={statusMeta.actionLabel}
                     >
-                      {statusMeta.actionLabel}
+                      <span className="material-symbols-outlined text-[18px]">
+                        {camp.status === 'active' ? 'pause' : 'play_arrow'}
+                      </span>
                     </button>
+                  </div>
+                </div>
+
+                {/* Middle Metrics Inset Card */}
+                <div className="grid grid-cols-3 gap-2 py-3 px-4 rounded-2xl bg-black/40 backdrop-blur-md border border-white/[0.05] text-center items-center shadow-inner">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Redemptions</span>
+                    <span className="text-xs sm:text-sm md:text-base text-on-surface font-black tabular-nums tracking-tight">
+                      {camp.usedLabel}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Impact</span>
+                    <span className="text-xs sm:text-sm md:text-base text-[#f59e0b] dark:text-[#fbbf24] font-black tabular-nums tracking-tight">
+                      {camp.revenueLabel || 'Active Promo'}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Target</span>
+                    <span className="text-xs sm:text-sm md:text-base text-on-surface font-black tabular-nums tracking-tight uppercase">
+                      {camp.targetSegment && camp.targetSegment !== 'all' ? camp.targetSegment : 'ALL'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Campaign Description Note */}
+                <p className="text-xs text-on-surface-variant/80 leading-relaxed line-clamp-2 px-0.5">
+                  {camp.description}
+                </p>
+
+                {/* Footer Row: Validity & Status */}
+                <div className="flex items-center justify-between gap-3 text-xs sm:text-sm pt-0.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="material-symbols-outlined text-[18px] text-primary shrink-0">
+                      verified
+                    </span>
+                    <span className="text-xs text-on-surface-variant/80 font-medium truncate">
+                      {camp.validityLabel}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 text-on-surface-variant/70 text-xs shrink-0 font-medium">
+                    <span className="material-symbols-outlined text-[15px]">schedule</span>
+                    <span>{camp.status === 'active' ? 'Active' : 'Inactive'}</span>
                   </div>
                 </div>
               </div>

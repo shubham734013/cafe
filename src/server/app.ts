@@ -811,7 +811,6 @@ export function createCafeServer(
     const origin = req.headers.origin;
     if (origin) {
       const isAllowed =
-        process.env.NODE_ENV !== 'production' ||
         allowedOrigins.includes(origin) ||
         /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 

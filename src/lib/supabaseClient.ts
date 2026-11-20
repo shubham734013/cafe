@@ -35,6 +35,7 @@ export interface CustomerAuthSession {
   provider: 'email' | 'google';
   confirmed: boolean;
   phoneVerified?: boolean;
+  isLocalTestAccount?: boolean;
   avatarUrl?: string;
   createdAt: string;
 }
@@ -42,14 +43,25 @@ export interface CustomerAuthSession {
 const CUSTOMER_SESSION_STORAGE_KEY = 'cafeos_supabase_customer_session';
 let memoryCustomerSession: CustomerAuthSession | null = null;
 
+function canUseLocalTestAccount(): boolean {
+  return import.meta.env?.DEV === true;
+}
+
 export function getLocalCustomerSession(): CustomerAuthSession | null {
-  if (typeof window === 'undefined') return memoryCustomerSession;
+  let session = memoryCustomerSession;
   try {
-    const raw = window.localStorage.getItem(CUSTOMER_SESSION_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : memoryCustomerSession;
+    if (typeof window !== 'undefined') {
+      const raw = window.localStorage.getItem(CUSTOMER_SESSION_STORAGE_KEY);
+      if (raw) session = JSON.parse(raw) as CustomerAuthSession;
+    }
   } catch {
-    return memoryCustomerSession;
+    session = memoryCustomerSession;
   }
+  if (session?.isLocalTestAccount && !canUseLocalTestAccount()) {
+    clearLocalCustomerSession();
+    return null;
+  }
+  return session;
 }
 
 export function saveLocalCustomerSession(session: CustomerAuthSession): void {
@@ -66,12 +78,31 @@ export function saveLocalCustomerSession(session: CustomerAuthSession): void {
         ...prev,
         name: session.name || prev.name,
         email: session.email || prev.email,
-        phone: session.phone || prev.phone,
+        phone: session.isLocalTestAccount ? session.phone : session.phone || prev.phone,
       })
     );
   } catch (err) {
     console.error('Failed to persist customer session:', err);
   }
+}
+
+export function createLocalTestCustomerSession(): CustomerAuthSession {
+  if (!canUseLocalTestAccount()) {
+    throw new Error('Local test customer login is available only in development.');
+  }
+  const session: CustomerAuthSession = {
+    id: 'local-test-customer',
+    name: 'Test Customer',
+    email: 'test.customer@localhost',
+    phone: '',
+    provider: 'email',
+    confirmed: false,
+    phoneVerified: false,
+    isLocalTestAccount: true,
+    createdAt: new Date().toISOString(),
+  };
+  saveLocalCustomerSession(session);
+  return session;
 }
 
 export function clearLocalCustomerSession(): void {

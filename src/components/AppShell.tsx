@@ -1,11 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CAFE_ASSETS } from '../data/cafeSeedData';
-import {
-  AuthSessionState,
-  ScreenId,
-  StaffScreenId,
-  WorkspaceMode,
-} from '../types/cafe';
+import { AuthSessionState, ScreenId, StaffScreenId, WorkspaceMode } from '../types/cafe';
 import { isKitchenPath } from '../routing/routes';
 import { canStaffRoleAccessScreen, formatStaffRoleLabel } from '../utils/rbac';
 import { CafeBrandEmblem } from './CafeBrandEmblem';
@@ -16,6 +11,8 @@ interface AppShellProps {
   activeScreen: ScreenId;
   workspaceMode: WorkspaceMode;
   cartCount: number;
+  cartAddedNotice?: { itemName: string; quantity: number } | null;
+  onDismissCartAddedNotice?: () => void;
   liveKotCount: number;
   cafeName?: string;
   authSession?: AuthSessionState;
@@ -95,6 +92,8 @@ export const AppShell: React.FC<AppShellProps> = ({
   activeScreen,
   workspaceMode,
   cartCount,
+  cartAddedNotice,
+  onDismissCartAddedNotice,
   liveKotCount,
   cafeName = 'Seth Sawariya Cafe',
   authSession,
@@ -118,6 +117,12 @@ export const AppShell: React.FC<AppShellProps> = ({
   const isStaffWorkspace = workspaceMode === 'staff';
 
   useEffect(() => {
+    if (!cartAddedNotice || !onDismissCartAddedNotice) return;
+    const timeoutId = window.setTimeout(onDismissCartAddedNotice, 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [cartAddedNotice, onDismissCartAddedNotice]);
+
+  useEffect(() => {
     if (typeof document !== 'undefined') {
       if (isLightTheme) {
         document.documentElement.classList.add('customer-theme-light');
@@ -139,28 +144,13 @@ export const AppShell: React.FC<AppShellProps> = ({
     });
   };
 
-  const [shaderType, setShaderType] = useState<ShaderType>(() => {
+  const [shaderType] = useState<ShaderType>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('cafe_shader_type') as ShaderType | null;
       if (saved) return saved;
     }
     return 'aceternity-gradient';
   });
-
-  const cycleShaderType = () => {
-    setShaderType((prev) => {
-      const next: ShaderType =
-        prev === 'aceternity-gradient'
-          ? 'aceternity-wavy'
-          : prev === 'aceternity-wavy'
-          ? 'webgl-liquid'
-          : 'aceternity-gradient';
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('cafe_shader_type', next);
-      }
-      return next;
-    });
-  };
 
   const isStaff = isStaffWorkspace && Boolean(activeRole);
   const canShowStaffModules = isStaff;
@@ -192,7 +182,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   return (
     <div
       className={`min-h-screen w-full overflow-x-hidden flex flex-col md:flex-row relative ${
-        !isStaffWorkspace && isLightTheme
+        isLightTheme
           ? 'bg-[#FAF7F2] text-[#221A15]'
           : 'bg-[#0B0F17]/90 text-on-surface'
       }`}
@@ -203,7 +193,7 @@ export const AppShell: React.FC<AppShellProps> = ({
       {/* Desktop Left Workspace Rail */}
       <aside
         className={`hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 z-40 p-4 justify-between transition-all ${
-          !isStaffWorkspace && isLightTheme
+          isLightTheme
             ? 'bg-[#F4EFEA] border-r border-[#E5DDD2] text-[#221A15]'
             : 'bg-surface-container-lowest/65 backdrop-blur-2xl border-r border-white/[0.08] text-on-surface shadow-[1px_0_24px_rgba(0,0,0,0.45)]'
         }`}
@@ -333,6 +323,21 @@ export const AppShell: React.FC<AppShellProps> = ({
 
         {/* Bottom Actions */}
         <div className="space-y-1.5 mt-4">
+          <button
+            type="button"
+            aria-label={isLightTheme ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            onClick={toggleTheme}
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors cursor-pointer ${
+              isLightTheme
+                ? 'text-[#4D453D] hover:bg-[#EAE2D8]'
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[20px] text-amber-400">
+              {isLightTheme ? 'dark_mode' : 'light_mode'}
+            </span>
+            <span>{isLightTheme ? 'Switch to Dark Mode' : 'Switch to Light Mode'}</span>
+          </button>
           {canShowStaffModules && !isKitchenRoute ? (
             <button
               type="button"
@@ -387,27 +392,6 @@ export const AppShell: React.FC<AppShellProps> = ({
 
             {/* Right Header Controls */}
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* Aceternity UI & WebGL Shader Engine Selector (Dark Mode) */}
-              {!isLightTheme && (
-                <button
-                  type="button"
-                  title="Switch Aceternity UI / WebGL Shader Mode"
-                  onClick={cycleShaderType}
-                  className="liquid-glass-pill px-2.5 py-1.5 rounded-full hover:bg-surface-container-high/80 flex items-center gap-1 text-[11px] font-bold text-amber-400 transition-all cursor-pointer shadow-sm active:scale-95 border border-amber-500/25"
-                >
-                  <span className="material-symbols-outlined text-[15px] animate-spin-slow">
-                    auto_awesome
-                  </span>
-                  <span className="hidden sm:inline">
-                    {shaderType === 'aceternity-gradient'
-                      ? 'Aceternity Liquid'
-                      : shaderType === 'aceternity-wavy'
-                      ? 'Aceternity Wavy'
-                      : 'WebGL Fluid'}
-                  </span>
-                </button>
-              )}
-
               <button
                 type="button"
                 aria-label={isLightTheme ? 'Switch to Dark Theme' : 'Switch to Light Theme'}
@@ -433,7 +417,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                 </button>
               )}
 
-              {activeRole !== 'barista' && <div className="relative">
+              {activeRole !== 'kitchen' && <div className="relative">
                 <button
                   type="button"
                   aria-label="Notifications"
@@ -486,7 +470,8 @@ export const AppShell: React.FC<AppShellProps> = ({
                 </button>
               )}
 
-              {(!isStaffWorkspace || (activeRole && canStaffRoleAccessScreen(activeRole, 'staff-roles'))) && <button
+              {(!isKitchenRoute &&
+                (!isStaffWorkspace || (activeRole && canStaffRoleAccessScreen(activeRole, 'staff-roles')))) && <button
                 type="button"
                 aria-label={isStaffWorkspace ? 'Open Staff Permissions' : 'Open Personal Profile'}
                 onClick={() => {
@@ -715,6 +700,49 @@ export const AppShell: React.FC<AppShellProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {cartAddedNotice && !isStaffWorkspace && activeScreen !== 'cart' && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={`fixed left-1/2 z-[45] flex w-[min(calc(100%-1.5rem),28rem)] -translate-x-1/2 items-center gap-3 rounded-2xl border px-3.5 py-3 shadow-2xl backdrop-blur-xl md:!bottom-5 ${
+              isLightTheme
+                ? 'border-[#E5DDD2] bg-[#FFFCF8]/95 text-[#24180F]'
+                : 'border-white/10 bg-[#211A16]/95 text-on-surface'
+            }`}
+            style={{ bottom: 'calc(4.75rem + env(safe-area-inset-bottom))' }}
+          >
+            <span className="material-symbols-outlined flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[20px] text-primary">
+              check
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold">Added to cart</p>
+              <p className="truncate text-[11px] text-on-surface-variant">
+                {cartAddedNotice.quantity > 1 && `${cartAddedNotice.quantity}x `}
+                {cartAddedNotice.itemName}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onDismissCartAddedNotice?.();
+                onNavigate('cart', 'customer');
+              }}
+              className="flex shrink-0 items-center gap-1 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-on-primary transition-transform active:scale-95"
+            >
+              View cart
+              <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Dismiss cart notification"
+              onClick={onDismissCartAddedNotice}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high"
+            >
+              <span className="material-symbols-outlined text-[17px]">close</span>
+            </button>
           </div>
         )}
       </div>

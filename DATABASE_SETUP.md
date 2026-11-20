@@ -10,8 +10,8 @@ All commands run using your project's npm scripts:
 
 | Goal | Command | What it does |
 | :--- | :--- | :--- |
-| **Run Migrations (UP)** | `npm run db:migrate` | Applies `migrations/001_initial_schema.sql`, creating all 11 tables, enums, FKs, and indexes. |
-| **Seed Sample Data** | `npm run db:seed` | Populates 1 cafe, 5 QR tables, 2 categories, 8 items, 6 ingredients, recipes, 1 owner (hashed password), and 3 orders. |
+| **Run Migrations (UP)** | `npm run db:migrate` | Applies all pending migrations, creating/updating tables, enums, FKs, and indexes. |
+| **Seed Sample Data** | `npm run db:seed` | Populates 1 cafe, 5 QR tables, 2 categories, 8 items, 6 ingredients, recipes, Admin and Kitchen staff (hashed passwords), and 3 orders. |
 | **Reset Database** | `npm run db:reset` | Tears down all tables (DOWN migration), re-applies schema, and re-seeds fresh data. |
 | **Run Test Suite** | `npm test` | Runs all 49 automated unit and integration tests across the database and APIs. |
 

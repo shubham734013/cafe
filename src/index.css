@@ -84,30 +84,41 @@
 
   html.customer-theme-light,
   body.customer-theme-light {
-    background-color: #f1f2f3 !important;
-    color: #111827 !important;
+    background-color: #faf7f2 !important;
+    color: #221a15 !important;
   }
 
   .customer-theme-light {
-    --color-surface: #f5f5f4;
-    --color-surface-container: #eeeeed;
-    --color-surface-container-high: #e6e7e8;
-    --color-surface-container-highest: #dcdee0;
-    --color-surface-container-low: #f1f2f3;
-    --color-surface-container-lowest: #fafafa;
-    --color-on-surface: #111827;
-    --color-on-surface-variant: #6b7280;
-    --color-outline: #9ca3af;
-    --color-outline-variant: #d5d8dc;
+    --color-surface: #fffcf8;
+    --color-surface-container: #f4efea;
+    --color-surface-container-high: #efe7dc;
+    --color-surface-container-highest: #e6d9c8;
+    --color-surface-container-low: #faf7f2;
+    --color-surface-container-lowest: #fffdf9;
+    --color-on-surface: #221a15;
+    --color-on-surface-variant: #76685d;
+    --color-outline: #a99a89;
+    --color-outline-variant: #e5ddd2;
+    --color-error: #b42318;
+    --color-error-container: #fee4e2;
+    --color-on-error-container: #7a271a;
     --color-primary: #ff6422;
     --color-primary-container: #ff6422;
     --color-on-primary: #ffffff;
     --color-on-primary-container: #ffffff;
-    --background: #f1f2f3;
-    --foreground: #111827;
-    --card: #f5f5f4;
-    --card-foreground: #111827;
-    --border: #d5d8dc;
+    --color-secondary: #8a5a3b;
+    --color-secondary-container: #f1e5d7;
+    --color-on-secondary: #ffffff;
+    --color-on-secondary-container: #4a2d1f;
+    --color-secondary-fixed: #f1e5d7;
+    --color-secondary-fixed-dim: #e5d3bf;
+    --color-on-secondary-fixed: #4a2d1f;
+    --color-on-secondary-fixed-variant: #70452f;
+    --background: #faf7f2;
+    --foreground: #221a15;
+    --card: #fffcf8;
+    --card-foreground: #221a15;
+    --border: #e5ddd2;
   }
 
   * {
@@ -121,6 +132,24 @@
   .pt-safe {
     padding-top: env(safe-area-inset-top, 0px);
   }
+}
+
+.customer-theme-light .text-amber-300,
+.customer-theme-light .text-amber-400 {
+  color: #92400e;
+}
+
+.customer-theme-light [class~="text-amber-400/90"] {
+  color: #92400e;
+}
+
+.customer-theme-light [class~="bg-amber-500/10"] {
+  background-color: #feefc3;
+}
+
+.customer-theme-light .text-emerald-300,
+.customer-theme-light .text-emerald-400 {
+  color: #047857;
 }
 
 /* Liquid Glass Theme Utilities */
@@ -146,6 +175,16 @@
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.customer-theme-light .liquid-glass-card {
+  background: #FAF7F2;
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
+  border-color: rgba(91, 62, 38, 0.12);
+  box-shadow:
+    0 6px 24px -2px rgba(85, 62, 42, 0.12),
+    inset 0 1px 1px rgba(255, 255, 255, 0.8);
+}
+
 .liquid-glass-card:hover {
   border-color: rgba(255, 100, 34, 0.35);
   box-shadow:
@@ -153,6 +192,14 @@
     0 0 24px 0 rgba(255, 100, 34, 0.12),
     inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.18);
   transform: translateY(-2px);
+}
+
+.customer-theme-light .liquid-glass-card:hover {
+  border-color: rgba(255, 100, 34, 0.3);
+  box-shadow:
+    0 12px 30px -4px rgba(85, 62, 42, 0.16),
+    0 0 20px rgba(255, 100, 34, 0.08),
+    inset 0 1px 1px rgba(255, 255, 255, 0.9);
 }
 
 .liquid-glass-subcard {
@@ -163,12 +210,29 @@
   box-shadow: inset 0 1px 2px 0 rgba(0, 0, 0, 0.5), inset 0 1px 1px 0 rgba(255, 255, 255, 0.06);
 }
 
+.customer-theme-light .liquid-glass-subcard {
+  background: #F4EFEA;
+  border-color: rgba(91, 62, 38, 0.12);
+  box-shadow: inset 0 1px 2px rgba(85, 62, 42, 0.06);
+}
+
 .liquid-glass-pill {
   background: rgba(27, 37, 59, 0.6);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15);
+}
+
+.customer-theme-light .liquid-glass-pill {
+  background: #FAF7F2;
+  border-color: rgba(91, 62, 38, 0.14);
+  box-shadow: 0 1px 3px rgba(85, 62, 42, 0.08), inset 0 1px 1px rgba(255, 255, 255, 0.75);
+}
+
+.customer-theme-light .liquid-glass-pill:hover {
+  background: #F4EFE7;
+  border-color: rgba(255, 100, 34, 0.3);
 }
 
 .liquid-specular {
