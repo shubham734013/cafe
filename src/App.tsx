@@ -1447,7 +1447,6 @@ export default function App() {
             onNavigateLogin={() => handleNavigate('login', 'customer')}
             onNavigatePrivacyPolicy={() => handleNavigate('privacy-policy', 'customer')}
             onNavigateTerms={() => handleNavigate('terms-and-conditions', 'customer')}
-            onSessionChange={setCustomerSession}
           />
         </Suspense>
       )}
@@ -1458,7 +1457,6 @@ export default function App() {
             onNotify={showToast}
             hasCartItems={customerCart.length > 0}
             onReturnToCart={() => handleNavigate('cart', 'customer')}
-            onLocalTestSessionChange={setCustomerSession}
             onSuccess={() => {
               if (customerCart.length > 0) {
                 showToast('Signed in successfully! You can now place your order.');
