@@ -4,18 +4,9 @@ import type { StaffRole } from '../types/cafe';
 
 const STAFF_SESSION_COOKIE = 'cafeos_staff_session';
 const CUSTOMER_SESSION_COOKIE = 'cafeos_customer_session';
-const PIN_SALT = 'cafeos-pin-salt-v1';
-const configuredSuperAdminPin = process.env.CAFE_SUPER_ADMIN_PIN?.trim();
 const isProduction = process.env.NODE_ENV === 'production';
 
-const STAFF_PIN_ENV_VARS = [
-  'CAFE_SUPER_ADMIN_PIN',
-  'CAFE_OWNER_PIN',
-  'CAFE_MANAGER_PIN',
-  'CAFE_CASHIER_PIN',
-  'CAFE_BARISTA_PIN',
-  'CAFE_SERVER_PIN',
-] as const;
+const STAFF_PIN_ENV_VARS = ['CAFE_ADMIN_PIN', 'CAFE_KITCHEN_PIN'] as const;
 
 function getAuthSecret(): string {
   const configured = process.env.CAFE_AUTH_SECRET?.trim();
@@ -49,35 +40,15 @@ export function assertAuthSecretConfigured(): void {
 }
 
 const ROLE_CONFIGS: Array<{ role: StaffRole; staffName: string; pin: string }> = [
-  ...(configuredSuperAdminPin
-    ? [{ role: 'super-admin' as const, staffName: 'CafeOS Super Admin', pin: configuredSuperAdminPin }]
-    : process.env.NODE_ENV === 'production'
-      ? []
-      : [{ role: 'super-admin' as const, staffName: 'CafeOS Super Admin', pin: '9999' }]),
   {
-    role: 'owner',
-    staffName: 'Seth Sawariya Owner',
-    pin: process.env.CAFE_OWNER_PIN?.trim() || '7777',
+    role: 'admin',
+    staffName: 'CafeOS Admin',
+    pin: process.env.CAFE_ADMIN_PIN?.trim() || '7777',
   },
   {
-    role: 'manager',
-    staffName: 'Seth Sawariya Manager',
-    pin: process.env.CAFE_MANAGER_PIN?.trim() || process.env.CAFE_STAFF_PIN?.trim() || '1234',
-  },
-  {
-    role: 'cashier',
-    staffName: 'Aarav S. (Cashier)',
-    pin: process.env.CAFE_CASHIER_PIN?.trim() || '2345',
-  },
-  {
-    role: 'barista',
-    staffName: 'Neha Verma (Barista)',
-    pin: process.env.CAFE_BARISTA_PIN?.trim() || '3456',
-  },
-  {
-    role: 'server',
-    staffName: 'Vikas Joshi (Server)',
-    pin: process.env.CAFE_SERVER_PIN?.trim() || '4567',
+    role: 'kitchen',
+    staffName: 'Kitchen Staff',
+    pin: process.env.CAFE_KITCHEN_PIN?.trim() || '3456',
   },
 ];
 
@@ -135,7 +106,7 @@ export function hasStaffRole(
   allowedRoles: readonly StaffRole[]
 ): boolean {
   if (!session) return false;
-  return session.role === 'super-admin' || allowedRoles.includes(session.role);
+  return allowedRoles.includes(session.role);
 }
 
 function signToken(payload: object): string {
@@ -145,8 +116,22 @@ function signToken(payload: object): string {
   return `${body}.${sig}`;
 }
 
+const revokedTokens = new Set<string>();
+
+export function revokeToken(token?: string): void {
+  if (token && typeof token === 'string') {
+    revokedTokens.add(token);
+    // Bounded in-memory retention (prune oldest when size exceeds 10,000)
+    if (revokedTokens.size > 10_000) {
+      const oldest = Array.from(revokedTokens).slice(0, 1000);
+      for (const t of oldest) revokedTokens.delete(t);
+    }
+  }
+}
+
 function verifySignedToken<T extends { exp?: number }>(token: string | undefined): T | null {
   if (!token || !token.includes('.')) return null;
+  if (revokedTokens.has(token)) return null;
   const parts = token.split('.');
   if (parts.length !== 2) return null;
   const [body, sig] = parts;
@@ -173,7 +158,11 @@ export function signStaffSession(payload: StaffSessionPayload): string {
 
 export function verifyStaffSessionToken(token: string | undefined): StaffSessionPayload | null {
   const parsed = verifySignedToken<StaffSessionPayload>(token);
-  if (!parsed || typeof parsed.role !== 'string' || typeof parsed.staffName !== 'string') {
+  if (
+    !parsed ||
+    (parsed.role !== 'admin' && parsed.role !== 'kitchen') ||
+    typeof parsed.staffName !== 'string'
+  ) {
     return null;
   }
   return parsed;
@@ -241,7 +230,12 @@ export function setStaffSessionCookie(res: Response, payload: StaffSessionPayloa
   });
 }
 
-export function clearStaffSessionCookie(res: Response): void {
+export function clearStaffSessionCookie(res: Response, req?: Request): void {
+  if (req) {
+    const cookies = parseCookies(req.headers.cookie);
+    const token = cookies[STAFF_SESSION_COOKIE];
+    if (token) revokeToken(token);
+  }
   res.clearCookie(STAFF_SESSION_COOKIE, {
     path: '/',
     sameSite: 'lax',

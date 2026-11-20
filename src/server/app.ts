@@ -780,10 +780,57 @@ export function createCafeServer(
     res.redirect(`/api/orders/${encodeURIComponent(gatewayReference)}/cashfree-return`);
   });
 
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
+    // 1. HTTPS redirect in production if behind a reverse proxy
+    if (
+      process.env.NODE_ENV === 'production' &&
+      req.headers['x-forwarded-proto'] &&
+      req.headers['x-forwarded-proto'] !== 'https'
+    ) {
+      return res.redirect(301, `https://${req.hostname}${req.originalUrl}`);
+    }
+
+    // 2. Strict Transport Security (HSTS) in production
+    if (process.env.NODE_ENV === 'production') {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+    }
+
+    // 3. Modern Defense-in-Depth Security Headers
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+
+    // 4. Content Security Policy (Report-Only)
+    res.setHeader(
+      'Content-Security-Policy-Report-Only',
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://sdk.cashfree.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' ws: wss: https:; frame-ancestors 'self';"
+    );
+
+    // 5. Cross-Origin Resource Sharing (CORS) & Anti-CSRF Origin Validation
+    const origin = req.headers.origin;
+    if (origin) {
+      const isAllowed =
+        process.env.NODE_ENV !== 'production' ||
+        allowedOrigins.includes(origin) ||
+        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+
+      if (isAllowed) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With');
+      } else if (!req.path.startsWith('/api/webhooks/')) {
+        res.status(403).json({ error: `Cross-site origin forbidden: ${origin}` });
+        return;
+      }
+    }
+
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+
     next();
   });
 
@@ -983,8 +1030,8 @@ export function createCafeServer(
     }
   });
 
-  app.post('/api/auth/logout', (_req, res) => {
-    clearStaffSessionCookie(res);
+  app.post('/api/auth/logout', (req, res) => {
+    clearStaffSessionCookie(res, req);
     res.json({ authenticated: false, session: null });
   });
 
