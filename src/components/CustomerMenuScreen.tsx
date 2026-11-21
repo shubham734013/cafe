@@ -89,55 +89,61 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-5 sm:space-y-6 pb-20 pt-1">
-      {/* Top Header Row: "Menu" title on Left, "Cart" button on Right */}
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="font-sans font-black text-2xl sm:text-4xl text-on-surface tracking-tight">
+    <div className="w-full max-w-4xl mx-auto space-y-4 pb-28 pt-1 text-[#1F1610]">
+      {/* Top Header Row (Panel 5) */}
+      <div className="flex items-center justify-between pb-1">
+        <button
+          type="button"
+          onClick={_onNavigateHome || onNavigateCart}
+          aria-label="Back"
+          className="w-9 h-9 rounded-full bg-white border border-[#EAE2D7] flex items-center justify-center text-[#1F1610] shadow-xs hover:bg-[#F5EFE8] transition-colors cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+        </button>
+
+        <h1 className="font-serif font-bold text-base sm:text-lg text-[#1F1610] tracking-tight">
           Menu
         </h1>
 
         <button
           type="button"
-          onClick={onNavigateCart}
-          className="liquid-glass-pill rounded-xl px-3.5 sm:px-4 py-2 flex items-center gap-2 text-xs sm:text-sm font-semibold text-on-surface shadow-xs transition-all cursor-pointer active:scale-95 shrink-0 hover:border-primary/40"
+          onClick={() => {
+            const input = document.getElementById('menu-search-input');
+            input?.focus();
+          }}
+          aria-label="Search"
+          className="w-9 h-9 rounded-full bg-white border border-[#EAE2D7] flex items-center justify-center text-[#1F1610] shadow-xs hover:bg-[#F5EFE8] transition-colors cursor-pointer"
         >
-          <span className="material-symbols-outlined text-[19px] text-primary">
-            shopping_bag
-          </span>
-          <span>Cart</span>
-          {cartCount > 0 && (
-            <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-primary text-on-primary tabular-nums shadow-sm">
-              {cartCount}
-            </span>
-          )}
+          <span className="material-symbols-outlined text-[19px]">search</span>
         </button>
       </div>
 
       {/* Full-Width Search Input */}
       <div className="relative w-full">
-        <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline text-[20px] pointer-events-none">
+        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8C7E74] text-[20px] pointer-events-none">
           search
         </span>
         <input
+          id="menu-search-input"
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search menu..."
-          className="w-full pl-11 pr-10 py-2.5 sm:py-3 bg-surface-container-low text-xs sm:text-sm text-on-surface placeholder:text-outline rounded-xl border border-outline-variant/20 focus:outline-none focus:ring-1 focus:ring-primary shadow-xs transition-all"
+          placeholder="Search for dishes, coffee, drinks..."
+          className="w-full pl-10 pr-10 py-2.5 bg-white text-xs sm:text-sm text-[#1F1610] placeholder:text-[#8C7E74] rounded-2xl border border-[#EAE2D7] focus:outline-none focus:ring-1 focus:ring-[#382319] shadow-xs transition-all"
         />
         {searchQuery && (
           <button
             type="button"
             onClick={() => setSearchQuery('')}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface cursor-pointer"
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8C7E74] hover:text-[#1F1610] cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px]">close</span>
           </button>
         )}
       </div>
 
-      {/* Horizontal Category Filter Pills */}
-      <div className="flex items-center gap-2 sm:gap-2.5 overflow-x-auto no-scrollbar py-1">
+      {/* Horizontal Filter Pills (Panel 5: All, Bestseller, Combos, New) */}
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
         {CATEGORY_TABS.map((cat) => {
           const isActive = activeCategory === cat;
           return (
@@ -145,10 +151,10 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
               key={cat}
               type="button"
               onClick={() => onCategoryChange(cat)}
-              className={`px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap transition-all cursor-pointer active:scale-95 ${
+              className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-primary text-on-primary font-bold shadow-lg border border-primary/50'
-                  : 'liquid-glass-pill text-on-surface-variant hover:text-on-surface hover:border-white/20'
+                  ? 'bg-[#382319] text-white shadow-xs'
+                  : 'bg-white text-[#7A7067] border border-[#EAE2D7] hover:bg-[#FAF7F2]'
               }`}
             >
               {cat}

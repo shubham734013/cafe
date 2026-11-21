@@ -11,6 +11,7 @@ import { CafeOrder } from '../types/cafe';
 import { CafeImage } from './CafeImage';
 
 interface LiveTrackingScreenProps {
+  initialView?: 'track' | 'orders';
   activeOrder?: CafeOrder;
   allOrders: CafeOrder[];
   availableBeans: number;
@@ -37,6 +38,7 @@ const STEPS: { key: CafeOrder['status']; label: string; icon: string }[] = [
 ];
 
 export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
+  initialView = 'track',
   activeOrder,
   allOrders,
   availableBeans,
@@ -52,6 +54,9 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [paymentError, setPaymentError] = useState('');
+  const [viewMode, setViewMode] = useState<'track' | 'orders'>(initialView);
+  const [orderTab, setOrderTab] = useState<'all' | 'ongoing' | 'completed'>('all');
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   // Feedback State
   const [rating, setRating] = useState<number>(activeOrder?.rating || 5);
@@ -92,23 +97,121 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
   }, [activeOrder?.id, activeOrder?.paymentProvider, activeOrder?.paymentStatus, onRefreshPayment]);
 
   if (!activeOrder) {
+    if (allOrders.length > 0) {
+      // If user has orders but none actively selected, show My Orders list (Panel 10)
+      return (
+        <div className="mx-auto flex w-full max-w-xl flex-col gap-4 px-3 py-2 pb-28 text-[#1F1610]">
+          <div className="flex items-center justify-between pb-1">
+            <button
+              type="button"
+              onClick={onBackToMenu}
+              aria-label="Back"
+              className="w-9 h-9 rounded-full bg-white border border-[#EAE2D7] flex items-center justify-center text-[#1F1610] shadow-xs hover:bg-[#F5EFE8] transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+            </button>
+            <h1 className="text-base sm:text-lg font-bold text-[#1F1610] tracking-tight font-serif">
+              My Orders
+            </h1>
+            <div className="w-9" />
+          </div>
+
+          {/* Orders Filter Tabs */}
+          <div className="flex items-center gap-2">
+            {(['all', 'ongoing', 'completed'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setOrderTab(tab)}
+                className={`px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  orderTab === tab
+                    ? 'bg-[#382319] text-white shadow-xs'
+                    : 'bg-white text-[#7A7067] border border-[#EAE2D7] hover:bg-[#FAF7F2]'
+                }`}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          {/* Order Cards */}
+          <div className="space-y-3 pt-1">
+            {allOrders
+              .filter((o) => {
+                if (orderTab === 'ongoing') return o.status !== 'served' && o.status !== 'cancelled';
+                if (orderTab === 'completed') return o.status === 'served';
+                return true;
+              })
+              .map((order) => (
+                <div
+                  key={order.id}
+                  onClick={() => {
+                    onSelectOrder(order.id);
+                    setViewMode('track');
+                  }}
+                  className="p-4 rounded-2xl bg-white border border-[#EAE2D7] shadow-xs cursor-pointer hover:shadow-md transition-all space-y-2.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs sm:text-sm text-[#1F1610]">
+                      #TSC-{order.kotNumber || order.id.slice(0, 4)}
+                    </span>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      order.status === 'served'
+                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                        : 'bg-amber-50 text-amber-800 border border-amber-200'
+                    }`}>
+                      {order.status === 'served' ? 'Delivered' : 'Preparing'} • ₹{order.total}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-[#7A7067]">
+                    {order.items.length} {order.items.length === 1 ? 'item' : 'items'}
+                  </p>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      {order.items.slice(0, 4).map((item, idx) => (
+                        <div
+                          key={`${item.menuItemId}-${idx}`}
+                          className="w-10 h-10 rounded-xl overflow-hidden bg-[#FAF7F2] border border-[#EAE2D7] shrink-0"
+                        >
+                          <CafeImage
+                            src={item.imageUrl}
+                            alt={item.name}
+                            className="w-full h-full object-cover"
+                            fallbackIcon="restaurant"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <span className="material-symbols-outlined text-[20px] text-[#8C7E74]">
+                      chevron_right
+                    </span>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col items-center justify-center py-20 px-4 text-center max-w-sm mx-auto">
-        <div className="w-24 h-24 rounded-full bg-surface-container flex items-center justify-center text-[#FF6422] mb-5 shadow-lg border border-outline-variant/15">
-          <span className="material-symbols-outlined text-[48px]">receipt_long</span>
+        <div className="w-20 h-20 rounded-full bg-white border border-[#EAE2D7] flex items-center justify-center text-[#382319] mb-4 shadow-xs">
+          <span className="material-symbols-outlined text-[40px]">receipt_long</span>
         </div>
-        <h2 className="text-xl sm:text-2xl font-black text-on-surface tracking-tight">
+        <h2 className="text-xl font-bold text-[#1F1610] tracking-tight font-serif">
           No Active Orders
         </h2>
-        <p className="text-xs sm:text-sm text-on-surface-variant mt-2 leading-relaxed">
+        <p className="text-xs text-[#7A7067] mt-1.5 leading-relaxed">
           You don&apos;t have any active orders right now. Explore our delicious menu and place your order!
         </p>
         <button
           type="button"
           onClick={onBackToMenu}
-          className="mt-6 px-8 py-3.5 rounded-full bg-[#FF6422] hover:bg-[#E55518] text-white font-black text-xs sm:text-sm shadow-[0_8px_24px_rgba(255,100,34,0.35)] active:scale-95 transition-all cursor-pointer inline-flex items-center gap-2"
+          className="mt-5 px-6 py-3 rounded-full bg-[#382319] hover:bg-[#2B1B13] text-white font-bold text-xs shadow-xs transition-all cursor-pointer inline-flex items-center gap-2"
         >
-          <span className="material-symbols-outlined text-[18px]">restaurant_menu</span>
+          <span className="material-symbols-outlined text-[16px]">restaurant_menu</span>
           <span>Explore Menu</span>
         </button>
       </div>
@@ -120,160 +223,313 @@ export const LiveTrackingScreen: React.FC<LiveTrackingScreenProps> = ({
   const progressPercent = statusMeta.progressPercent;
   const statusMessage = statusMeta.trackingMessage;
 
-  return (
-    <div className="flex flex-col w-full pb-28 pt-1 space-y-4">
-      {/* Top Header Bar */}
-      <div className="flex items-center justify-between pb-2">
-        <button
-          type="button"
-          onClick={onBackToMenu}
-          aria-label="Back to Menu"
-          className="w-10 h-10 rounded-full bg-surface-container hover:bg-surface-container-high flex items-center justify-center text-on-surface transition-colors cursor-pointer shrink-0"
-        >
-          <span className="material-symbols-outlined text-[22px]">arrow_back</span>
-        </button>
+  if (viewMode === 'orders') {
+    return (
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-4 px-3 py-2 pb-28 text-[#1F1610]">
+        <div className="flex items-center justify-between pb-1">
+          <button
+            type="button"
+            onClick={() => setViewMode('track')}
+            aria-label="Back"
+            className="w-9 h-9 rounded-full bg-white border border-[#EAE2D7] flex items-center justify-center text-[#1F1610] shadow-xs hover:bg-[#F5EFE8] transition-colors cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+          </button>
+          <h1 className="text-base sm:text-lg font-bold text-[#1F1610] tracking-tight font-serif">
+            My Orders
+          </h1>
+          <div className="w-9" />
+        </div>
 
-        <h1 className="text-lg font-black text-on-surface tracking-tight">Track Order</h1>
+        {/* Orders Filter Tabs */}
+        <div className="flex items-center gap-2">
+          {(['all', 'ongoing', 'completed'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setOrderTab(tab)}
+              className={`px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                orderTab === tab
+                  ? 'bg-[#382319] text-white shadow-xs'
+                  : 'bg-white text-[#7A7067] border border-[#EAE2D7] hover:bg-[#FAF7F2]'
+              }`}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
 
-        {/* Dining Mode Pill */}
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container text-xs font-bold text-on-surface border border-outline-variant/15 shrink-0">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-[#FF6422]">
-            {activeOrder.serviceMode === 'dine-in'
-              ? `Table ${activeOrder.tableNumber?.replace('T', '') || '3'}`
-              : activeOrder.serviceMode}
-          </span>
+        {/* Order Cards */}
+        <div className="space-y-3 pt-1">
+          {allOrders
+            .filter((o) => {
+              if (orderTab === 'ongoing') return o.status !== 'served' && o.status !== 'cancelled';
+              if (orderTab === 'completed') return o.status === 'served';
+              return true;
+            })
+            .map((order) => (
+              <div
+                key={order.id}
+                onClick={() => {
+                  onSelectOrder(order.id);
+                  setViewMode('track');
+                }}
+                className="p-4 rounded-2xl bg-white border border-[#EAE2D7] shadow-xs cursor-pointer hover:shadow-md transition-all space-y-2.5"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs sm:text-sm text-[#1F1610]">
+                    #TSC-{order.kotNumber || order.id.slice(0, 4)}
+                  </span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                    order.status === 'served'
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-amber-50 text-amber-800 border border-amber-200'
+                  }`}>
+                    {order.status === 'served' ? 'Delivered' : 'Preparing'} • ₹{order.total}
+                  </span>
+                </div>
+
+                <p className="text-xs text-[#7A7067]">
+                  {order.items.length} {order.items.length === 1 ? 'item' : 'items'}
+                </p>
+
+                <div className="flex items-center justify-between pt-1">
+                  <div className="flex items-center gap-2 overflow-hidden">
+                    {order.items.slice(0, 4).map((item, idx) => (
+                      <div
+                        key={`${item.menuItemId}-${idx}`}
+                        className="w-10 h-10 rounded-xl overflow-hidden bg-[#FAF7F2] border border-[#EAE2D7] shrink-0"
+                      >
+                        <CafeImage
+                          src={item.imageUrl}
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                          fallbackIcon="restaurant"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <span className="material-symbols-outlined text-[20px] text-[#8C7E74]">
+                    chevron_right
+                  </span>
+                </div>
+              </div>
+            ))}
         </div>
       </div>
+    );
+  }
 
-      {/* Multiple Orders Selector Strip (if user placed multiple orders) */}
+  return (
+    <div className="mx-auto flex w-full max-w-xl flex-col gap-4 px-3 py-2 pb-28 text-[#1F1610]">
+      {/* Top Header Bar (Panel 9) */}
+      <div className="flex items-center justify-between pb-1">
+        <button
+          type="button"
+          onClick={() => {
+            if (allOrders.length > 1) setViewMode('orders');
+            else onBackToMenu();
+          }}
+          aria-label="Back"
+          className="w-9 h-9 rounded-full bg-white border border-[#EAE2D7] flex items-center justify-center text-[#1F1610] shadow-xs hover:bg-[#F5EFE8] transition-colors cursor-pointer shrink-0"
+        >
+          <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+        </button>
+
+        <h1 className="text-base sm:text-lg font-bold text-[#1F1610] tracking-tight font-serif">
+          Track Order
+        </h1>
+
+        <button
+          type="button"
+          aria-label="Help and Support"
+          onClick={() => onNotify('Captain notified! Call steward or support: +91 98765 43210')}
+          className="w-9 h-9 rounded-full bg-white border border-[#EAE2D7] flex items-center justify-center text-[#1F1610] shadow-xs hover:bg-[#F5EFE8] transition-colors cursor-pointer shrink-0"
+        >
+          <span className="material-symbols-outlined text-[20px]">headset_mic</span>
+        </button>
+      </div>
+
       {allOrders.length > 1 && (
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-          {allOrders.slice(0, 6).map((order) => {
-            const isCurrent = order.id === activeOrder.id;
-            return (
-              <button
-                key={order.id}
-                type="button"
-                onClick={() => onSelectOrder(order.id)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                  isCurrent
-                    ? 'bg-[#FF6422] text-white shadow-md'
-                    : 'bg-surface-container text-on-surface hover:bg-surface-container-high border border-outline-variant/15'
-                }`}
-              >
-                #{order.id} · {order.status.toUpperCase()}
-              </button>
-            );
-          })}
+        <div className="flex items-center justify-between px-1">
+          <span className="text-xs text-[#7A7067]">
+            Order #{activeOrder.kotNumber || activeOrder.id.slice(0, 4)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setViewMode('orders')}
+            className="text-xs font-bold text-[#C67C4E] hover:underline cursor-pointer"
+          >
+            All Orders ({allOrders.length})
+          </button>
         </div>
       )}
 
-      {/* Hero Order Status Card */}
-      <div className="p-5 rounded-3xl bg-surface-container border border-outline-variant/15 shadow-sm space-y-3">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[11px] font-black uppercase tracking-wider text-emerald-500">
-                Live Kitchen Status
-              </span>
+      {/* Circular Progress Arc Gauge with Rider Illustration (Panel 9) */}
+      <div className="rounded-3xl bg-white border border-[#EAE2D7] p-5 shadow-xs flex flex-col items-center justify-center text-center">
+        <div className="relative w-48 h-28 flex items-center justify-center overflow-hidden">
+          <svg className="w-48 h-48 -rotate-90" viewBox="0 0 100 100">
+            <circle
+              cx="50"
+              cy="50"
+              r="40"
+              fill="none"
+              stroke="#F5EFE8"
+              strokeWidth="7"
+              strokeDasharray="125 125"
+            />
+            <circle
+              cx="50"
+              cy="50"
+              r="40"
+              fill="none"
+              stroke="#C67C4E"
+              strokeWidth="7"
+              strokeDasharray="125 125"
+              strokeDashoffset={125 - (progressPercent / 100) * 125}
+              strokeLinecap="round"
+              className="transition-all duration-700"
+            />
+          </svg>
+          <div className="absolute bottom-2 flex flex-col items-center">
+            <div className="w-12 h-12 rounded-full bg-[#FAF7F2] border border-[#EAE2D7] flex items-center justify-center text-[#382319] shadow-xs">
+              <span className="material-symbols-outlined text-[26px]">two_wheeler</span>
             </div>
-            <h2 className="text-2xl font-black text-on-surface tracking-tight mt-1">
-              Order <span className="text-[#FF6422]">#{activeOrder.id}</span>
-            </h2>
-            <p className="text-xs text-on-surface-variant flex items-center gap-1 mt-0.5">
-              <span className="material-symbols-outlined text-[14px]">schedule</span>
-              <span>Placed at {activeOrder.createdAtLabel}</span>
-            </p>
           </div>
+        </div>
 
-          <div className="text-right">
-            <span className="text-2xl font-black text-[#FF6422] tabular-nums block">
-              ₹{activeOrder.total}
-            </span>
-            <span
-              className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider mt-1 ${
-                activeOrder.paymentStatus === 'paid'
-                  ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/25'
-                  : activeOrder.paymentMode === 'cash' ||
-                      activeOrder.paymentChannelLabel === 'Pay on Counter'
-                    ? 'bg-amber-500/15 text-amber-500 border border-amber-500/25'
-                    : 'bg-blue-500/15 text-blue-400 border border-blue-500/25'
+        <h2 className="font-serif font-black text-xl text-[#1F1610] mt-3">
+          {activeOrder.status === 'placed'
+            ? 'Order Confirmed'
+            : activeOrder.status === 'preparing'
+              ? 'Preparing Your Order'
+              : activeOrder.status === 'ready'
+                ? 'Out for Delivery'
+                : 'Order Delivered'}
+        </h2>
+        <p className="text-xs text-[#7A7067] mt-0.5">
+          {statusMessage || 'Your food is being freshly prepared.'}
+        </p>
+      </div>
+
+      {/* 4-Step Vertical Timeline (Panel 9) */}
+      <div className="rounded-2xl bg-white border border-[#EAE2D7] p-5 shadow-xs space-y-4">
+        {[
+          {
+            title: 'Order Confirmed',
+            sub: activeOrder.createdAtLabel || 'Today, 9:41 AM',
+            done: currentIdx >= 0,
+            active: currentIdx === 0,
+          },
+          {
+            title: 'Preparing',
+            sub: 'Kitchen is preparing your order.',
+            done: currentIdx >= 1,
+            active: currentIdx === 1,
+          },
+          {
+            title: 'Out for Delivery',
+            sub: 'On the way to your location.',
+            done: currentIdx >= 2,
+            active: currentIdx === 2,
+          },
+          {
+            title: 'Delivered',
+            sub: 'Enjoy your meal!',
+            done: currentIdx >= 3 || activeOrder.status === 'served',
+            active: currentIdx === 3,
+          },
+        ].map((step, idx, arr) => (
+          <div key={step.title} className="flex items-start gap-3 relative">
+            {idx < arr.length - 1 && (
+              <div
+                className={`absolute left-3 top-6 bottom-0 w-0.5 -ml-px ${
+                  step.done ? 'bg-[#382319]' : 'bg-[#EAE2D7]'
+                }`}
+              />
+            )}
+            <div
+              className={`w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0 z-10 transition-colors ${
+                step.done
+                  ? 'bg-[#382319] text-white'
+                  : step.active
+                    ? 'bg-[#382319] text-white ring-4 ring-[#382319]/15'
+                    : 'bg-[#F5EFE8] text-[#8C7E74] border border-[#EAE2D7]'
               }`}
             >
-              {activeOrder.paymentStatus === 'paid'
-                ? 'PAID ✓'
-                : activeOrder.paymentMode === 'cash' ||
-                    activeOrder.paymentChannelLabel === 'Pay on Counter'
-                  ? 'PAY ON COUNTER'
-                  : 'AWAITING UPI'}
+              {step.done ? '✓' : idx + 1}
+            </div>
+            <div className="flex-1 pb-1">
+              <p className="font-bold text-xs sm:text-sm text-[#1F1610]">{step.title}</p>
+              <p className="text-[11px] text-[#7A7067] mt-0.5">{step.sub}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Order Details Expandable Card (Panel 9) */}
+      <div className="rounded-2xl bg-white border border-[#EAE2D7] p-4 shadow-xs space-y-3">
+        <button
+          type="button"
+          onClick={() => setDetailsOpen(!detailsOpen)}
+          className="w-full flex items-center justify-between text-left cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[20px] text-[#382319]">
+              receipt_long
+            </span>
+            <span className="text-xs sm:text-sm font-bold text-[#1F1610]">
+              Order Details (#{activeOrder.kotNumber})
             </span>
           </div>
-        </div>
+          <span className="material-symbols-outlined text-[18px] text-[#8C7E74]">
+            {detailsOpen ? 'expand_less' : 'chevron_right'}
+          </span>
+        </button>
 
-        {/* Stepper Timeline */}
-        <div className="pt-2 pb-1">
-          <div className="relative py-2 flex items-center justify-between w-full px-2">
-            {/* Background connecting track */}
-            <div className="absolute left-6 right-6 top-1/2 -translate-y-3.5 h-1 bg-surface-container-high rounded-full z-0">
-              <div
-                className="h-full bg-[#FF6422] rounded-full transition-all duration-500"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-
-            {STEPS.map((step, idx) => {
-              const isDone = idx < currentIdx || activeOrder.status === 'served';
-              const isActive = idx === currentIdx && activeOrder.status !== 'served';
-              return (
+        {detailsOpen && (
+          <div className="pt-2 border-t border-[#F5EFE8] space-y-2.5">
+            <div className="space-y-2">
+              {activeOrder.items.map((item) => (
                 <div
-                  key={step.key}
-                  className={`relative z-10 flex flex-col items-center gap-1 ${
-                    !isDone && !isActive ? 'opacity-50' : ''
-                  }`}
+                  key={item.menuItemId}
+                  className="flex items-center justify-between text-xs"
                 >
-                  <div
-                    className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
-                      isDone
-                        ? 'bg-[#FF6422] text-white shadow-md'
-                        : isActive
-                          ? 'w-10 h-10 bg-[#FF6422] text-white shadow-[0_0_16px_rgba(255,100,34,0.4)] ring-4 ring-[#FF6422]/20'
-                          : 'bg-surface-container-high text-on-surface-variant'
-                    }`}
-                  >
-                    <span
-                      className={`material-symbols-outlined text-[18px] ${
-                        isDone ? 'font-bold' : isActive ? 'animate-pulse text-[20px]' : ''
-                      }`}
-                    >
-                      {isDone ? 'check' : step.icon}
-                    </span>
-                  </div>
-                  <span
-                    className={`text-[11px] font-bold ${
-                      isActive
-                        ? 'text-[#FF6422]'
-                        : isDone
-                          ? 'text-on-surface'
-                          : 'text-on-surface-variant'
-                    }`}
-                  >
-                    {step.label}
+                  <span className="text-[#1F1610]">
+                    {item.quantity}x {item.name}
+                  </span>
+                  <span className="font-bold text-[#1F1610]">
+                    ₹{item.price * item.quantity}
                   </span>
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              ))}
+            </div>
 
-        {/* Preparation Message */}
-        <div className="p-3 rounded-2xl bg-surface flex items-center gap-2.5 border border-outline-variant/15">
-          <span className="material-symbols-outlined text-[20px] text-[#FF6422] shrink-0">
-            soup_kitchen
-          </span>
-          <p className="text-xs font-semibold text-on-surface leading-snug">{statusMessage}</p>
-        </div>
+            <div className="border-t border-[#F5EFE8] pt-2 flex justify-between text-xs font-bold text-[#1F1610]">
+              <span>Total Paid</span>
+              <span>₹{activeOrder.total}</span>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setInvoiceOpen(true)}
+                className="flex-1 py-2 rounded-xl bg-[#FAF7F2] border border-[#EAE2D7] text-xs font-bold text-[#1F1610] hover:bg-[#F5EFE8] cursor-pointer"
+              >
+                View Invoice
+              </button>
+              {onPrintThermalReceipt && (
+                <button
+                  type="button"
+                  onClick={() => onPrintThermalReceipt(activeOrder)}
+                  className="flex-1 py-2 rounded-xl bg-[#FAF7F2] border border-[#EAE2D7] text-xs font-bold text-[#1F1610] hover:bg-[#F5EFE8] cursor-pointer"
+                >
+                  Thermal Receipt
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Payment Confirmed Banner */}

@@ -19,10 +19,12 @@ import type {
   createCampaignSchema,
   createOrderSchema,
   orderFeedbackSchema,
+  reserveTableSchema,
 } from '../shared/schemas';
 import type {
   AuthSessionState,
   CafeOrder,
+  CafeTable,
   CartItem,
   CustomerReview,
   MenuItem,
@@ -335,6 +337,15 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
     onSuccess: invalidate,
   });
 
+  const reserveTableMutation = useMutation({
+    mutationFn: (payload: z.infer<typeof reserveTableSchema>) =>
+      apiJson<{ table: CafeTable }>('/api/tables/reserve', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: invalidate,
+  });
+
   const addTableMutation = useMutation({
     mutationFn: (payload: z.infer<typeof addTableSchema>) =>
       apiJson('/api/tables', { method: 'POST', body: JSON.stringify(payload) }),
@@ -549,6 +560,7 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
     submitOrderFeedbackMutation,
     submitCustomerFeedbackMutation,
     checkInTableMutation,
+    reserveTableMutation,
     addTableMutation,
     transferTableMutation,
     mergeTablesMutation,

@@ -1626,7 +1626,7 @@ export class CafeStore {
           httpStatus: 400,
         });
       }
-      const sizeMultiplier = item.size === 'Small' ? 0.85 : item.size === 'Large' ? 1.25 : 1.0;
+      const sizeMultiplier = item.size === 'Small' ? 1 : item.size === 'Large' ? 1.25 : 1.1;
       const effectivePrice = Math.round(catalogItem.price * sizeMultiplier);
       return {
         ...item,

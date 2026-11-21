@@ -201,6 +201,7 @@ export default function App() {
     submitOrderFeedbackMutation,
     submitCustomerFeedbackMutation,
     checkInTableMutation,
+    reserveTableMutation,
     addTableMutation,
     transferTableMutation,
     mergeTablesMutation,
@@ -236,6 +237,8 @@ export default function App() {
   const posAttemptKeyRef = useRef<{ signature: string; key: string } | null>(null);
   const pendingStaffScreenRef = useRef<StaffScreenId | null>(null);
   const [customerSession, setCustomerSession] = useState<CustomerAuthSession | null>(getLocalCustomerSession);
+  const [customerRewardsTab, setCustomerRewardsTab] = useState<'offers' | 'rewards'>('offers');
+  const [trackingInitialView, setTrackingInitialView] = useState<'track' | 'orders'>('orders');
 
   useEffect(() => {
     void syncSupabaseCustomerSession().then((session) => {
@@ -353,9 +356,20 @@ export default function App() {
     [refreshPaymentStatusMutation]
   );
 
+  const handleReserveTable = useCallback(
+    async (payload: { guestName: string; guestPhone?: string; partySize: number; timeSlot: string }) => {
+      const { table } = await reserveTableMutation.mutateAsync(payload);
+      setSelectedTable(table.id);
+      return table.id;
+    },
+    [reserveTableMutation, setSelectedTable]
+  );
+
   const handleNavigate = useCallback(
     (screen: ScreenId, mode?: WorkspaceMode) => {
       const targetMode = mode ?? workspaceMode;
+      if (screen === 'rewards' && targetMode === 'customer') setCustomerRewardsTab('offers');
+      if (screen === 'tracking' && targetMode === 'customer') setTrackingInitialView('orders');
       if (targetMode === 'staff' && screen !== 'splash') {
         if (!authSession.authenticated) {
           pendingStaffScreenRef.current = screen as StaffScreenId;
@@ -505,6 +519,7 @@ export default function App() {
         clearCustomerCart();
         setCookingNote('');
         setTrackedOrderId(res.order.id);
+        setTrackingInitialView('track');
         navigate('tracking', 'customer');
 
         if (selectedPaymentMode === 'upi') {
@@ -1399,6 +1414,14 @@ export default function App() {
             onNavigateLogin={() => handleNavigate('login', 'customer')}
             onServiceModeChange={setServiceMode}
             onTableChange={setSelectedTable}
+            onReserveTable={({ date, time, guests }) =>
+              handleReserveTable({
+                guestName: customerSession?.name || 'Cafe Guest',
+                ...(customerSession?.phone ? { guestPhone: customerSession.phone } : {}),
+                partySize: Number.parseInt(guests, 10) || 2,
+                timeSlot: `${date} ${time}`,
+              })
+            }
             onUpdateQty={updateCustomerQty}
             onRemoveItem={removeCustomerItem}
             onCouponChange={setCouponCode}
@@ -1412,6 +1435,7 @@ export default function App() {
       {activeScreen === 'tracking' && (
         <Suspense fallback={<LiveTrackingSkeleton />}>
           <LiveTrackingScreen
+            initialView={trackingInitialView}
             activeOrder={activeTrackedOrder}
             allOrders={orders}
             availableBeans={rewardPoints}
@@ -1432,6 +1456,7 @@ export default function App() {
           <CustomerRewardsScreen
             points={rewardPoints}
             campaigns={campaigns}
+            initialTab={customerRewardsTab}
             hasMatchedCustomerProfile={Boolean(data.customerHasMatchedProfile)}
             onRedeemCoupon={(code) => {
               setCouponCode(code);
@@ -1439,6 +1464,7 @@ export default function App() {
               showToast(`Coupon ${code} selected for your cart`);
             }}
             onNavigateProfile={() => handleNavigate('profile', 'customer')}
+            onNotify={showToast}
             onBrowseMenu={() => handleNavigate('menu', 'customer')}
             onNavigateCart={() => handleNavigate('cart', 'customer')}
           />
@@ -1450,6 +1476,13 @@ export default function App() {
           <CustomerProfileScreen
             onNotify={showToast}
             onBrowseMenu={() => handleNavigate('menu', 'customer')}
+            onNavigateOrders={() => handleNavigate('tracking', 'customer')}
+            onNavigateRewards={() => {
+              setCustomerRewardsTab('rewards');
+              navigate('rewards', 'customer');
+            }}
+            onNavigateOffers={() => handleNavigate('rewards', 'customer')}
+            onSessionChange={setCustomerSession}
             onIdentityUpdated={() => void refetch()}
             onNavigateLogin={() => handleNavigate('login', 'customer')}
             onNavigatePrivacyPolicy={() => handleNavigate('privacy-policy', 'customer')}
@@ -1463,6 +1496,7 @@ export default function App() {
           <CustomerLoginScreen
             onNotify={showToast}
             hasCartItems={customerCart.length > 0}
+            onLocalTestSessionChange={setCustomerSession}
             onReturnToCart={() => handleNavigate('cart', 'customer')}
             onSuccess={() => {
               if (customerCart.length > 0) {

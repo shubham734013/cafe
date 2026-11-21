@@ -126,52 +126,21 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
 
   return (
     <div className="flex flex-col w-full pb-28 pt-1">
-      {/* Top Header Bar */}
-      <div className="flex items-center justify-between gap-2 pb-3">
-        <div className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-outline-variant/15 bg-surface-container/70 px-3 py-2 text-xs font-semibold text-on-surface-variant">
-          <span className="material-symbols-outlined text-[16px] text-primary">
-            local_cafe
-          </span>
-          <span className="truncate">Freshly prepared</span>
-        </div>
-
-        {/* Right Action Buttons */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={onNavigateCart}
-            aria-label="Cart"
-            className="relative w-10 h-10 rounded-full bg-surface-container hover:bg-surface-container-high flex items-center justify-center text-on-surface transition-colors cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[20px] text-on-surface">
-              shopping_bag
-            </span>
-            {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-[#FF6422] text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-md">
-                {cartCount}
-              </span>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Greeting Headline */}
-      <div className="pt-2 pb-4">
-        <span className="text-[#FF6422] font-black text-2xl sm:text-3xl tracking-tight block leading-tight">
-          Delicious
+      {/* Greeting Headline (Matches Reference Image Screen 4) */}
+      <div className="pt-1 pb-3">
+        <span className="text-xs sm:text-sm font-semibold text-[#7A7067] flex items-center gap-1.5">
+          <span>Good Morning</span>
+          <span aria-hidden="true">👋</span>
         </span>
-        <h1 className="text-on-surface font-extrabold text-2xl sm:text-3xl tracking-tight mt-0.5 leading-tight">
-          Food for you
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#1F1610] mt-1 leading-tight font-serif">
+          What are you craving today?
         </h1>
-        <p className="text-on-surface-variant text-xs sm:text-sm mt-1">
-          Discover and get great food from our restaurant
-        </p>
       </div>
 
       {/* Search Input Bar */}
-      <div className="pb-5">
+      <div className="pb-4">
         <div className="relative flex items-center">
-          <span className="material-symbols-outlined absolute left-3.5 text-outline text-[20px] pointer-events-none">
+          <span className="material-symbols-outlined absolute left-3.5 text-[#8C7E74] text-[20px] pointer-events-none">
             search
           </span>
           <input
@@ -182,125 +151,115 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
               setSearchQuery(query);
               if (query.trim()) setSelectedCategory('All');
             }}
-            placeholder="Search for food..."
+            placeholder="Search for food, drinks, etc."
             aria-label="Search menu items"
-            className="w-full pl-10 pr-10 py-3 bg-surface-container text-xs sm:text-sm text-on-surface placeholder:text-outline rounded-2xl border border-outline-variant/15 focus:outline-none focus:ring-2 focus:ring-[#FF6422]/50 shadow-inner transition-all"
+            className="w-full pl-10 pr-10 py-3 bg-white text-xs sm:text-sm text-[#1F1610] placeholder:text-[#8C7E74] rounded-2xl border border-[#EAE2D7] focus:outline-none focus:ring-2 focus:ring-[#382319]/20 shadow-xs transition-all"
           />
           {searchQuery ? (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 text-outline hover:text-on-surface transition-colors cursor-pointer"
+              className="absolute right-3 text-[#8C7E74] hover:text-[#1F1610] transition-colors cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">close</span>
             </button>
           ) : (
-            <span className="material-symbols-outlined absolute right-3.5 text-outline text-[20px] pointer-events-none">
+            <span className="material-symbols-outlined absolute right-3.5 text-[#8C7E74] text-[20px] pointer-events-none">
               tune
             </span>
           )}
         </div>
       </div>
 
-      {!hasSearchQuery && showFirstOrderOffer && (
-        <section className="pb-6">
-          <div className="relative min-h-[148px] overflow-hidden rounded-3xl border border-[#F6D6B8]/60 bg-[#F5E6D6] shadow-md sm:min-h-[168px]">
-            <CafeImage
-              src={CAFE_ASSETS.pizzaBanner}
-              alt="Pizza featured in the first-order offer"
-              className="absolute inset-y-0 right-0 h-full w-[58%] object-cover object-center"
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#F5E6D6] via-[#F5E6D6]/95 to-[#F5E6D6]/10" />
-            <div className="relative z-10 flex min-h-[148px] w-[72%] flex-col items-start justify-center p-4 sm:min-h-[168px] sm:p-6">
-              <h2 className="text-xl font-black leading-tight text-[#24180F] sm:text-2xl">
-                Get 20% OFF
+      {/* Category Horizontal Pills (Panel 4) */}
+      {!hasSearchQuery && (
+        <div className="pb-4">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+            {[
+              { id: 'All', label: 'All', icon: 'apps' },
+              { id: 'Drink', label: 'Coffee', icon: 'local_cafe' },
+              { id: 'Burger', label: 'Snacks', icon: 'lunch_dining' },
+              { id: 'Pizza', label: 'Pizzas', icon: 'local_pizza' },
+              { id: 'Pasta', label: 'Meals', icon: 'dinner_dining' },
+              { id: 'Dessert', label: 'Desserts', icon: 'cake' },
+            ].map((cat) => {
+              const isSelected = selectedCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat.id as MenuCategory | 'All')}
+                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#382319] text-white shadow-xs'
+                      : 'bg-white text-[#1F1610] border border-[#EAE2D7] hover:bg-[#F5EFE8]'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[17px]">
+                    {cat.icon}
+                  </span>
+                  <span>{cat.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* New Winter Menu Banner (Panel 4) */}
+      {!hasSearchQuery && (
+        <section className="pb-5">
+          <div
+            onClick={() => onNavigateMenu('Drink')}
+            className="relative min-h-[140px] sm:min-h-[155px] rounded-3xl bg-gradient-to-r from-[#2D1D16] to-[#3E271D] text-white p-5 sm:p-6 shadow-md overflow-hidden flex items-center justify-between cursor-pointer group"
+          >
+            <div className="relative z-10 max-w-[65%] space-y-1.5">
+              <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-white/15 text-amber-200 border border-white/20">
+                New
+              </span>
+              <h2 className="text-xl sm:text-2xl font-serif font-black tracking-tight leading-tight text-white">
+                Winter Menu
               </h2>
-              <p className="mt-1 text-xs font-semibold text-[#5D4635] sm:text-sm">
-                {firstOrderEligible
-                  ? 'on your first order'
-                  : 'Sign in to confirm your first-order offer'}
+              <p className="text-xs sm:text-sm text-[#D7C9BF] font-medium">
+                Hot Brews, Warm Bites
               </p>
-              <button
-                type="button"
-                onClick={() => onNavigateMenu()}
-                className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-bold text-[#C45E32] shadow-sm transition-transform hover:scale-[1.02] active:scale-95"
-              >
-                Order Now
-                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-              </button>
+              <div className="pt-2 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-full bg-white text-[#382319] flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                  <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                </span>
+                <div className="flex items-center gap-1.5 ml-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-white/40" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-white/40" />
+                </div>
+              </div>
             </div>
+
+            <div className="relative z-10 w-28 h-28 sm:w-36 sm:h-36 shrink-0 flex items-center justify-center">
+              <CafeImage
+                src={CAFE_ASSETS.cappuccino || CAFE_ASSETS.coldCoffee}
+                alt="Winter Menu Coffee"
+                className="w-full h-full object-contain filter drop-shadow-lg group-hover:scale-105 transition-transform duration-300"
+                fallbackIcon="local_cafe"
+              />
+            </div>
+            {/* Ambient Background Warm Glow */}
+            <div className="absolute -right-8 -bottom-8 w-48 h-48 rounded-full bg-[#C67C4E]/20 blur-2xl pointer-events-none" />
           </div>
         </section>
       )}
-
-      {!hasSearchQuery && (
-        <>
-      {/* Categories Section */}
-      <div className="pb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-extrabold text-on-surface tracking-tight">Categories</h2>
-          <button
-            type="button"
-            onClick={() => onNavigateMenu()}
-            className="text-xs font-bold text-[#FF6422] hover:underline cursor-pointer"
-          >
-            View All
-          </button>
-        </div>
-
-        <div className="flex items-start gap-4 sm:gap-6 overflow-x-auto no-scrollbar py-1">
-          {categoryItems.map((cat) => {
-            const isSelected = selectedCategory === cat.id;
-            return (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => {
-                  setSelectedCategory(isSelected ? 'All' : cat.id);
-                }}
-                className="flex w-[88px] shrink-0 flex-col items-center gap-1.5 group cursor-pointer"
-              >
-                <div
-                  className={`w-16 h-16 rounded-2xl p-1 transition-all flex items-center justify-center ${
-                    isSelected
-                      ? 'ring-1 ring-[#FF6422]/40 bg-[#FF6422]/10'
-                      : 'hover:bg-surface-container/60'
-                  }`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className="text-[40px] leading-none transition-transform duration-300 group-hover:scale-110"
-                  >
-                    {CATEGORY_EMOJIS[cat.name.toLowerCase()] ?? '🍽️'}
-                  </span>
-                </div>
-                <span
-                  className={`whitespace-nowrap text-xs font-bold tracking-tight transition-colors ${
-                    isSelected ? 'text-[#FF6422]' : 'text-on-surface'
-                  }`}
-                >
-                  {cat.name}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-        </>
-      )}
-
-      {/* Popular Dishes Section */}
+      {/* Popular Right Now Section (Matches Reference Image Screen 4) */}
       <div className="pb-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <h2
-              className="text-base font-extrabold text-on-surface tracking-tight"
+              className="text-base sm:text-lg font-bold text-[#1F1610] tracking-tight font-serif"
               aria-live="polite"
             >
-              {hasSearchQuery ? `Search Results (${popularDishes.length})` : 'Popular Dishes'}
+              {hasSearchQuery ? `Search Results (${popularDishes.length})` : 'Popular Right Now'}
             </h2>
             {selectedCategory !== 'All' && (
-              <span className="px-2 py-0.5 rounded-full bg-[#FF6422]/15 text-[#FF6422] text-[10px] font-black">
+              <span className="px-2 py-0.5 rounded-full bg-[#382319]/10 text-[#382319] text-[10px] font-bold">
                 {selectedCategory}
               </span>
             )}
@@ -311,254 +270,139 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
               onClick={() =>
                 onNavigateMenu(selectedCategory === 'All' ? undefined : selectedCategory)
               }
-              className="text-xs font-bold text-[#FF6422] hover:underline cursor-pointer"
+              className="text-xs font-semibold text-[#8C7E74] hover:text-[#382319] cursor-pointer"
             >
-              View All
+              See All
             </button>
           )}
         </div>
 
-        {/* Dish Cards (Responsive: Mobile Ergonomic Horizontal vs Desktop 3-Col Grid) */}
+        {/* Dish Cards Grid (Responsive: 2-Col Mobile, 3-Col Tablet, 4-Col Desktop) */}
         <div>
           {popularDishes.length === 0 ? (
-            <div className="p-8 text-center bg-surface-container-low rounded-2xl border border-outline-variant/15 text-on-surface-variant text-xs">
+            <div className="p-8 text-center bg-white rounded-2xl border border-[#EAE2D7] text-[#7A7067] text-xs shadow-xs">
               No items match "{searchQuery.trim()}".
             </div>
           ) : (
-            <>
-              {/* MOBILE COMPACT HORIZONTAL DISH CARDS (< 640px) */}
-              <div className="sm:hidden space-y-3">
-                {visibleDishes.map((dish) => {
-                  const isFav = favorites.has(dish.id);
-                  const quantityInCart = getQuantityInCart(dish.id);
-                  return (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+              {visibleDishes.map((dish) => {
+                const isFav = favorites.has(dish.id);
+                const quantityInCart = getQuantityInCart(dish.id);
+                return (
+                  <div
+                    key={`home-dish-${dish.id}`}
+                    className="bg-white rounded-2xl p-2.5 sm:p-3 border border-[#EAE2D7] shadow-xs flex flex-col justify-between hover:shadow-md transition-all relative group"
+                  >
+                    {/* Top: Square Rounded Photo */}
                     <div
-                      key={`mobile-home-${dish.id}`}
-                      className="liquid-glass-card rounded-2xl p-3.5 shadow-lg transition-all flex items-start justify-between gap-3 relative"
+                      onClick={() => setDetailItem(dish)}
+                      className="aspect-square w-full rounded-xl overflow-hidden bg-[#FAF7F2] relative cursor-pointer"
                     >
-                      {/* Left: Info */}
-                      <div
-                        onClick={() => setDetailItem(dish)}
-                        className="flex-1 min-w-0 pr-1 cursor-pointer"
+                      <CafeImage
+                        src={dish.imageUrl}
+                        alt={dish.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        fallbackIcon="restaurant"
+                      />
+
+                      {/* Favorite Heart Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFavorite(dish.id);
+                        }}
+                        aria-label="Favorite"
+                        className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/90 backdrop-blur-xs shadow-xs flex items-center justify-center text-[#1F1610] hover:text-red-500 transition-all cursor-pointer"
                       >
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <span className="w-3.5 h-3.5 border border-emerald-500 p-0.5 rounded flex items-center justify-center shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 block" />
+                        <span
+                          className={`material-symbols-outlined text-[16px] ${
+                            isFav ? 'text-red-500 fill-current' : 'text-[#7A7067]'
+                          }`}
+                          style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
+                        >
+                          favorite
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Info */}
+                    <div
+                      onClick={() => setDetailItem(dish)}
+                      className="pt-2 flex-1 cursor-pointer"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 border border-emerald-600 p-0.5 rounded flex items-center justify-center shrink-0">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 block" />
+                        </span>
+                        {dish.isBestSeller && (
+                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                            Bestseller
                           </span>
-                          {dish.isBestSeller && (
-                            <span className="text-[10px] font-bold text-amber-400 bg-amber-500/15 px-1.5 py-0.2 rounded">
-                              Bestseller
-                            </span>
-                          )}
-                        </div>
-
-                        <h3 className="font-sans font-bold text-base text-on-surface tracking-tight leading-snug">
-                          {dish.name}
-                        </h3>
-
-                        <div className="font-sans font-bold text-base text-primary mt-1">
-                          ₹{dish.price}
-                        </div>
-
-                        <p className="text-xs text-on-surface-variant line-clamp-2 mt-1 leading-relaxed">
-                          {dish.description}
-                        </p>
+                        )}
                       </div>
 
-                      {/* Right: Square Photo with Overlapping + Add CTA & Heart */}
-                      <div className="relative shrink-0 flex flex-col items-center pb-2.5">
-                        <div
-                          onClick={() => setDetailItem(dish)}
-                          className="w-28 h-24 rounded-2xl overflow-hidden bg-surface-container border border-outline-variant/15 cursor-pointer"
-                        >
-                          <CafeImage
-                            src={dish.imageUrl}
-                            alt={dish.name}
-                            className="w-full h-full object-cover"
-                            fallbackIcon="restaurant"
-                          />
-                        </div>
+                      <h3 className="font-bold text-xs sm:text-sm text-[#1F1610] tracking-tight leading-snug mt-1 line-clamp-1">
+                        {dish.name}
+                      </h3>
 
-                        {/* Heart Favorite Button */}
+                      <p className="text-[10px] sm:text-[11px] text-[#7A7067] line-clamp-1 mt-0.5 leading-tight">
+                        {dish.description}
+                      </p>
+                    </div>
+
+                    {/* Bottom Row: Price & Quantity */}
+                    <div className="mt-2.5 pt-2 border-t border-[#F5EFE8] flex items-center justify-between gap-1">
+                      <span className="font-bold text-xs sm:text-sm text-[#1F1610]">
+                        ₹{dish.price}
+                      </span>
+
+                      {quantityInCart === 0 ? (
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            toggleFavorite(dish.id);
+                            onAddToCart(dish, 1);
                           }}
-                          aria-label="Favorite"
-                          className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-surface-container-high/90 shadow-sm flex items-center justify-center text-on-surface hover:text-red-500 transition-all cursor-pointer"
+                          className="px-3 py-1 rounded-xl bg-[#382319] hover:bg-[#2B1B13] text-white font-bold text-xs flex items-center gap-1 shadow-xs transition-all active:scale-95 cursor-pointer whitespace-nowrap"
                         >
-                          <span
-                            className={`material-symbols-outlined text-[16px] ${
-                              isFav ? 'text-red-500 fill-current' : 'text-on-surface'
-                            }`}
-                            style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
-                          >
-                            favorite
-                          </span>
+                          <span className="material-symbols-outlined text-[14px]">add</span>
+                          <span>Add</span>
                         </button>
-
-                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
-                          {quantityInCart === 0 ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onAddToCart(dish, 1);
-                              }}
-                              className="px-3.5 py-1 rounded-xl bg-primary hover:brightness-110 text-on-primary font-bold text-xs flex items-center gap-1 shadow-sm transition-all active:scale-95 cursor-pointer whitespace-nowrap"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">add</span>
-                              <span>Add</span>
-                            </button>
-                          ) : (
-                            <div className="flex items-center gap-2 bg-primary text-on-primary px-2 py-0.5 rounded-xl shadow-md text-xs font-bold">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onUpdateQty(dish.id, -1);
-                                }}
-                                className="w-5 h-5 flex items-center justify-center text-on-primary cursor-pointer"
-                                aria-label={`Decrease ${dish.name} quantity`}
-                              >
-                                <span className="material-symbols-outlined text-[14px]">remove</span>
-                              </button>
-                              <span className="tabular-nums min-w-[12px] text-center">
-                                {quantityInCart}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onUpdateQty(dish.id, 1);
-                                }}
-                                className="w-5 h-5 flex items-center justify-center text-on-primary cursor-pointer"
-                                aria-label={`Increase ${dish.name} quantity`}
-                              >
-                                <span className="material-symbols-outlined text-[14px]">add</span>
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* DESKTOP/TABLET 3-COLUMN GRID (>= 640px) */}
-              <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                {visibleDishes.map((dish) => {
-                  const isFav = favorites.has(dish.id);
-                  const quantityInCart = getQuantityInCart(dish.id);
-                  return (
-                    <div
-                      key={`desktop-home-${dish.id}`}
-                      className="liquid-glass-card rounded-2xl overflow-hidden shadow-lg transition-all duration-300 flex flex-col group"
-                    >
-                      {/* Left Dish Photo */}
-                      <div
-                        onClick={() => setDetailItem(dish)}
-                        className="relative w-full h-44 sm:h-48 overflow-hidden bg-surface-container cursor-pointer"
-                      >
-                        <CafeImage
-                          src={dish.imageUrl}
-                          alt={dish.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          fallbackIcon="restaurant"
-                        />
-
-                        {/* Floating Heart Button */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFavorite(dish.id);
-                          }}
-                          aria-label="Favorite"
-                          className="absolute top-3 right-3 w-8 h-8 rounded-full bg-surface-container-high/90 shadow-md flex items-center justify-center text-on-surface hover:text-red-500 hover:scale-110 transition-all cursor-pointer"
-                        >
-                          <span
-                            className={`material-symbols-outlined text-[18px] transition-colors ${
-                              isFav ? 'text-red-500 fill-current' : 'text-on-surface'
-                            }`}
-                            style={{ fontVariationSettings: isFav ? "'FILL' 1" : "'FILL' 0" }}
+                      ) : (
+                        <div className="flex items-center gap-1.5 bg-[#382319] text-white px-2 py-0.5 rounded-xl shadow-xs text-xs font-bold">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateQty(dish.id, -1);
+                            }}
+                            className="w-5 h-5 flex items-center justify-center text-white cursor-pointer hover:bg-white/20 rounded"
+                            aria-label={`Decrease ${dish.name} quantity`}
                           >
-                            favorite
+                            <span className="material-symbols-outlined text-[13px]">remove</span>
+                          </button>
+                          <span className="tabular-nums min-w-[12px] text-center text-xs">
+                            {quantityInCart}
                           </span>
-                        </button>
-                      </div>
-
-                      {/* Middle Info */}
-                      <div className="p-4 flex flex-col flex-1 justify-between">
-                        <div
-                          onClick={() => setDetailItem(dish)}
-                          className="cursor-pointer space-y-0.5"
-                        >
-                          <h3 className="font-sans font-bold text-base sm:text-lg text-on-surface tracking-tight group-hover:text-primary transition-colors">
-                            {dish.name}
-                          </h3>
-                          <p className="text-xs text-on-surface-variant line-clamp-1 leading-relaxed">
-                            {dish.description}
-                          </p>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateQty(dish.id, 1);
+                            }}
+                            className="w-5 h-5 flex items-center justify-center text-white cursor-pointer hover:bg-white/20 rounded"
+                            aria-label={`Increase ${dish.name} quantity`}
+                          >
+                            <span className="material-symbols-outlined text-[13px]">add</span>
+                          </button>
                         </div>
-
-                        {/* Bottom Row */}
-                        <div className="mt-4 flex items-center justify-between pt-1">
-                          <span className="font-sans font-bold text-lg sm:text-xl text-primary">
-                            ₹{dish.price}
-                          </span>
-
-                          {quantityInCart === 0 ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onAddToCart(dish, 1);
-                              }}
-                              className="px-4 py-1.5 rounded-xl bg-primary hover:brightness-110 text-on-primary font-semibold text-xs sm:text-sm flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">add</span>
-                              <span>Add</span>
-                            </button>
-                          ) : (
-                            <div className="flex items-center gap-2.5 bg-primary text-on-primary px-2.5 py-1 rounded-xl shadow-xs">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onUpdateQty(dish.id, -1);
-                                }}
-                                className="w-5 h-5 flex items-center justify-center rounded-lg hover:bg-black/20 text-on-primary font-bold cursor-pointer"
-                                aria-label={`Decrease ${dish.name} quantity`}
-                              >
-                                <span className="material-symbols-outlined text-[14px]">remove</span>
-                              </button>
-                              <span className="text-xs sm:text-sm font-bold min-w-[14px] text-center tabular-nums">
-                                {quantityInCart}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onUpdateQty(dish.id, 1);
-                                }}
-                                className="w-5 h-5 flex items-center justify-center rounded-lg hover:bg-black/20 text-on-primary font-bold cursor-pointer"
-                                aria-label={`Increase ${dish.name} quantity`}
-                              >
-                                <span className="material-symbols-outlined text-[14px]">add</span>
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-            </>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>

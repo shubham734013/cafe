@@ -148,9 +148,9 @@ const initialUrl = getInitialFromUrl();
 export const useCafeStore = create<CafeClientState>((set) => ({
   activeScreen: initialUrl.screen,
   workspaceMode: initialUrl.mode,
-  serviceMode: 'dine-in',
+  serviceMode: 'delivery',
   selectedTable: initialUrl.table || 'T1',
-  menuCategory: 'Beverages',
+  menuCategory: 'All',
   customerCart: getInitialCustomerCart(),
   posCart: [],
   couponCode: '',

@@ -26,10 +26,10 @@ interface AppShellProps {
 
 const CUSTOMER_NAV: { id: ScreenId; label: string; icon: string }[] = [
   { id: 'home', label: 'Home', icon: 'home' },
+  { id: 'menu', label: 'Menu', icon: 'restaurant_menu' },
   { id: 'tracking', label: 'Orders', icon: 'receipt_long' },
-  { id: 'rewards', label: 'Beans & Offers', icon: 'local_offer' },
-  { id: 'cart', label: 'Cart', icon: 'shopping_bag' },
-  { id: 'profile', label: 'Account', icon: 'person' },
+  { id: 'rewards', label: 'Offers', icon: 'local_offer' },
+  { id: 'profile', label: 'Profile', icon: 'person' },
 ];
 
 const STAFF_NAV_MOBILE: { id: StaffScreenId; label: string; icon: string }[] = [
@@ -109,9 +109,10 @@ export const AppShell: React.FC<AppShellProps> = ({
   const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
   const [isLightTheme, setIsLightTheme] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('cafe_customer_theme') === 'light';
+      const saved = localStorage.getItem('cafe_customer_theme');
+      if (saved) return saved === 'light';
     }
-    return false;
+    return true;
   });
 
   const activeRole = authSession?.authenticated ? authSession.session?.role : null;
@@ -203,22 +204,22 @@ export const AppShell: React.FC<AppShellProps> = ({
           {/* Brand */}
           {!isStaffWorkspace ? (
             <div className="flex flex-col items-center text-center pt-2 px-1">
-              <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-sm mb-2.5 ${
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-xs mb-2 ${
                 isLightTheme
-                  ? 'bg-[#244130] text-white'
+                  ? 'bg-[#382319] text-white'
                   : 'bg-primary/20 text-primary border border-primary/30'
               }`}>
-                <span className="material-symbols-outlined text-[28px]">local_cafe</span>
+                <span className="material-symbols-outlined text-[24px]">local_cafe</span>
               </div>
-              <h2 className={`font-sans font-bold text-base leading-tight tracking-tight ${
-                isLightTheme ? 'text-[#231B15]' : 'text-on-surface'
+              <h2 className={`font-serif font-bold text-base leading-tight tracking-tight ${
+                isLightTheme ? 'text-[#1F1610]' : 'text-on-surface'
               }`}>
-                Seth Sawariya
+                The Sawariya Cafe
               </h2>
-              <span className={`font-sans font-bold text-base leading-tight ${
-                isLightTheme ? 'text-[#231B15]' : 'text-on-surface'
+              <span className={`text-[11px] font-medium leading-tight ${
+                isLightTheme ? 'text-[#7A7067]' : 'text-on-surface-variant'
               }`}>
-                Cafe
+                Sanganer, Jaipur
               </span>
             </div>
           ) : (
@@ -234,8 +235,8 @@ export const AppShell: React.FC<AppShellProps> = ({
 
           {!isStaffWorkspace && (
             <div className="space-y-1">
-              <div className={`w-full border-t my-3 ${isLightTheme ? 'border-[#E3DBD2]' : 'border-outline-variant/15'}`} />
-              {CUSTOMER_NAV.filter((item) => item.id !== 'cart').map((item) => {
+              <div className={`w-full border-t my-3 ${isLightTheme ? 'border-[#EAE2D7]' : 'border-outline-variant/15'}`} />
+              {CUSTOMER_NAV.map((item) => {
                 const active = activeScreen === item.id;
                 return (
                   <button
@@ -245,10 +246,10 @@ export const AppShell: React.FC<AppShellProps> = ({
                     className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-sm transition-all cursor-pointer ${
                       active
                         ? isLightTheme
-                          ? 'bg-[#D5E2D0] text-[#1B3625] font-bold shadow-xs'
+                          ? 'bg-[#382319] text-white font-bold shadow-xs'
                           : 'bg-primary text-on-primary font-bold shadow-md'
                         : isLightTheme
-                          ? 'text-[#4D453D] hover:bg-[#EAE2D8] hover:text-[#251E18] font-medium'
+                          ? 'text-[#7A7067] hover:bg-[#F5EFE8] hover:text-[#1F1610] font-medium'
                           : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium'
                     }`}
                   >
@@ -260,13 +261,13 @@ export const AppShell: React.FC<AppShellProps> = ({
                 );
               })}
 
-              <div className={`pt-4 mt-4 border-t ${isLightTheme ? 'border-[#E3DBD2]' : 'border-outline-variant/15'}`}>
+              <div className={`pt-4 mt-4 border-t ${isLightTheme ? 'border-[#EAE2D7]' : 'border-outline-variant/15'}`}>
                 <button
                   type="button"
                   onClick={() => onNavigate('admin-dashboard', 'staff')}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors cursor-pointer ${
                     isLightTheme
-                      ? 'text-[#3B342C] hover:bg-[#EAE2D8] hover:text-[#1B3625]'
+                      ? 'text-[#7A7067] hover:bg-[#F5EFE8] hover:text-[#1F1610]'
                       : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
                   }`}
                 >
@@ -437,40 +438,88 @@ export const AppShell: React.FC<AppShellProps> = ({
               ? 'bg-surface/85 backdrop-blur-xl border-b border-outline-variant/15'
               : 'bg-surface-container-lowest/65 backdrop-blur-2xl border-b border-white/[0.08] shadow-[0_4px_30px_rgba(0,0,0,0.35)]'
           } ${
-            !isStaffWorkspace ? 'md:hidden' : ''
+            !isStaffWorkspace ? (activeScreen === 'home' ? 'md:hidden' : 'hidden') : ''
           }`}
         >
           <div className="h-14 md:h-16 px-4 max-w-7xl mx-auto flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
               {isStaffWorkspace ? (
-                <div className="w-9 h-9 rounded-xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-primary shrink-0 md:hidden shadow-sm">
-                  <span className="material-symbols-outlined text-[20px]">local_cafe</span>
-                </div>
+                <>
+                  <div className="w-9 h-9 rounded-xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-primary shrink-0 md:hidden shadow-sm">
+                    <span className="material-symbols-outlined text-[20px]">local_cafe</span>
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-sm sm:text-base font-bold text-primary tracking-tight truncate">
+                        {cafeName}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-on-surface-variant truncate">
+                      {SCREEN_TITLES[activeScreen]}
+                    </span>
+                  </div>
+                </>
               ) : (
-                <div className="w-8 h-8 shrink-0 md:hidden">
-                  <CafeBrandEmblem className="w-full h-full" />
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                    isLightTheme ? 'bg-[#FAF7F2] border border-[#EAE2D7] text-[#382319]' : 'bg-primary/20 text-primary'
+                  }`}>
+                    <span className="material-symbols-outlined text-[18px]">location_on</span>
+                  </div>
+                  <div className="flex flex-col min-w-0 text-left">
+                    <div className="flex items-center gap-0.5 min-w-0">
+                      <span className={`text-xs sm:text-sm font-bold tracking-tight truncate ${
+                        isLightTheme ? 'text-[#1F1610]' : 'text-on-surface'
+                      }`}>
+                        The Sawariya Cafe
+                      </span>
+                      <span className={`material-symbols-outlined text-[15px] ${
+                        isLightTheme ? 'text-[#7A7067]' : 'text-on-surface-variant'
+                      }`}>
+                        expand_more
+                      </span>
+                    </div>
+                    <span className={`text-[10px] truncate font-medium ${
+                      isLightTheme ? 'text-[#7A7067]' : 'text-on-surface-variant'
+                    }`}>
+                      Sanganer, Jaipur
+                    </span>
+                  </div>
                 </div>
               )}
-
-              <div className="flex flex-col min-w-0">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-sm sm:text-base font-bold text-primary tracking-tight truncate">
-                    {cafeName}
-                  </span>
-                </div>
-                <span className="text-[11px] text-on-surface-variant truncate">
-                  {SCREEN_TITLES[activeScreen]}
-                </span>
-              </div>
             </div>
 
             {/* Right Header Controls */}
             <div className="flex items-center gap-1.5 shrink-0">
+              {!isStaffWorkspace && activeScreen === 'home' && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate('cart', 'customer')}
+                  aria-label="Cart"
+                  className={`relative w-9 h-9 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                    isLightTheme
+                      ? 'bg-white border border-[#EAE2D7] text-[#1F1610] hover:bg-[#F5EFE8] shadow-xs'
+                      : 'bg-surface-container border border-outline-variant/15 text-on-surface hover:bg-surface-container-high'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[19px]">shopping_bag</span>
+                  {cartCount > 0 && (
+                    <span className={`absolute -top-1 -right-1 w-4 h-4 text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow-xs ${
+                      isLightTheme ? 'bg-[#382319]' : 'bg-primary'
+                    }`}>
+                      {cartCount}
+                    </span>
+                  )}
+                </button>
+              )}
+
               <button
                 type="button"
                 aria-label={isLightTheme ? 'Switch to Dark Theme' : 'Switch to Light Theme'}
                 onClick={toggleTheme}
-                className="liquid-glass-pill px-3 py-1.5 rounded-full hover:bg-surface-container-high/80 flex items-center gap-1.5 text-xs font-bold text-on-surface transition-all cursor-pointer shadow-sm active:scale-95"
+                className={`liquid-glass-pill px-3 py-1.5 rounded-full hover:bg-surface-container-high/80 items-center gap-1.5 text-xs font-bold text-on-surface transition-all cursor-pointer shadow-sm active:scale-95 ${
+                  isStaffWorkspace ? 'flex' : 'hidden'
+                }`}
               >
                 <span className="material-symbols-outlined text-[16px] text-amber-400">
                   {isLightTheme ? 'light_mode' : 'dark_mode'}
@@ -496,9 +545,13 @@ export const AppShell: React.FC<AppShellProps> = ({
                   type="button"
                   aria-label="Notifications"
                   onClick={() => setNotifOpen((o) => !o)}
-                  className="w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
+                  className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors cursor-pointer ${
+                    isLightTheme
+                      ? 'bg-white border border-[#EAE2D7] text-[#1F1610] hover:bg-[#F5EFE8]'
+                      : 'text-on-surface-variant hover:text-primary'
+                  }`}
                 >
-                  <span className="material-symbols-outlined text-[21px]">notifications</span>
+                  <span className="material-symbols-outlined text-[20px]">notifications</span>
                 </button>
 
                 {notifOpen && (
@@ -522,18 +575,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                 )}
               </div>}
 
-              {!isStaffWorkspace ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('admin-dashboard', 'staff')}
-                    className="px-2.5 py-1 rounded-full bg-[#FF6422]/15 hover:bg-[#FF6422]/25 text-[#FF6422] border border-[#FF6422]/25 flex items-center gap-1 text-xs font-bold transition-all cursor-pointer shadow-sm"
-                  >
-                    <span className="material-symbols-outlined text-[15px]">shield_person</span>
-                    <span>Admin</span>
-                  </button>
-                </>
-              ) : (
+              {isStaffWorkspace && (
                 <button
                   type="button"
                   onClick={() => onNavigate('home', 'customer')}
@@ -544,8 +586,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                 </button>
               )}
 
-              {(!isKitchenRoute &&
-                (!isStaffWorkspace || (activeRole && canStaffRoleAccessScreen(activeRole, 'staff-roles')))) && <button
+              {(!isKitchenRoute && isStaffWorkspace && activeRole && canStaffRoleAccessScreen(activeRole, 'staff-roles')) && <button
                 type="button"
                 aria-label={isStaffWorkspace ? 'Open Staff Permissions' : 'Open Personal Profile'}
                 onClick={() => {
@@ -580,7 +621,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         <main
           className={`flex-1 w-full max-w-7xl mx-auto px-4 min-w-0 ${
             !isStaffWorkspace
-              ? 'pt-4 md:pt-8 pb-24 md:pb-12'
+              ? `${activeScreen === 'home' ? 'pt-16' : 'pt-4'} md:pt-8 pb-24 md:pb-12`
               : 'pt-[4.5rem] md:pt-20 pb-24 md:pb-10'
           }`}
         >
@@ -606,11 +647,16 @@ export const AppShell: React.FC<AppShellProps> = ({
               )}
             </div>
           )}
-          {children}
+          <div
+            key={`${workspaceMode}-${activeScreen}`}
+            className={!isStaffWorkspace ? 'customer-screen-enter' : undefined}
+          >
+            {children}
+          </div>
         </main>
 
         {/* Mobile Bottom Tab Bar */}
-        {(!isStaffWorkspace || isStaff) && (
+        {((!isStaffWorkspace && activeScreen === 'home') || isStaff) && (
           <nav className={`md:hidden fixed bottom-0 left-0 right-0 z-40 pb-safe transition-all ${
             isLightTheme
               ? 'bg-[#F4EFEA]/95 border-t border-[#E5DDD2]'
@@ -665,32 +711,39 @@ export const AppShell: React.FC<AppShellProps> = ({
               </button>}
             </div>
           ) : (
-            <div className="flex items-center justify-around h-16 px-2">
-              {CUSTOMER_NAV.filter((tab) => tab.id !== 'cart').map((tab) => {
+            <div className={`flex items-center justify-around h-16 px-1 transition-all ${
+              isLightTheme ? 'bg-white border-t border-[#EAE2D7] shadow-[0_-4px_20px_rgba(56,35,25,0.06)]' : ''
+            }`}>
+              {CUSTOMER_NAV.map((tab) => {
                 const active = activeScreen === tab.id;
                 return (
                   <button
                     key={tab.id}
                     type="button"
                     onClick={() => onNavigate(tab.id, 'customer')}
-                    className={`flex flex-col items-center justify-center min-w-[54px] py-1 transition-all cursor-pointer ${
+                    className={`flex flex-col items-center justify-center min-w-[56px] py-1 transition-all cursor-pointer ${
                       active
-                        ? isLightTheme ? 'text-[#1B3625] font-bold' : 'text-primary font-bold'
-                        : isLightTheme ? 'text-[#6C6359] font-medium' : 'text-on-surface-variant font-medium'
+                        ? isLightTheme
+                          ? 'text-[#382319] font-bold'
+                          : 'text-primary font-bold'
+                        : isLightTheme
+                          ? 'text-[#8C7E74] font-medium hover:text-[#382319]'
+                          : 'text-on-surface-variant font-medium'
                     }`}
                   >
-                    <div
-                      className={`px-3 py-1 rounded-xl transition-all ${
-                        active
-                          ? isLightTheme ? 'bg-[#D5E2D0]' : 'bg-primary/20 text-primary'
-                          : ''
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[20px]">
+                    <div className="relative flex flex-col items-center">
+                      <span className={`material-symbols-outlined text-[22px] transition-transform ${active ? 'scale-110 font-bold' : ''}`}>
                         {tab.icon}
                       </span>
+                      {active && (
+                        <span className={`w-1 h-1 rounded-full mt-0.5 ${
+                          isLightTheme ? 'bg-[#382319]' : 'bg-primary'
+                        }`} />
+                      )}
                     </div>
-                    <span className="text-[10px] mt-0.5">{tab.label}</span>
+                    <span className="text-[10px] mt-0.5 tracking-tight font-medium">
+                      {tab.label}
+                    </span>
                   </button>
                 );
               })}

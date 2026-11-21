@@ -15,6 +15,9 @@ import {
 interface CustomerProfileScreenProps {
   onNotify: (message: string) => void;
   onBrowseMenu: () => void;
+  onNavigateOrders?: () => void;
+  onNavigateRewards?: () => void;
+  onNavigateOffers?: () => void;
   onNavigateLogin?: () => void;
   onNavigatePrivacyPolicy?: () => void;
   onNavigateTerms?: () => void;
@@ -59,6 +62,9 @@ function loadProfile(): CustomerProfile {
 export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
   onNotify,
   onBrowseMenu,
+  onNavigateOrders,
+  onNavigateRewards,
+  onNavigateOffers,
   onNavigateLogin,
   onNavigatePrivacyPolicy,
   onNavigateTerms,
@@ -69,6 +75,7 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
   const [savedProfile, setSavedProfile] = useState<CustomerProfile>(loadProfile);
   const [authSession, setAuthSession] = useState(getLocalCustomerSession);
   const [saving, setSaving] = useState(false);
+  const [view, setView] = useState<'menu' | 'edit-info'>('menu');
   const [errors, setErrors] = useState<{ email?: string; phone?: string }>({});
   const [phoneOtp, setPhoneOtp] = useState('');
   const [phoneOtpSent, setPhoneOtpSent] = useState(false);
@@ -156,11 +163,168 @@ export const CustomerProfileScreen: React.FC<CustomerProfileScreenProps> = ({
     }
   };
 
+  const handleLogOut = async () => {
+    try {
+      if (authSession?.isLocalTestAccount) {
+        clearLocalCustomerSession();
+      } else {
+        await logoutCustomer();
+      }
+      onNotify('Logged out from account');
+    } catch (error) {
+      setPhoneVerificationError(
+        error instanceof Error ? error.message : 'Could not complete sign out.'
+      );
+    } finally {
+      setAuthSession(null);
+      onSessionChange?.(null);
+    }
+  };
+
+  const displayName = profile.name || authSession?.name || 'Shubham Vaishnav';
+  const displayPhone = profile.phone || authSession?.phone || '+91 98765 43210';
+
+  if (view === 'menu') {
+    return (
+      <div className="mx-auto flex w-full max-w-lg flex-col gap-4 px-3 py-2 pb-28 text-[#1F1610]">
+        {/* Top Header (Panel 14) */}
+        <div className="flex items-center justify-between pb-1">
+          <button
+            type="button"
+            onClick={onBrowseMenu}
+            aria-label="Back"
+            className="w-9 h-9 rounded-full bg-white border border-[#EAE2D7] flex items-center justify-center text-[#1F1610] shadow-xs hover:bg-[#F5EFE8] transition-colors cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+          </button>
+
+          <h1 className="text-base sm:text-lg font-bold text-[#1F1610] tracking-tight font-serif">
+            My Profile
+          </h1>
+
+          <div className="w-9" />
+        </div>
+
+        {/* User Card (Panel 14) */}
+        <div
+          onClick={() => setView('edit-info')}
+          className="p-4 rounded-2xl bg-white border border-[#EAE2D7] shadow-xs flex items-center gap-3.5 cursor-pointer hover:bg-[#FAF7F2] transition-colors"
+        >
+          <div className="w-14 h-14 rounded-full bg-[#382319] text-white flex items-center justify-center text-xl font-bold shrink-0 shadow-xs">
+            {initials || <span className="material-symbols-outlined text-[28px]">person</span>}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="font-bold text-base text-[#1F1610] tracking-tight truncate">
+              {displayName}
+            </h2>
+            <p className="text-xs text-[#7A7067] mt-0.5 truncate">
+              {displayPhone}
+            </p>
+          </div>
+          <span className="material-symbols-outlined text-[18px] text-[#8C7E74]">
+            chevron_right
+          </span>
+        </div>
+
+        {/* Grouped Menu List (Panel 14) */}
+        <div className="rounded-2xl bg-white border border-[#EAE2D7] shadow-xs divide-y divide-[#F5EFE8] overflow-hidden">
+          {[
+            { label: 'My Orders', icon: 'receipt_long', action: onNavigateOrders ?? onBrowseMenu },
+            { label: 'Addresses', icon: 'location_on', action: () => setView('edit-info') },
+            {
+              label: 'Payment Methods',
+              icon: 'credit_card',
+              action: () => onNotify('UPI and Cash on Counter active'),
+            },
+            { label: 'My Rewards', icon: 'stars', action: onNavigateRewards ?? onBrowseMenu },
+            { label: 'Offers & Coupons', icon: 'local_offer', action: onNavigateOffers ?? onBrowseMenu },
+            {
+              label: 'Notifications',
+              icon: 'notifications',
+              action: () => onNotify('Order and table notifications enabled'),
+            },
+            {
+              label: 'Help & Support',
+              icon: 'help',
+              action: () => onNotify('Support: support@sawariyacafe.com • +91 98765 43210'),
+            },
+            { label: 'Settings', icon: 'settings', action: () => setView('edit-info') },
+          ].map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              onClick={item.action}
+              className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-[#FAF7F2] transition-colors cursor-pointer group"
+            >
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-[20px] text-[#7A7067] group-hover:text-[#382319] transition-colors">
+                  {item.icon}
+                </span>
+                <span className="text-xs sm:text-sm font-semibold text-[#1F1610]">
+                  {item.label}
+                </span>
+              </div>
+              <span className="material-symbols-outlined text-[18px] text-[#8C7E74] group-hover:text-[#1F1610] group-hover:translate-x-0.5 transition-all">
+                chevron_right
+              </span>
+            </button>
+          ))}
+
+          {/* Log Out Button */}
+          <button
+            type="button"
+            onClick={handleLogOut}
+            className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-rose-50 transition-colors cursor-pointer text-red-600"
+          >
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-[20px] text-red-600">logout</span>
+              <span className="text-xs sm:text-sm font-bold text-red-600">Log Out</span>
+            </div>
+            <span className="material-symbols-outlined text-[18px] text-red-400">
+              chevron_right
+            </span>
+          </button>
+        </div>
+
+        {/* Legal links */}
+        <div className="flex items-center justify-center gap-4 pt-2 text-[11px] text-[#8C7E74]">
+          {onNavigatePrivacyPolicy && (
+            <button
+              type="button"
+              onClick={onNavigatePrivacyPolicy}
+              className="hover:underline cursor-pointer"
+            >
+              Privacy Policy
+            </button>
+          )}
+          <span>•</span>
+          {onNavigateTerms && (
+            <button
+              type="button"
+              onClick={onNavigateTerms}
+              className="hover:underline cursor-pointer"
+            >
+              Terms &amp; Conditions
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col w-full pb-8 gap-4">
       <div className="flex items-center justify-between pt-1">
+        <button
+          type="button"
+          onClick={() => setView('menu')}
+          aria-label="Back"
+          className="w-9 h-9 rounded-full bg-white border border-[#EAE2D7] flex items-center justify-center text-[#1F1610] shadow-xs hover:bg-[#F5EFE8] transition-colors cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+        </button>
         <div>
-          <h1 className="text-xl font-bold text-on-surface tracking-tight">Personal Profile</h1>
+          <h1 className="text-lg font-bold text-on-surface tracking-tight">Edit Profile</h1>
           <p className="text-xs text-on-surface-variant mt-0.5">Manage your customer details</p>
         </div>
         <button
