@@ -245,10 +245,16 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
                               ? `Dine-In · ${order.tableNumber}`
                               : 'Dine-In'
                             : isDelivery
-                              ? `Delivery · ${order.deliveryPartner ?? 'Direct'}`
+                              ? `Delivery · ${order.deliveryPartner ?? 'Direct'}${order.deliveryOrderId ? ` (#${order.deliveryOrderId})` : ''}`
                               : 'Takeaway'}
                         </span>
                       </div>
+                      {order.riderNote && (
+                        <div className="mt-1 flex items-center gap-1 text-[11px] text-on-surface-variant font-medium">
+                          <span className="material-symbols-outlined text-[13px] text-primary">two_wheeler</span>
+                          <span>{order.riderNote}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 

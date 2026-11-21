@@ -16,6 +16,12 @@ const envSchema = z.object({
   BREVO_API_KEY: z.string().optional(),
   CASHFREE_APP_ID: z.string().optional(),
   CASHFREE_SECRET_KEY: z.string().optional(),
+  ZOMATO_PARTNER_API_KEY: z.string().optional(),
+  ZOMATO_WEBHOOK_SECRET: z.string().optional(),
+  ZOMATO_RES_ID: z.string().optional(),
+  SWIGGY_PARTNER_API_KEY: z.string().optional(),
+  SWIGGY_WEBHOOK_SECRET: z.string().optional(),
+  SWIGGY_RESTAURANT_ID: z.string().optional(),
 });
 
 export type ValidatedEnv = z.infer<typeof envSchema>;

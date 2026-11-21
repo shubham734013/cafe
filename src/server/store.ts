@@ -1747,6 +1747,8 @@ export class CafeStore {
         input.serviceMode === 'delivery'
           ? input.deliveryPartner || 'Direct Delivery'
           : undefined,
+      deliveryOrderId: input.deliveryOrderId || undefined,
+      riderNote: input.riderNote || undefined,
       items: canonicalItems,
       subtotal: totals.subtotal,
       discount: totals.discount,
@@ -1755,8 +1757,10 @@ export class CafeStore {
       tax: totals.tax,
       total: totals.total,
       paymentMode,
-      paymentStatus: input.isPosTerminal ? 'paid' : (isPayOnCounter ? 'unpaid' : 'pending'),
-      paymentChannelLabel: isPayOnCounter ? 'Pay on Counter' : (input.isPosTerminal ? 'POS Terminal' : 'UPI Online'),
+      paymentStatus: input.paymentStatus || (input.isPosTerminal ? 'paid' : (isPayOnCounter ? 'unpaid' : 'pending')),
+      paymentChannelLabel: input.deliveryPartner
+        ? `${input.deliveryPartner} Online`
+        : (isPayOnCounter ? 'Pay on Counter' : (input.isPosTerminal ? 'POS Terminal' : 'UPI Online')),
       customerId: input.customerId,
       status: 'placed',
       createdAtLabel: 'Just now',

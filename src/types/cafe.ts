@@ -148,6 +148,7 @@ export interface CafeOrder {
   serviceMode: ServiceMode;
   tableNumber?: string;
   deliveryPartner?: string;
+  deliveryOrderId?: string;
   riderNote?: string;
   items: CartItem[];
   subtotal: number;
