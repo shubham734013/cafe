@@ -33,19 +33,6 @@ export const createOrderSchema = z.object({
       (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
       z.string().trim().min(1).max(60).optional()
     ),
-  deliveryOrderId: z
-    .preprocess(
-      (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
-      z.string().trim().min(1).max(100).optional()
-    ),
-  riderNote: z
-    .preprocess(
-      (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
-      z.string().trim().max(300).optional()
-    ),
-  paymentStatus: z
-    .enum(['unpaid', 'pending', 'observed', 'paid', 'manual_review', 'failed', 'expired', 'cancelled', 'refunded'])
-    .optional(),
   items: z
     .array(cartItemSchema)
     .min(1, 'Order must contain at least one item')

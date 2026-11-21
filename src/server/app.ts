@@ -87,15 +87,12 @@ import {
   type UpiGatewayOrder,
 } from './upiGateway';
 import { CashfreeGateway } from './cashfreeGateway';
-import { ZomatoDirectClient, SwiggyDirectClient } from './directAggregators';
 
 export interface CafeServerBundle {
   app: Express;
   httpServer: http.Server;
   io: SocketIOServer;
   store: CafeStore;
-  zomatoClient: ZomatoDirectClient;
-  swiggyClient: SwiggyDirectClient;
 }
 
 function parseBody<T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T> {
@@ -147,9 +144,7 @@ export function resolvePaymentGateway(): UpiGatewayClient {
 
 export function createCafeServer(
   store = new CafeStore(),
-  upiGateway: UpiGatewayClient = resolvePaymentGateway(),
-  zomatoClient = new ZomatoDirectClient(),
-  swiggyClient = new SwiggyDirectClient()
+  upiGateway: UpiGatewayClient = resolvePaymentGateway()
 ): CafeServerBundle {
   assertAuthSecretConfigured();
 
@@ -613,201 +608,6 @@ export function createCafeServer(
         res.status(200).json({ received: true });
       } catch {
         res.status(503).json({ error: 'Could not sync order.' });
-      }
-    }
-  );
-
-  // -------------------------------------------------------------
-  // DIRECT ZOMATO FOOD ORDERING PARTNER API WEBHOOKS
-  // -------------------------------------------------------------
-  app.post(
-    '/api/webhooks/zomato/order',
-    express.raw({ type: 'application/json', limit: '64kb' }),
-    async (req, res) => {
-      const signature = req.header('x-zomato-signature');
-      if (!Buffer.isBuffer(req.body)) {
-        res.status(415).json({ error: 'Zomato webhook must use application/json.' });
-        return;
-      }
-
-      if (zomatoClient.isConfigured() || signature) {
-        if (!zomatoClient.verifyWebhookSignature(req.body, signature)) {
-          res.status(401).json({ error: 'Invalid Zomato HMAC signature.' });
-          return;
-        }
-      }
-
-      let payload: any;
-      try {
-        payload = JSON.parse(req.body.toString('utf8'));
-      } catch {
-        res.status(400).json({ error: 'Malformed JSON payload from Zomato.' });
-        return;
-      }
-
-      try {
-        const orderInput = zomatoClient.parseZomatoOrder(payload);
-        const result = await store.createOrder(orderInput);
-        await store.flushToPersistence();
-
-        emitSync('order:created', {
-          order: result.order,
-          rewardPoints: result.rewardPoints,
-        });
-
-        // Instant ACK (<5s SLA) for Zomato Partner System
-        res.status(200).json({
-          status: 'acknowledged',
-          order_id: payload.order_id,
-          cafeos_order_id: result.order.id,
-          prep_time_minutes: 15,
-        });
-      } catch (err: any) {
-        res.status(400).json({
-          status: 'rejected',
-          error: err.message || 'Could not process Zomato order',
-        });
-      }
-    }
-  );
-
-  app.post(
-    '/api/webhooks/zomato/order/cancel',
-    express.raw({ type: 'application/json', limit: '64kb' }),
-    async (req, res) => {
-      const signature = req.header('x-zomato-signature');
-      if (!Buffer.isBuffer(req.body)) {
-        res.status(415).json({ error: 'Zomato webhook must use application/json.' });
-        return;
-      }
-
-      if (zomatoClient.isConfigured() || signature) {
-        if (!zomatoClient.verifyWebhookSignature(req.body, signature)) {
-          res.status(401).json({ error: 'Invalid Zomato HMAC signature.' });
-          return;
-        }
-      }
-
-      let payload: any;
-      try {
-        payload = JSON.parse(req.body.toString('utf8'));
-      } catch {
-        res.status(400).json({ error: 'Malformed JSON payload.' });
-        return;
-      }
-
-      const orderId = payload.order_id;
-      const existing = store.getOrders().find(
-        (o) => o.deliveryOrderId === orderId || o.id === orderId
-      );
-
-      if (existing) {
-        const result = store.updateOrderStatus(existing.id, 'cancelled', 'Zomato Partner', 'admin');
-        await store.flushToPersistence();
-        if (result) {
-          emitSync('order:updated', { order: result.order });
-        }
-        res.status(200).json({ status: 'cancelled', order_id: orderId });
-      } else {
-        res.status(404).json({ error: 'Order not found for cancellation' });
-      }
-    }
-  );
-
-  // -------------------------------------------------------------
-  // DIRECT SWIGGY CONNECT PARTNER API WEBHOOKS
-  // -------------------------------------------------------------
-  app.post(
-    '/api/webhooks/swiggy/order',
-    express.raw({ type: 'application/json', limit: '64kb' }),
-    async (req, res) => {
-      const signature = req.header('x-swiggy-signature');
-      if (!Buffer.isBuffer(req.body)) {
-        res.status(415).json({ error: 'Swiggy webhook must use application/json.' });
-        return;
-      }
-
-      if (swiggyClient.isConfigured() || signature) {
-        if (!swiggyClient.verifyWebhookSignature(req.body, signature)) {
-          res.status(401).json({ error: 'Invalid Swiggy HMAC signature.' });
-          return;
-        }
-      }
-
-      let payload: any;
-      try {
-        payload = JSON.parse(req.body.toString('utf8'));
-      } catch {
-        res.status(400).json({ error: 'Malformed JSON payload from Swiggy.' });
-        return;
-      }
-
-      try {
-        const orderInput = swiggyClient.parseSwiggyOrder(payload);
-        const result = await store.createOrder(orderInput);
-        await store.flushToPersistence();
-
-        emitSync('order:created', {
-          order: result.order,
-          rewardPoints: result.rewardPoints,
-        });
-
-        // Instant ACK (<5s SLA) for Swiggy Partner System
-        res.status(200).json({
-          status: 'SUCCESS',
-          message: 'Order accepted and queued',
-          order_id: payload.order_id,
-          cafeos_order_id: result.order.id,
-          prep_time: 15,
-        });
-      } catch (err: any) {
-        res.status(400).json({
-          status: 'REJECTED',
-          error: err.message || 'Could not process Swiggy order',
-        });
-      }
-    }
-  );
-
-  app.post(
-    '/api/webhooks/swiggy/order/cancel',
-    express.raw({ type: 'application/json', limit: '64kb' }),
-    async (req, res) => {
-      const signature = req.header('x-swiggy-signature');
-      if (!Buffer.isBuffer(req.body)) {
-        res.status(415).json({ error: 'Swiggy webhook must use application/json.' });
-        return;
-      }
-
-      if (swiggyClient.isConfigured() || signature) {
-        if (!swiggyClient.verifyWebhookSignature(req.body, signature)) {
-          res.status(401).json({ error: 'Invalid Swiggy HMAC signature.' });
-          return;
-        }
-      }
-
-      let payload: any;
-      try {
-        payload = JSON.parse(req.body.toString('utf8'));
-      } catch {
-        res.status(400).json({ error: 'Malformed JSON payload.' });
-        return;
-      }
-
-      const orderId = payload.order_id;
-      const existing = store.getOrders().find(
-        (o) => o.deliveryOrderId === orderId || o.id === orderId
-      );
-
-      if (existing) {
-        const result = store.updateOrderStatus(existing.id, 'cancelled', 'Swiggy Partner', 'admin');
-        await store.flushToPersistence();
-        if (result) {
-          emitSync('order:updated', { order: result.order });
-        }
-        res.status(200).json({ status: 'SUCCESS', order_id: orderId });
-      } else {
-        res.status(404).json({ error: 'Order not found for cancellation' });
       }
     }
   );
@@ -1896,13 +1696,6 @@ export function createCafeServer(
 
         const { order, lowStockAlerts } = updateResult;
         emitSync('order:updated', { order });
-        if (order.status === 'ready' && order.deliveryOrderId) {
-          if (order.deliveryPartner === 'Zomato') {
-            void zomatoClient.notifyFoodReady(order.deliveryOrderId);
-          } else if (order.deliveryPartner === 'Swiggy') {
-            void swiggyClient.notifyFoodReady(order.deliveryOrderId);
-          }
-        }
         if (lowStockAlerts.length > 0) {
           emitSync('stock:low', { items: lowStockAlerts });
           emitSync('inventory:updated', { inventory: store.getInventory() });
@@ -1940,13 +1733,6 @@ export function createCafeServer(
 
         const { order, lowStockAlerts } = updateResult;
         emitSync('order:updated', { order });
-        if (order.status === 'ready' && order.deliveryOrderId) {
-          if (order.deliveryPartner === 'Zomato') {
-            void zomatoClient.notifyFoodReady(order.deliveryOrderId);
-          } else if (order.deliveryPartner === 'Swiggy') {
-            void swiggyClient.notifyFoodReady(order.deliveryOrderId);
-          }
-        }
         if (lowStockAlerts.length > 0) {
           emitSync('stock:low', { items: lowStockAlerts });
           emitSync('inventory:updated', { inventory: store.getInventory() });
@@ -1970,13 +1756,6 @@ export function createCafeServer(
           return;
         }
         emitSync('order:updated', { order: updated });
-        if (updated.status === 'ready' && updated.deliveryOrderId) {
-          if (updated.deliveryPartner === 'Zomato') {
-            void zomatoClient.notifyFoodReady(updated.deliveryOrderId);
-          } else if (updated.deliveryPartner === 'Swiggy') {
-            void swiggyClient.notifyFoodReady(updated.deliveryOrderId);
-          }
-        }
         emitSync('inventory:updated', { inventory: store.getInventory() });
         emitSync('activity:updated', {});
         await store.flushToPersistence();
@@ -2078,9 +1857,6 @@ export function createCafeServer(
         }
         await store.flushToPersistence();
         emitSync('menu:availability-toggled', { item });
-        const isItemAvailable = item.isAvailable !== false;
-        void zomatoClient.updateItemAvailability(item.id, isItemAvailable);
-        void swiggyClient.updateItemAvailability(item.id, isItemAvailable);
         res.status(200).json({ ok: true, item });
       } catch (err) {
         next(err);
@@ -2557,5 +2333,5 @@ export function createCafeServer(
     res.status(500).json({ error: message });
   });
 
-  return { app, httpServer, io, store, zomatoClient, swiggyClient };
+  return { app, httpServer, io, store };
 }

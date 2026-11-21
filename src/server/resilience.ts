@@ -114,13 +114,3 @@ export const brevoCircuitBreaker = new CircuitBreaker('BrevoEmail', {
   failureThreshold: 3,
   resetTimeoutMs: 30_000,
 });
-
-export const zomatoCircuitBreaker = new CircuitBreaker('ZomatoPartnerAPI', {
-  failureThreshold: 3,
-  resetTimeoutMs: 30_000,
-});
-
-export const swiggyCircuitBreaker = new CircuitBreaker('SwiggyPartnerAPI', {
-  failureThreshold: 3,
-  resetTimeoutMs: 30_000,
-});

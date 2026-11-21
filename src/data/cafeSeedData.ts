@@ -455,7 +455,7 @@ export const INITIAL_ORDERS: CafeOrder[] = [
     id: 'SSCB424',
     kotNumber: '#424',
     serviceMode: 'delivery',
-    deliveryPartner: 'Swiggy',
+    deliveryPartner: 'Direct Delivery',
     riderNote: 'Rider assigned: Mukesh K. (Arriving 6 mins)',
     items: [
       {

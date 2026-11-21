@@ -1626,7 +1626,7 @@ export class CafeStore {
           httpStatus: 400,
         });
       }
-      const sizeMultiplier = item.size === 'Small' ? 1 : item.size === 'Large' ? 1.25 : 1.1;
+      const sizeMultiplier = item.size === 'Small' ? 0.85 : item.size === 'Large' ? 1.25 : 1.0;
       const effectivePrice = Math.round(catalogItem.price * sizeMultiplier);
       return {
         ...item,
@@ -1747,8 +1747,6 @@ export class CafeStore {
         input.serviceMode === 'delivery'
           ? input.deliveryPartner || 'Direct Delivery'
           : undefined,
-      deliveryOrderId: input.deliveryOrderId || undefined,
-      riderNote: input.riderNote || undefined,
       items: canonicalItems,
       subtotal: totals.subtotal,
       discount: totals.discount,
@@ -1757,10 +1755,8 @@ export class CafeStore {
       tax: totals.tax,
       total: totals.total,
       paymentMode,
-      paymentStatus: input.paymentStatus || (input.isPosTerminal ? 'paid' : (isPayOnCounter ? 'unpaid' : 'pending')),
-      paymentChannelLabel: input.deliveryPartner
-        ? `${input.deliveryPartner} Online`
-        : (isPayOnCounter ? 'Pay on Counter' : (input.isPosTerminal ? 'POS Terminal' : 'UPI Online')),
+      paymentStatus: input.isPosTerminal ? 'paid' : (isPayOnCounter ? 'unpaid' : 'pending'),
+      paymentChannelLabel: isPayOnCounter ? 'Pay on Counter' : (input.isPosTerminal ? 'POS Terminal' : 'UPI Online'),
       customerId: input.customerId,
       status: 'placed',
       createdAtLabel: 'Just now',

@@ -438,25 +438,15 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
                         />
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm font-medium">
-                        {order.serviceMode === 'delivery' && order.deliveryPartner === 'Zomato' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider bg-[#E23744]/20 text-[#E23744] border border-[#E23744]/40">
-                            Zomato {order.deliveryOrderId ? `#${order.deliveryOrderId}` : ''}
-                          </span>
-                        ) : order.serviceMode === 'delivery' && order.deliveryPartner === 'Swiggy' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider bg-[#FC8019]/20 text-[#FC8019] border border-[#FC8019]/40">
-                            Swiggy {order.deliveryOrderId ? `#${order.deliveryOrderId}` : ''}
-                          </span>
-                        ) : (
-                          <span className="text-on-surface">
-                            {order.serviceMode === 'dine-in'
-                              ? order.tableNumber
-                                ? `Table ${order.tableNumber}`
-                                : 'Dine-In'
-                              : order.serviceMode === 'delivery'
-                                ? order.deliveryPartner || 'Delivery'
-                                : 'Takeaway'}
-                          </span>
-                        )}
+                        <span className="text-on-surface">
+                          {order.serviceMode === 'dine-in'
+                            ? order.tableNumber
+                              ? `Table ${order.tableNumber}`
+                              : 'Dine-In'
+                            : order.serviceMode === 'delivery'
+                              ? order.deliveryPartner || 'Delivery'
+                              : 'Takeaway'}
+                        </span>
                         <span aria-hidden="true" className="text-on-surface-variant">·</span>
                         <AnimatePresence mode="wait">
                           <motion.span
@@ -496,12 +486,6 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
                             : 'Paid online'}
                         </span>
                       </div>
-                      {order.riderNote && (
-                        <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-200 font-medium bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">
-                          <span className="material-symbols-outlined text-[14px] text-amber-400">two_wheeler</span>
-                          <span className="truncate">{order.riderNote}</span>
-                        </div>
-                      )}
                     </div>
                     <div className="mx-4 border-t border-outline-variant/70" />
 
