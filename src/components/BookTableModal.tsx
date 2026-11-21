@@ -63,8 +63,8 @@ export const BookTableModal: React.FC<BookTableModalProps> = ({
       setIsBooked(true);
       toast.success(`Table ${tableId} confirmed for ${selectedGuests} at ${selectedTime}.`);
       window.setTimeout(() => {
-      setIsBooked(false);
-      onClose();
+        setIsBooked(false);
+        onClose();
       }, 1200);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not reserve a table.';
@@ -115,11 +115,6 @@ export const BookTableModal: React.FC<BookTableModalProps> = ({
               </span>
             </div>
 
-            {bookingError && (
-              <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-                {bookingError}
-              </p>
-            )}
           </div>
 
           {/* Heading & Subtext */}
@@ -206,6 +201,14 @@ export const BookTableModal: React.FC<BookTableModalProps> = ({
               </span>
             </div>
           </div>
+          {bookingError && (
+            <p
+              role="alert"
+              className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700"
+            >
+              {bookingError}
+            </p>
+          )}
         </div>
 
         {/* Footer Action Button */}

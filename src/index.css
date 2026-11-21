@@ -60,6 +60,22 @@
   --font-label: "Plus Jakarta Sans", sans-serif;
 }
 
+.font-cinzel {
+  font-family: 'Cinzel', 'Playfair Display', Georgia, serif;
+}
+.font-cormorant {
+  font-family: 'Cormorant Garamond', 'Cinzel', Georgia, serif;
+}
+.font-marcellus {
+  font-family: 'Marcellus', 'Cinzel', serif;
+}
+.font-rozha {
+  font-family: 'Rozha One', 'Cinzel', serif;
+}
+.font-hindi {
+  font-family: 'Tiro Devanagari Hindi', 'Noto Serif Devanagari', 'Rozha One', serif;
+}
+
 @layer base {
   * {
     font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
@@ -788,8 +804,28 @@
   animation: customer-screen-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.onboarding-slide {
+  animation: customer-screen-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.onboarding-art-float {
+  animation: onboarding-art-float 3.6s ease-in-out infinite;
+}
+
+@keyframes onboarding-art-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .customer-screen-enter {
+  .customer-screen-enter,
+  .onboarding-slide,
+  .onboarding-art-float {
     animation: none;
   }
 }

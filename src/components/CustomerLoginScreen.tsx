@@ -20,6 +20,7 @@ interface CustomerLoginScreenProps {
   hasCartItems?: boolean;
   onReturnToCart?: () => void;
   onLocalTestSessionChange?: (session: CustomerAuthSession | null) => void;
+  initialTab?: 'register' | 'login';
 }
 
 export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
@@ -29,8 +30,9 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
   hasCartItems = false,
   onReturnToCart,
   onLocalTestSessionChange,
+  initialTab = 'register',
 }) => {
-  const [activeTab, setActiveTab] = useState<'register' | 'login'>('register');
+  const [activeTab, setActiveTab] = useState<'register' | 'login'>(initialTab);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');

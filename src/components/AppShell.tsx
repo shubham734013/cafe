@@ -656,7 +656,11 @@ export const AppShell: React.FC<AppShellProps> = ({
         </main>
 
         {/* Mobile Bottom Tab Bar */}
-        {((!isStaffWorkspace && activeScreen === 'home') || isStaff) && (
+        {((!isStaffWorkspace &&
+          activeScreen !== 'splash' &&
+          activeScreen !== 'privacy-policy' &&
+          activeScreen !== 'terms-and-conditions') ||
+          isStaff) && (
           <nav className={`md:hidden fixed bottom-0 left-0 right-0 z-40 pb-safe transition-all ${
             isLightTheme
               ? 'bg-[#F4EFEA]/95 border-t border-[#E5DDD2]'

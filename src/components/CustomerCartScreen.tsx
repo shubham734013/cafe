@@ -80,12 +80,6 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
       maximumFractionDigits: 2,
     })}`;
 
-  const taxableAmount = Number(
-    Math.max(0, totals.subtotal - totals.discount - totals.tax).toFixed(2)
-  );
-  const cgst = Number((totals.tax / 2).toFixed(2));
-  const sgst = Number((totals.tax - cgst).toFixed(2));
-
   const handleCheckout = async () => {
     if (cart.length === 0 || isSubmitting) return;
     if (!customerSession) {
@@ -304,14 +298,14 @@ export const CustomerCartScreen: React.FC<CustomerCartScreenProps> = ({
             <div className="flex justify-between text-xs text-[#7A7067]">
               <span>Delivery Fee</span>
               <span className="font-semibold text-[#1F1610]">
-                {serviceMode === 'dine-in' ? '₹0 (Dine-in)' : '₹39'}
+                {serviceMode === 'dine-in' ? '₹0 (Dine-in)' : '₹0'}
               </span>
             </div>
 
             <div className="flex justify-between text-xs text-[#7A7067]">
-              <span>Taxes (5%)</span>
+              <span>Taxes (5% included)</span>
               <span className="font-semibold text-[#1F1610]">
-                {formatBillingAmount(totals.tax)}
+                {formatBillingAmount(totals.tax)} included
               </span>
             </div>
 
