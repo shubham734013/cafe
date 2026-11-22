@@ -112,6 +112,9 @@ const ROUTE_DATA_SCREENS = new Set<ScreenId>([
   'tracking',
   'rewards',
   'profile',
+  'login',
+  'privacy-policy',
+  'terms-and-conditions',
   'staff-home',
   'pos-terminal',
   'pos-orders',
@@ -827,7 +830,7 @@ export function createCafeServer(
     // 4. Content Security Policy (Report-Only)
     res.setHeader(
       'Content-Security-Policy-Report-Only',
-      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://sdk.cashfree.com https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' ws: wss: https: https://accounts.google.com https://oauth2.googleapis.com https://play.google.com; frame-src 'self' https://accounts.google.com https://*.google.com; frame-ancestors 'self';"
+      "default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://cdn.tailwindcss.com https://sdk.cashfree.com https://accounts.google.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' ws: wss: https: https://accounts.google.com https://oauth2.googleapis.com https://play.google.com https://*.supabase.co; frame-src 'self' https://accounts.google.com https://*.google.com https://*.supabase.co; frame-ancestors 'self';"
     );
 
     // 5. Cross-Origin Resource Sharing (CORS) & Anti-CSRF Origin Validation
