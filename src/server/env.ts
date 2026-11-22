@@ -16,6 +16,8 @@ const envSchema = z.object({
   BREVO_API_KEY: z.string().optional(),
   CASHFREE_APP_ID: z.string().optional(),
   CASHFREE_SECRET_KEY: z.string().optional(),
+  VITE_GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
 });
 
 export type ValidatedEnv = z.infer<typeof envSchema>;

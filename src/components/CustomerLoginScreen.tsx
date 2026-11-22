@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   registerCustomer,
   loginCustomer,
@@ -10,6 +10,9 @@ import {
   subscribeToSupabaseAuth,
   logoutCustomer,
   isLiveSupabase,
+  isGoogleIdentityConfigured,
+  verifyGoogleIdentityCredential,
+  loadGoogleIdentityScript,
   type CustomerAuthSession,
 } from '../lib/supabaseClient';
 
@@ -42,6 +45,8 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [currentSession, setCurrentSession] = useState<CustomerAuthSession | null>(getLocalCustomerSession);
   const [statusBanner, setStatusBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
+  const googleRenderedRef = useRef(false);
 
   useEffect(() => {
     // Check if user session already exists or returning from Supabase OAuth
@@ -63,6 +68,69 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isGoogleIdentityConfigured) return;
+    let isCancelled = false;
+
+    const renderGoogleButton = () => {
+      if (isCancelled || !window.google?.accounts?.id || !googleButtonRef.current) return;
+      try {
+        window.google.accounts.id.initialize({
+          client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+          callback: ({ credential }) => {
+            if (!credential) {
+              setStatusBanner({ type: 'error', message: 'Google did not return a sign-in credential.' });
+              return;
+            }
+            setIsGoogleLoading(true);
+            setStatusBanner(null);
+            void verifyGoogleIdentityCredential(credential)
+              .then((session) => {
+                setCurrentSession(session);
+                onLocalTestSessionChange?.(session);
+                setStatusBanner({
+                  type: 'success',
+                  message: `Signed in with Google as ${session.name}!`,
+                });
+                onNotify(`Welcome, ${session.name}!`);
+                window.setTimeout(() => onSuccess?.(), 800);
+              })
+              .catch((error: unknown) => {
+                const message =
+                  error instanceof Error ? error.message : 'Google sign-in failed.';
+                setStatusBanner({ type: 'error', message });
+                onNotify(`Google auth error: ${message}`);
+              })
+              .finally(() => setIsGoogleLoading(false));
+          },
+        });
+        googleButtonRef.current.replaceChildren();
+        window.google.accounts.id.renderButton(googleButtonRef.current, {
+          type: 'standard',
+          theme: 'outline',
+          size: 'large',
+          shape: 'pill',
+          text: 'continue_with',
+          width: 340,
+        });
+      } catch (err) {
+        console.warn('Google GSI renderButton exception:', err);
+      }
+    };
+
+    void loadGoogleIdentityScript()
+      .then(() => {
+        if (!isCancelled) renderGoogleButton();
+      })
+      .catch((err) => {
+        console.warn('Could not load Google Identity Services:', err);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [onNotify, onSuccess, onLocalTestSessionChange, activeTab]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,6 +229,7 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
         });
       } else if (result.session) {
         setCurrentSession(result.session);
+        onLocalTestSessionChange?.(result.session);
         setStatusBanner({
           type: 'success',
           message: `Signed in with Google as ${result.session.name}!`,
@@ -171,9 +240,23 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
         }, 800);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Google sign in failed';
-      setStatusBanner({ type: 'error', message: msg });
-      onNotify(`Google auth error: ${msg}`);
+      const rawMsg = err instanceof Error ? err.message : 'Google sign-in failed.';
+      const isOriginMismatch =
+        rawMsg.toLowerCase().includes('origin') ||
+        rawMsg.toLowerCase().includes('client id') ||
+        rawMsg.toLowerCase().includes('not allowed');
+
+      if (isOriginMismatch) {
+        const originUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3002';
+        setStatusBanner({
+          type: 'error',
+          message: `Google Cloud Origin Setup: To enable Google Popup for this URL, add "${originUrl}" under "Authorized JavaScript origins" in Google Cloud Console.`,
+        });
+        onNotify(`Google sign-in: Origin "${originUrl}" must be authorized in Google Cloud Console.`);
+      } else {
+        setStatusBanner({ type: 'error', message: rawMsg });
+        onNotify(`Google auth: ${rawMsg}`);
+      }
     } finally {
       setIsGoogleLoading(false);
     }
@@ -372,39 +455,45 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
           </div>
         )}
 
-        {/* Google One-Click Sign In */}
-        <button
-          type="button"
-          onClick={handleGoogleSignIn}
-          disabled={isGoogleLoading || isLoading}
-          className="w-full h-11 rounded-2xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
-        >
-          {isGoogleLoading ? (
-            <span>Connecting Google...</span>
-          ) : (
-            <>
-              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.9c2.27-2.09 3.64-5.17 3.64-9.15z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.9-3.05c-1.08.72-2.45 1.16-4.03 1.16-3.13 0-5.78-2.11-6.73-4.96H1.21v3.15C3.25 21.4 7.33 24 12 24z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.27 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.61H1.21C.44 8.14 0 9.99 0 12s.44 3.86 1.21 5.39l4.06-3.15z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.25 2.6 1.21 6.61l4.06 3.15c.95-2.85 3.6-4.96 6.73-4.96z"
-                />
-              </svg>
-              <span>Continue with Google</span>
-            </>
+        {/* Google Sign In */}
+        <div className="w-full space-y-2">
+          {isGoogleIdentityConfigured && (
+            <div
+              className="w-full flex justify-center [&>div]:w-full [&>div>div]:mx-auto"
+              ref={googleButtonRef}
+            />
           )}
-        </button>
+
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={isGoogleLoading || isLoading || (!isGoogleIdentityConfigured && !isLiveSupabase)}
+            className="w-full h-11 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50 active:scale-[0.99]"
+          >
+            {isGoogleLoading ? (
+              <span className="flex items-center gap-2">
+                <span className="w-4 h-4 border-2 border-[#4285F4] border-t-transparent rounded-full animate-spin" />
+                <span>Connecting Google...</span>
+              </span>
+            ) : (
+              <>
+                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.9c2.27-2.09 3.64-5.17 3.64-9.15z" />
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.9-3.05c-1.08.72-2.45 1.16-4.03 1.16-3.13 0-5.78-2.11-6.73-4.96H1.21v3.15C3.25 21.4 7.33 24 12 24z" />
+                  <path fill="#FBBC05" d="M5.27 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.61H1.21C.44 8.14 0 9.99 0 12s.44 3.86 1.21 5.39l4.06-3.15z" />
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.25 2.6 1.21 6.61l4.06 3.15c.95-2.85 3.6-4.96 6.73-4.96z" />
+                </svg>
+                <span>Continue with Google</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {!isGoogleIdentityConfigured && !isLiveSupabase && (
+          <p className="text-[10px] text-on-surface-variant text-center">
+            To enable Google Sign-In, add <span className="font-semibold text-on-surface">VITE_GOOGLE_CLIENT_ID</span> or Supabase keys in <span className="font-semibold text-on-surface">.env</span>.
+          </p>
+        )}
 
         <div className="relative flex items-center justify-center">
           <div className="border-t border-outline-variant/30 w-full" />

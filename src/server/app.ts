@@ -822,12 +822,12 @@ export function createCafeServer(
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
 
     // 4. Content Security Policy (Report-Only)
     res.setHeader(
       'Content-Security-Policy-Report-Only',
-      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://sdk.cashfree.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' ws: wss: https:; frame-ancestors 'self';"
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://sdk.cashfree.com https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' ws: wss: https: https://accounts.google.com https://oauth2.googleapis.com https://play.google.com; frame-src 'self' https://accounts.google.com https://*.google.com; frame-ancestors 'self';"
     );
 
     // 5. Cross-Origin Resource Sharing (CORS) & Anti-CSRF Origin Validation
@@ -998,6 +998,120 @@ export function createCafeServer(
       authenticated: Boolean(session),
       session,
     });
+  });
+
+  app.post('/api/customer/google/session', async (req, res, next) => {
+    try {
+      const credential =
+        typeof req.body?.credential === 'string' ? req.body.credential.trim() : '';
+      const accessToken =
+        typeof req.body?.accessToken === 'string' ? req.body.accessToken.trim() : '';
+      const googleClientId = (
+        process.env.VITE_GOOGLE_CLIENT_ID ||
+        process.env.GOOGLE_CLIENT_ID ||
+        ''
+      ).trim();
+
+      if (!googleClientId) {
+        res.status(503).json({ error: 'Google Sign-In is not configured in .env (VITE_GOOGLE_CLIENT_ID).' });
+        return;
+      }
+
+      if (!credential && !accessToken) {
+        // If in development mode and local test session is requested:
+        if (process.env.NODE_ENV !== 'production' && req.body?.demo) {
+          const demoUser = {
+            id: 'google:demo-google-user',
+            name: (typeof req.body?.name === 'string' && req.body.name.trim()) || 'Google Customer',
+            email: (typeof req.body?.email === 'string' && req.body.email.trim()) || 'customer@gmail.com',
+            phone: '',
+            provider: 'google' as const,
+            confirmed: true,
+            phoneVerified: false,
+            avatarUrl: 'https://lh3.googleusercontent.com/a/default-user',
+            createdAt: new Date().toISOString(),
+          };
+          updateCustomerCrmIdentityCookie(req, res, demoUser.id);
+          res.json({ session: demoUser });
+          return;
+        }
+        res.status(400).json({ error: 'Google credential or access token is required.' });
+        return;
+      }
+
+      let payload: {
+        sub?: string;
+        email?: string;
+        name?: string;
+        picture?: string;
+      } | null = null;
+
+      if (credential) {
+        const googleResponse = await fetch(
+          `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`
+        );
+        const tokenPayload = (await googleResponse.json().catch(() => null)) as {
+          sub?: string;
+          email?: string;
+          name?: string;
+          picture?: string;
+          aud?: string;
+          iss?: string;
+          exp?: string;
+          email_verified?: string | boolean;
+        } | null;
+
+        if (
+          googleResponse.ok &&
+          tokenPayload?.sub &&
+          tokenPayload.email &&
+          tokenPayload.aud === googleClientId &&
+          ['accounts.google.com', 'https://accounts.google.com'].includes(tokenPayload.iss || '') &&
+          (!tokenPayload.exp || Number(tokenPayload.exp) * 1000 > Date.now()) &&
+          (tokenPayload.email_verified === true || tokenPayload.email_verified === 'true')
+        ) {
+          payload = tokenPayload;
+        }
+      } else if (accessToken) {
+        // Verify access token via Google userinfo endpoint
+        const googleResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const userinfoPayload = (await googleResponse.json().catch(() => null)) as {
+          sub?: string;
+          email?: string;
+          name?: string;
+          picture?: string;
+          email_verified?: boolean;
+        } | null;
+
+        if (googleResponse.ok && userinfoPayload?.sub && userinfoPayload.email) {
+          payload = userinfoPayload;
+        }
+      }
+
+      if (!payload?.sub || !payload.email) {
+        res.status(401).json({ error: 'Google sign-in credential could not be verified.' });
+        return;
+      }
+
+      updateCustomerCrmIdentityCookie(req, res, `google:${payload.sub}`);
+      res.json({
+        session: {
+          id: `google:${payload.sub}`,
+          name: payload.name || payload.email.split('@')[0] || 'Customer',
+          email: payload.email,
+          phone: '',
+          provider: 'google',
+          confirmed: true,
+          phoneVerified: false,
+          avatarUrl: payload.picture,
+          createdAt: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.post('/api/customer/identity', async (req, res, next) => {

@@ -13,6 +13,78 @@ const envKey = (
   ''
 ).trim();
 
+const googleClientId = (
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_CLIENT_ID) ||
+  (typeof process !== 'undefined' && process.env?.VITE_GOOGLE_CLIENT_ID) ||
+  ''
+).trim();
+
+export const isGoogleIdentityConfigured = Boolean(
+  googleClientId &&
+  googleClientId.endsWith('.apps.googleusercontent.com')
+);
+
+declare global {
+  interface Window {
+    __cafeGoogleIdentityInitialized?: boolean;
+    __cafeGoogleIdentityCallback?: (response: { credential?: string }) => void;
+    google?: {
+      accounts: {
+        id: {
+          initialize: (options: {
+            client_id: string;
+            callback: (response: { credential?: string }) => void;
+            auto_select?: boolean;
+            cancel_on_tap_outside?: boolean;
+          }) => void;
+          renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
+          prompt: (momentListener?: (notification: {
+            isNotDisplayed: () => boolean;
+            isSkippedMoment: () => boolean;
+            isDismissedMoment: () => boolean;
+            getNotDisplayedReason?: () => string;
+            getSkippedReason?: () => string;
+          }) => void) => void;
+          cancel: () => void;
+        };
+        oauth2?: {
+          initTokenClient: (options: {
+            client_id: string;
+            scope: string;
+            callback: (response: { access_token?: string; error?: string; error_description?: string }) => void;
+            error_callback?: (error: { message?: string; type?: string }) => void;
+          }) => {
+            requestAccessToken: (overrideConfig?: { prompt?: string }) => void;
+          };
+        };
+      };
+    };
+  }
+}
+
+export function initializeGoogleIdentity(
+  callback: (response: { credential?: string }) => void
+): void {
+  if (!isGoogleIdentityConfigured || !window.google?.accounts?.id) {
+    throw new Error('Google Identity Services is not loaded.');
+  }
+
+  window.__cafeGoogleIdentityCallback = callback;
+  if (window.__cafeGoogleIdentityInitialized) return;
+
+  window.google.accounts.id.initialize({
+    client_id: googleClientId,
+    callback: (response) => window.__cafeGoogleIdentityCallback?.(response),
+  });
+  window.__cafeGoogleIdentityInitialized = true;
+}
+
+export function clearGoogleIdentityCallback(): void {
+  if (typeof window !== 'undefined') {
+    window.__cafeGoogleIdentityCallback = undefined;
+  }
+}
+
 export const isLiveSupabase = Boolean(
   envUrl &&
   envKey &&
@@ -316,9 +388,148 @@ export async function loginCustomer(params: {
 }
 
 /**
- * Sign in with Google via real Supabase OAuth (redirects to Google)
+ * Preload and initialize Google Identity Services script
+ */
+export function loadGoogleIdentityScript(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve();
+  if (window.google?.accounts) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[data-google-identity-services]');
+    if (existing) {
+      if (window.google?.accounts) {
+        resolve();
+      } else {
+        existing.addEventListener('load', () => resolve(), { once: true });
+        existing.addEventListener('error', () => reject(new Error('Google Identity Services script failed to load.')), { once: true });
+      }
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.dataset.googleIdentityServices = 'true';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Google Identity Services script could not be loaded. Check network or ad-blocker.'));
+    document.head.appendChild(script);
+  });
+}
+
+/**
+ * Verify Google access token returned by OAuth2 token client
+ */
+export async function verifyGoogleIdentityAccessToken(
+  accessToken: string
+): Promise<CustomerAuthSession> {
+  const response = await fetch('/api/customer/google/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accessToken }),
+  });
+  const result = (await response.json().catch(() => ({}))) as {
+    session?: CustomerAuthSession;
+    error?: string;
+  };
+  if (!response.ok || !result.session) {
+    throw new Error(result.error || 'Google access token could not be verified.');
+  }
+
+  saveLocalCustomerSession(result.session);
+  return result.session;
+}
+
+/**
+ * Trigger official Google Sign-In Popup via Google Identity Services
+ */
+export async function signInWithGooglePopup(): Promise<CustomerAuthSession> {
+  if (typeof window === 'undefined') {
+    throw new Error('Google Sign-In is only available in browser environments.');
+  }
+
+  // Ensure Google Identity Services script is loaded
+  if (!window.google?.accounts) {
+    try {
+      await loadGoogleIdentityScript();
+    } catch {
+      // Continue to check if available
+    }
+  }
+
+  // Method 1: OAuth2 Token Client Popup (recommended for SPAs, avoids FedCM / origin iframe issues)
+  if (window.google?.accounts?.oauth2?.initTokenClient) {
+    return new Promise<CustomerAuthSession>((resolve, reject) => {
+      try {
+        const tokenClient = window.google!.accounts.oauth2!.initTokenClient({
+          client_id: googleClientId,
+          scope: 'email profile openid',
+          callback: async (tokenResponse) => {
+            if (tokenResponse.error) {
+              reject(new Error(tokenResponse.error_description || tokenResponse.error));
+              return;
+            }
+            if (!tokenResponse.access_token) {
+              reject(new Error('Google did not return an access token.'));
+              return;
+            }
+            try {
+              const session = await verifyGoogleIdentityAccessToken(tokenResponse.access_token);
+              resolve(session);
+            } catch (err) {
+              reject(err);
+            }
+          },
+          error_callback: (nonOAuthError) => {
+            reject(new Error(nonOAuthError?.message || 'Google Sign-In popup could not be initialized.'));
+          },
+        });
+        tokenClient.requestAccessToken({ prompt: 'select_account' });
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  // Method 2: ID Token One-Tap / Prompt fallback
+  if (window.google?.accounts?.id) {
+    return new Promise<CustomerAuthSession>((resolve, reject) => {
+      window.google!.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: async ({ credential }) => {
+          if (!credential) {
+            reject(new Error('Google did not return a credential.'));
+            return;
+          }
+          try {
+            const session = await verifyGoogleIdentityCredential(credential);
+            resolve(session);
+          } catch (e) {
+            reject(e);
+          }
+        },
+      });
+      window.google!.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          reject(new Error(`Google One Tap prompt was not displayed (${notification.getNotDisplayedReason?.() || 'dismissed'}).`));
+        }
+      });
+    });
+  }
+
+  throw new Error('Google Identity Services library is not loaded. Please refresh the page.');
+}
+
+/**
+ * Sign in with Google via real Supabase OAuth or Google Identity Services
  */
 export async function loginWithGoogle(): Promise<{ session?: CustomerAuthSession; redirecting?: boolean }> {
+  // If in browser and Google Client ID is configured, use official Google Identity Services popup:
+  if (typeof window !== 'undefined' && isGoogleIdentityConfigured) {
+    const session = await signInWithGooglePopup();
+    return { session };
+  }
+
   if (!isLiveSupabase) {
     throw new Error(
       'Supabase Auth is not configured. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file to enable real Google authentication.'
@@ -344,6 +555,30 @@ export async function loginWithGoogle(): Promise<{ session?: CustomerAuthSession
   return { redirecting: true };
 }
 
+export async function verifyGoogleIdentityCredential(
+  credential: string
+): Promise<CustomerAuthSession> {
+  if (!isGoogleIdentityConfigured) {
+    throw new Error('Google Sign-In is not configured.');
+  }
+
+  const response = await fetch('/api/customer/google/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  });
+  const result = await response.json().catch(() => ({})) as {
+    session?: CustomerAuthSession;
+    error?: string;
+  };
+  if (!response.ok || !result.session) {
+    throw new Error(result.error || 'Google sign-in could not be verified.');
+  }
+
+  saveLocalCustomerSession(result.session);
+  return result.session;
+}
+
 /**
  * Synchronize Supabase active session on page boot or OAuth redirect
  */
@@ -351,6 +586,26 @@ export async function syncSupabaseCustomerSession(): Promise<CustomerAuthSession
   if (!isLiveSupabase) return getLocalCustomerSession();
 
   try {
+    if (typeof window !== 'undefined') {
+      const callbackUrl = new URL(window.location.href);
+      const oauthCode = callbackUrl.searchParams.get('code');
+      if (oauthCode) {
+        const { data, error } = await supabase.auth.exchangeCodeForSession(oauthCode);
+        if (error) throw new Error(error.message);
+        if (data.session?.user) {
+          const session = extractCustomerSessionFromUser(
+            data.session.user,
+            (data.session.user.app_metadata?.provider as 'email' | 'google') || 'google'
+          );
+          saveLocalCustomerSession(session);
+          callbackUrl.searchParams.delete('code');
+          callbackUrl.searchParams.delete('state');
+          window.history.replaceState({}, document.title, `${callbackUrl.pathname}${callbackUrl.search}${callbackUrl.hash}`);
+          return session;
+        }
+      }
+    }
+
     const { data, error } = await supabase.auth.getSession();
     if (!error && data.session?.user) {
       const session = extractCustomerSessionFromUser(
