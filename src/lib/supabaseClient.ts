@@ -5,7 +5,10 @@ const envUrl = (
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
   (typeof process !== 'undefined' && (process.env?.VITE_SUPABASE_URL || process.env?.SUPABASE_URL)) ||
   ''
-).trim();
+)
+  .trim()
+  .replace(/\/rest\/v1\/?$/, '')
+  .replace(/\/+$/, '');
 
 const envKey = (
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
@@ -26,27 +29,8 @@ export const isGoogleIdentityConfigured = Boolean(
 
 declare global {
   interface Window {
-    __cafeGoogleIdentityInitialized?: boolean;
-    __cafeGoogleIdentityCallback?: (response: { credential?: string }) => void;
     google?: {
       accounts: {
-        id: {
-          initialize: (options: {
-            client_id: string;
-            callback: (response: { credential?: string }) => void;
-            auto_select?: boolean;
-            cancel_on_tap_outside?: boolean;
-          }) => void;
-          renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
-          prompt: (momentListener?: (notification: {
-            isNotDisplayed: () => boolean;
-            isSkippedMoment: () => boolean;
-            isDismissedMoment: () => boolean;
-            getNotDisplayedReason?: () => string;
-            getSkippedReason?: () => string;
-          }) => void) => void;
-          cancel: () => void;
-        };
         oauth2?: {
           initTokenClient: (options: {
             client_id: string;
@@ -59,29 +43,6 @@ declare global {
         };
       };
     };
-  }
-}
-
-export function initializeGoogleIdentity(
-  callback: (response: { credential?: string }) => void
-): void {
-  if (!isGoogleIdentityConfigured || !window.google?.accounts?.id) {
-    throw new Error('Google Identity Services is not loaded.');
-  }
-
-  window.__cafeGoogleIdentityCallback = callback;
-  if (window.__cafeGoogleIdentityInitialized) return;
-
-  window.google.accounts.id.initialize({
-    client_id: googleClientId,
-    callback: (response) => window.__cafeGoogleIdentityCallback?.(response),
-  });
-  window.__cafeGoogleIdentityInitialized = true;
-}
-
-export function clearGoogleIdentityCallback(): void {
-  if (typeof window !== 'undefined') {
-    window.__cafeGoogleIdentityCallback = undefined;
   }
 }
 
@@ -448,76 +409,41 @@ export async function signInWithGooglePopup(): Promise<CustomerAuthSession> {
     throw new Error('Google Sign-In is only available in browser environments.');
   }
 
-  // Ensure Google Identity Services script is loaded
-  if (!window.google?.accounts) {
+  const oauth2 = window.google?.accounts?.oauth2;
+  if (!oauth2?.initTokenClient) {
+    throw new Error('Google OAuth popup is unavailable. Reload the page and try again.');
+  }
+
+  return new Promise<CustomerAuthSession>((resolve, reject) => {
     try {
-      await loadGoogleIdentityScript();
-    } catch {
-      // Continue to check if available
-    }
-  }
-
-  // Method 1: OAuth2 Token Client Popup (recommended for SPAs, avoids FedCM / origin iframe issues)
-  if (window.google?.accounts?.oauth2?.initTokenClient) {
-    return new Promise<CustomerAuthSession>((resolve, reject) => {
-      try {
-        const tokenClient = window.google!.accounts.oauth2!.initTokenClient({
-          client_id: googleClientId,
-          scope: 'email profile openid',
-          callback: async (tokenResponse) => {
-            if (tokenResponse.error) {
-              reject(new Error(tokenResponse.error_description || tokenResponse.error));
-              return;
-            }
-            if (!tokenResponse.access_token) {
-              reject(new Error('Google did not return an access token.'));
-              return;
-            }
-            try {
-              const session = await verifyGoogleIdentityAccessToken(tokenResponse.access_token);
-              resolve(session);
-            } catch (err) {
-              reject(err);
-            }
-          },
-          error_callback: (nonOAuthError) => {
-            reject(new Error(nonOAuthError?.message || 'Google Sign-In popup could not be initialized.'));
-          },
-        });
-        tokenClient.requestAccessToken({ prompt: 'select_account' });
-      } catch (err) {
-        reject(err);
-      }
-    });
-  }
-
-  // Method 2: ID Token One-Tap / Prompt fallback
-  if (window.google?.accounts?.id) {
-    return new Promise<CustomerAuthSession>((resolve, reject) => {
-      window.google!.accounts.id.initialize({
+      const tokenClient = oauth2.initTokenClient({
         client_id: googleClientId,
-        callback: async ({ credential }) => {
-          if (!credential) {
-            reject(new Error('Google did not return a credential.'));
+        scope: 'email profile openid',
+        callback: async (tokenResponse) => {
+          if (tokenResponse.error) {
+            reject(new Error(tokenResponse.error_description || tokenResponse.error));
+            return;
+          }
+          if (!tokenResponse.access_token) {
+            reject(new Error('Google did not return an access token.'));
             return;
           }
           try {
-            const session = await verifyGoogleIdentityCredential(credential);
+            const session = await verifyGoogleIdentityAccessToken(tokenResponse.access_token);
             resolve(session);
-          } catch (e) {
-            reject(e);
+          } catch (err) {
+            reject(err);
           }
         },
+        error_callback: (nonOAuthError) => {
+          reject(new Error(nonOAuthError?.message || 'Google Sign-In popup could not be initialized.'));
+        },
       });
-      window.google!.accounts.id.prompt((notification) => {
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          reject(new Error(`Google One Tap prompt was not displayed (${notification.getNotDisplayedReason?.() || 'dismissed'}).`));
-        }
-      });
-    });
-  }
-
-  throw new Error('Google Identity Services library is not loaded. Please refresh the page.');
+      tokenClient.requestAccessToken({ prompt: 'select_account' });
+    } catch (err) {
+      reject(err);
+    }
+  });
 }
 
 /**
@@ -553,30 +479,6 @@ export async function loginWithGoogle(): Promise<{ session?: CustomerAuthSession
   }
 
   return { redirecting: true };
-}
-
-export async function verifyGoogleIdentityCredential(
-  credential: string
-): Promise<CustomerAuthSession> {
-  if (!isGoogleIdentityConfigured) {
-    throw new Error('Google Sign-In is not configured.');
-  }
-
-  const response = await fetch('/api/customer/google/session', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ credential }),
-  });
-  const result = await response.json().catch(() => ({})) as {
-    session?: CustomerAuthSession;
-    error?: string;
-  };
-  if (!response.ok || !result.session) {
-    throw new Error(result.error || 'Google sign-in could not be verified.');
-  }
-
-  saveLocalCustomerSession(result.session);
-  return result.session;
 }
 
 /**
