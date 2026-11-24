@@ -443,6 +443,16 @@ export default function App() {
     if (workspaceMode !== 'staff' || activeScreen === 'splash' || isKitchenRoute) return;
     if (isAuthLoading) return;
     if (!authSession.authenticated) {
+      const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const urlPin = params?.get('pin')?.trim();
+      if (urlPin && /^\d{4}$/.test(urlPin)) {
+        void loginPinMutation.mutateAsync(urlPin).catch((err) => {
+          pendingStaffScreenRef.current = activeScreen as StaffScreenId;
+          setPinError(err instanceof Error ? err.message : 'Invalid staff PIN');
+          setPinModalOpen(true);
+        });
+        return;
+      }
       pendingStaffScreenRef.current = activeScreen as StaffScreenId;
       setPinError(null);
       setPinModalOpen(true);
@@ -465,6 +475,8 @@ export default function App() {
     authSession.authenticated,
     authSession.session?.role,
     isAuthLoading,
+    isKitchenRoute,
+    loginPinMutation,
     navigate,
     pinModalOpen,
     workspaceMode,
