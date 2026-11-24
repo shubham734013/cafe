@@ -724,7 +724,7 @@ export class CafeStore {
       customers: clone(INITIAL_CUSTOMERS),
       loyaltyRules: clone(INITIAL_LOYALTY_RULES),
       pointLedger: clone(INITIAL_POINT_LEDGER),
-      campaigns: clone(INITIAL_CAMPAIGNS),
+      campaigns: [],
       staffRoster: clone(INITIAL_STAFF_ROSTER),
       cafeSettings: clone(INITIAL_CAFE_SETTINGS),
       menuItems: clone(MENU_ITEMS),
@@ -1783,7 +1783,7 @@ export class CafeStore {
           fromState: 'cart',
           toState: 'placed',
           action: 'create_order',
-          message: `Insufficient inventory for ingredient "${ing.name}" to prepare this order.`,
+          message: `Insufficient stock: inventory for ingredient "${ing.name}" is too low to prepare this order.`,
           httpStatus: 400,
         });
       }
@@ -2888,6 +2888,27 @@ export class CafeStore {
   public addCustomer(input: z.infer<typeof addCustomerSchema>): CustomerProfile {
     const parts = input.name.trim().split(/\s+/);
     const initials = (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase();
+    const normalizedPhone = normalizePhone(input.phone);
+    const existingIndex = normalizedPhone
+      ? this.state.customers.findIndex((c) => normalizePhone(c.phone) === normalizedPhone)
+      : -1;
+    if (existingIndex !== -1) {
+      const existing = this.state.customers[existingIndex];
+      const updated: CustomerProfile = {
+        ...existing,
+        name: input.name,
+        initials,
+        phone: input.phone,
+        segment: input.segment,
+        favorites: input.favorites || existing.favorites,
+        note: input.note !== undefined ? input.note : existing.note,
+      };
+      this.state.customers[existingIndex] = updated;
+      this.customersById.set(updated.id, updated);
+      this.touch();
+      return clone(updated);
+    }
+
     const created: CustomerProfile = {
       id: shortId('cust'),
       initials,
