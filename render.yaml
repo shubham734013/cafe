@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: sawariya-cafe
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: TRUST_PROXY_HOPS
+        value: 1
+      - key: MONGODB_DB_NAME
+        value: cafeos
+      - key: MONGODB_URI
+        sync: false
+      - key: CAFE_AUTH_SECRET
+        generateValue: true
+      - key: CAFE_ADMIN_PIN
+        sync: false
+      - key: CAFE_KITCHEN_PIN
+        sync: false
+      - key: APP_PUBLIC_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
