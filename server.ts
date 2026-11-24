@@ -75,11 +75,30 @@ async function startServer() {
   try {
     // 1. Primary Operational Database: MongoDB
     // MongoDB via CafeStore is the authoritative source of truth for orders, inventory, and transactions.
-    await store.connectMongo(
-      env.MONGODB_URI || 'mongodb://127.0.0.1:27017',
-      env.MONGODB_DB_NAME || 'cafeos'
-    );
-    console.log('[CafeOS] Primary Database: MongoDB connected (authoritative for orders, inventory, and state).');
+    try {
+      await store.connectMongo(
+        env.MONGODB_URI || 'mongodb://127.0.0.1:27017',
+        env.MONGODB_DB_NAME || 'cafeos'
+      );
+      console.log('[CafeOS] Primary Database: MongoDB connected (authoritative for orders, inventory, and state).');
+    } catch (mongoError) {
+      console.warn(
+        '[CafeOS] MongoDB initial connection warning (server will start and retry in background):',
+        mongoError instanceof Error ? mongoError.message : mongoError
+      );
+      const retryInterval = setInterval(async () => {
+        try {
+          await store.connectMongo(
+            env.MONGODB_URI || 'mongodb://127.0.0.1:27017',
+            env.MONGODB_DB_NAME || 'cafeos'
+          );
+          console.log('[CafeOS] MongoDB connected successfully in background.');
+          clearInterval(retryInterval);
+        } catch {
+          // keep retrying in background
+        }
+      }, 10000).unref();
+    }
 
     // 2. Check Optional Analytical Database (PostgreSQL)
     const pgHealth = await checkPostgresHealth();
