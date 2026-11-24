@@ -103,3 +103,42 @@ test('CashfreeGateway verifies webhook signature and rejects tampered bodies', (
   assert.equal(gateway.verifyWebhook(rawBody, 'invalid-signature', now), false);
   assert.equal(gateway.verifyWebhook(rawBody, signature, (parseInt(now, 10) - 400).toString()), false);
 });
+
+
+test('CashfreeGateway verifies a specific payment ID using the payment lookup endpoint', async () => {
+  const gateway = new CashfreeGateway(config, async (input, init) => {
+    assert.equal(
+      String(input),
+      'https://sandbox.cashfree.com/pg/orders/SSCB500/payments/123456789'
+    );
+    assert.equal(init?.method, 'GET');
+    return Response.json({
+      cf_payment_id: '123456789',
+      payment_status: 'SUCCESS',
+      payment_amount: 12.5,
+      payment_currency: 'INR',
+      bank_reference: 'UTR123456',
+    });
+  });
+
+  const payment = await gateway.getPaymentDetails('SSCB500', '123456789');
+  assert.deepEqual(payment, {
+    paymentId: '123456789',
+    status: 'SUCCESS',
+    amount: 12.5,
+    currency: 'INR',
+    bankReference: 'UTR123456',
+  });
+});
+
+test('CashfreeGateway rejects incomplete individual payment responses', async () => {
+  const gateway = new CashfreeGateway(config, async () =>
+    Response.json({
+      cf_payment_id: '123456789',
+      payment_status: 'SUCCESS',
+      payment_amount: 12.5,
+    })
+  );
+
+  assert.equal(await gateway.getPaymentDetails('SSCB500', '123456789'), null);
+});

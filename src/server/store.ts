@@ -4,7 +4,15 @@ import path from 'node:path';
 import { BSON, MongoClient, type Collection, type Db } from 'mongodb';
 import {
   INITIAL_CAFE_SETTINGS,
+  INITIAL_CAMPAIGNS,
+  INITIAL_CUSTOMERS,
+  INITIAL_INVENTORY,
+  INITIAL_LOYALTY_RULES,
+  INITIAL_ORDERS,
+  INITIAL_POINT_LEDGER,
   INITIAL_RECIPES,
+  INITIAL_STAFF_ROSTER,
+  INITIAL_TABLES,
   MENU_ITEMS,
 } from '../data/cafeSeedData';
 import type {
@@ -102,6 +110,7 @@ interface PersistedEnvelope extends Omit<CafeBootstrapState, 'payments'> {
   recipes?: Record<string, Array<{ ingredientId: string; amount: number }>>;
   stockDeductedOrderIds?: string[];
   processedPaymentEvents?: string[];
+  processedPaymentEventIds?: string[];
 }
 
 const MONGO_STATE_ID = 'seth-sawariya-main';
@@ -505,7 +514,10 @@ export class CafeStore {
             rewardPoints: snapshot.rewardPoints,
             updatedAt: snapshot.updatedAt,
             nextOrderSeq: snapshot.nextOrderSeq,
-            recipes: snapshot.recipes || {},
+            recipes: snapshot.recipes || clone(INITIAL_RECIPES),
+            processedPaymentEvents: snapshot.processedPaymentEvents ?? [],
+            processedPaymentEventIds: snapshot.processedPaymentEvents ?? [],
+            stockDeductedOrderIds: snapshot.stockDeductedOrderIds ?? [],
             customerReviews: snapshot.customerReviews.slice(0, 500),
           },
         },
@@ -553,12 +565,19 @@ export class CafeStore {
       nextOrderSeq: number;
       recipes?: Record<string, Array<{ ingredientId: string; amount: number }>>;
       customerReviews?: CustomerReview[];
+      processedPaymentEvents?: string[];
+      processedPaymentEventIds?: string[];
+      stockDeductedOrderIds?: string[];
     }>(11);
     const settings = await readSingleton<CafeSettings>(10);
 
     const idempotencyEntries = await readRecords<{ key: string; orderId: string }>(9);
     return {
       ...state,
+      recipes: state.recipes ?? clone(INITIAL_RECIPES),
+      processedPaymentEvents: state.processedPaymentEvents ?? [],
+      processedPaymentEventIds: state.processedPaymentEventIds ?? [],
+      stockDeductedOrderIds: state.stockDeductedOrderIds ?? [],
       customerReviews: state.customerReviews ?? [],
       cafeSettings: settings,
       orders: await readRecords<CafeOrder>(0),
@@ -692,35 +711,70 @@ export class CafeStore {
   }
 
   private createSeedState(): PersistedEnvelope {
+    const orders = clone(INITIAL_ORDERS);
     return {
       outletId: 'seth-sawariya-main',
-      orders: [],
-      tables: [],
-      inventory: [],
+      orders,
+      tables: clone(INITIAL_TABLES),
+      inventory: clone(INITIAL_INVENTORY),
       stockMovements: [],
       inventoryBatches: [],
       purchaseOrders: [],
       stockCounts: [],
-      customers: [],
-      loyaltyRules: [],
-      pointLedger: [],
-      campaigns: [],
-      staffRoster: [],
+      customers: clone(INITIAL_CUSTOMERS),
+      loyaltyRules: clone(INITIAL_LOYALTY_RULES),
+      pointLedger: clone(INITIAL_POINT_LEDGER),
+      campaigns: clone(INITIAL_CAMPAIGNS),
+      staffRoster: clone(INITIAL_STAFF_ROSTER),
       cafeSettings: clone(INITIAL_CAFE_SETTINGS),
       menuItems: clone(MENU_ITEMS),
       customerReviews: [],
-      rewardPoints: 0,
-      activityLog: [],
+      rewardPoints: 340,
+      activityLog: [
+        {
+          id: 'act-init-1',
+          type: 'order_paid',
+          title: 'Order Settled Paid',
+          description: 'Order #SSCB421 settled at counter (₹377)',
+          actorName: 'Neha V.',
+          actorRole: 'server',
+          timestamp: '2:14 PM',
+          severity: 'success',
+        },
+        {
+          id: 'act-init-2',
+          type: 'table_updated',
+          title: 'Table Checked In',
+          description: 'Table T3 occupied by Aman Sharma (2 guests)',
+          actorName: 'Aman Sharma',
+          actorRole: 'customer',
+          timestamp: '1:45 PM',
+          severity: 'info',
+        },
+        {
+          id: 'act-init-3',
+          type: 'stock_updated',
+          title: 'Stock Restocked',
+          description: 'Restocked Arabica Coffee Beans (+5.0 kg)',
+          actorName: 'Seth Sawariya Manager',
+          actorRole: 'manager',
+          timestamp: '11:30 AM',
+          severity: 'info',
+        },
+      ],
       updatedAt: new Date().toISOString(),
-      nextOrderSeq: 0,
+      nextOrderSeq: deriveMaxOrderSeq(orders),
       idempotencyOrderIds: {},
       recipes: clone(INITIAL_RECIPES),
       stockDeductedOrderIds: [],
       processedPaymentEvents: [],
+      processedPaymentEventIds: [],
     };
   }
 
   private rebuildIndexes(): void {
+    this.processedPaymentEvents = new Set(this.state.processedPaymentEventIds ?? []);
+    this.stockDeductedOrderIds = new Set(this.state.stockDeductedOrderIds ?? []);
     this.menuById.clear();
     for (const item of this.state.menuItems) {
       this.menuById.set(item.id, item);
@@ -824,6 +878,9 @@ export class CafeStore {
         : base.customerReviews,
       activityLog: Array.isArray(parsed.activityLog) ? parsed.activityLog : base.activityLog,
       idempotencyOrderIds: parsed.idempotencyOrderIds ?? {},
+      recipes: parsed.recipes ?? clone(INITIAL_RECIPES),
+      processedPaymentEventIds: parsed.processedPaymentEventIds ?? [],
+      stockDeductedOrderIds: parsed.stockDeductedOrderIds ?? [],
       nextOrderSeq:
         typeof parsed.nextOrderSeq === 'number'
           ? Math.max(parsed.nextOrderSeq, deriveMaxOrderSeq(orders))
@@ -1611,8 +1668,19 @@ export class CafeStore {
   }
 
   public markPaymentProcessed(eventId: string): void {
+    if (this.processedPaymentEvents.has(eventId)) return;
     this.processedPaymentEvents.add(eventId);
-    this.state.processedPaymentEvents = Array.from(this.processedPaymentEvents).slice(-1000);
+    const events = Array.from(this.processedPaymentEvents).slice(-1000);
+    this.state.processedPaymentEvents = events;
+    this.state.processedPaymentEventIds = events;
+    this.touch();
+  }
+
+  public unmarkPaymentProcessed(eventId: string): void {
+    this.processedPaymentEvents.delete(eventId);
+    const events = Array.from(this.processedPaymentEvents).slice(-1000);
+    this.state.processedPaymentEvents = events;
+    this.state.processedPaymentEventIds = events;
     this.touch();
   }
 
@@ -1828,6 +1896,11 @@ export class CafeStore {
       cookingNote: input.cookingNote || undefined,
     };
 
+    if (input.isPosTerminal || newOrder.status === 'accepted') {
+      this.assertStockAvailableForOrder(newOrder);
+    }
+    this.state.nextOrderSeq = nextNum;
+
     this.state.orders = [newOrder, ...this.state.orders];
     this.ordersById.set(newOrder.id, newOrder);
 
@@ -1886,14 +1959,47 @@ export class CafeStore {
     };
   }
 
+  private assertStockAvailableForOrder(order: CafeOrder): void {
+    const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
+    const requiredByIngredient = new Map<string, number>();
+    for (const item of order.items) {
+      for (const recipeLine of recipeCatalog[item.menuItemId] ?? []) {
+        requiredByIngredient.set(
+          recipeLine.ingredientId,
+          (requiredByIngredient.get(recipeLine.ingredientId) ?? 0) + recipeLine.amount * item.quantity
+        );
+      }
+    }
+
+    for (const [ingredientId, required] of requiredByIngredient) {
+      const ingredient = this.state.inventory.find((item) => item.id === ingredientId);
+      if (!ingredient || ingredient.quantity + Number.EPSILON < required) {
+        throw new InvalidDomainTransitionError({
+          domain: 'checkout',
+          fromState: ingredient ? 'insufficient_stock' : 'missing_ingredient',
+          toState: 'deducted',
+          action: 'deduct_stock',
+          message: ingredient
+            ? `Insufficient stock for ${ingredient.name}; required ${required} ${ingredient.unit}, available ${ingredient.quantity}.`
+            : `Recipe references missing inventory ingredient ${ingredientId}.`,
+          httpStatus: 409,
+        });
+      }
+    }
+  }
+
   public deductStockForOrder(order: CafeOrder): InventoryIngredient[] {
     if (this.stockDeductedOrderIds.has(order.id)) {
       return [];
     }
+
+    this.assertStockAvailableForOrder(order);
+    const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
+
     this.stockDeductedOrderIds.add(order.id);
+    this.state.stockDeductedOrderIds = [...(this.state.stockDeductedOrderIds ?? []), order.id];
 
     const lowStockAlerts: InventoryIngredient[] = [];
-    const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
 
     order.items.forEach((item) => {
       const burn = recipeCatalog[item.menuItemId];
@@ -1955,6 +2061,14 @@ export class CafeStore {
   ): { order: CafeOrder; lowStockAlerts: InventoryIngredient[] } | null {
     const target = this.ordersById.get(orderId);
     if (!target) return null;
+
+    // Validate stock before mutating the order lifecycle state.
+    if (
+      (newStatus === 'accepted' || newStatus === 'preparing') &&
+      !this.stockDeductedOrderIds.has(orderId)
+    ) {
+      this.assertStockAvailableForOrder(target);
+    }
 
     target.status = newStatus;
     let lowStockAlerts: InventoryIngredient[] = [];
