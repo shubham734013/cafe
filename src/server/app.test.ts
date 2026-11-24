@@ -333,9 +333,33 @@ test('health and public bootstrap remain available and retired YouPI routes stay
   assert.equal(missingOrderResponse.status, 404);
 });
 
-test('order creation enforces catalog prices, idempotency, and customer scoping', async (t) => {
-  const { baseUrl, close } = await startTestServer();
+test('order creation enforces catalog prices and deduplicates QR stock deduction on acceptance', async (t) => {
+  const { baseUrl, store, close } = await startTestServer();
   t.after(close);
+
+  const milk = store.addIngredient({
+    name: 'Milk',
+    quantity: 12,
+    unit: 'L',
+    minThreshold: 2,
+    supplier: 'Test supplier',
+    unitCost: 1,
+  });
+  const beans = store.addIngredient({
+    name: 'Coffee Beans',
+    quantity: 5,
+    unit: 'kg',
+    minThreshold: 1,
+    supplier: 'Test supplier',
+    unitCost: 1,
+  });
+  store.setRecipe('cold-coffee', [
+    { ingredientId: milk.id, amount: 0.2 },
+    { ingredientId: beans.id, amount: 0.02 },
+  ]);
+  const inventoryBefore = store.getInventory();
+  const milkBefore = inventoryBefore.find((item) => item.id === milk.id)?.quantity;
+  const beansBefore = inventoryBefore.find((item) => item.id === beans.id)?.quantity;
 
   const payload = {
     serviceMode: 'delivery',
@@ -377,6 +401,33 @@ test('order creation enforces catalog prices, idempotency, and customer scoping'
   assert.match(created.order.customerId, /^guest_/);
   assert.equal('paymentProvider' in created.order, false);
 
+  const inventoryAfterCreate = store.getInventory();
+  assert.equal(
+    inventoryAfterCreate.find((item) => item.id === milk.id)?.quantity,
+    milkBefore
+  );
+  assert.equal(
+    inventoryAfterCreate.find((item) => item.id === beans.id)?.quantity,
+    beansBefore
+  );
+
+  const staffCookie = await loginWithPin(baseUrl, '7777');
+  const acceptResponse = await fetch(`${baseUrl}/api/orders/${created.order.id}/status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: staffCookie },
+    body: JSON.stringify({ status: 'accepted' }),
+  });
+  assert.equal(acceptResponse.status, 200);
+  const inventoryAfterAcceptance = store.getInventory();
+  assert.equal(
+    inventoryAfterAcceptance.find((item) => item.id === milk.id)?.quantity,
+    Math.round(((milkBefore ?? 0) - 0.4) * 100) / 100
+  );
+  assert.equal(
+    inventoryAfterAcceptance.find((item) => item.id === beans.id)?.quantity,
+    Math.round(((beansBefore ?? 0) - 0.04) * 100) / 100
+  );
+
   const duplicateResponse = await fetch(`${baseUrl}/api/orders`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
@@ -389,6 +440,8 @@ test('order creation enforces catalog prices, idempotency, and customer scoping'
   };
   assert.equal(duplicate.duplicate, true);
   assert.equal(duplicate.order.id, created.order.id);
+  // Replaying the idempotent request must not burn ingredients a second time.
+  assert.deepEqual(store.getInventory(), inventoryAfterAcceptance);
 
   const customerBootstrapResponse = await fetch(`${baseUrl}/api/bootstrap`, {
     headers: { Cookie: customerCookie },
