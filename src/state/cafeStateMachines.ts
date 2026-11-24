@@ -14,7 +14,8 @@ export type DomainMachineName =
   | 'campaign'
   | 'staff_duty'
   | 'navigation'
-  | 'checkout';
+  | 'checkout'
+  | 'inventory';
 
 export class InvalidDomainTransitionError extends Error {
   public readonly domain: DomainMachineName;
@@ -78,7 +79,7 @@ export const ORDER_STATUS_META: Record<OrderStatus, OrderStepMeta> = {
     status: 'placed',
     stepIndex: 0,
     label: 'Placed',
-    kotBadgeLabel: 'New KOT',
+    kotBadgeLabel: 'New Order',
     kdsActionLabel: 'Accept & Prepare',
     kdsActionIcon: 'skillet',
     orderMgmtActionLabel: 'Accept Order',
@@ -112,9 +113,9 @@ export const ORDER_STATUS_META: Record<OrderStatus, OrderStepMeta> = {
     stepIndex: 3,
     label: 'Ready',
     kotBadgeLabel: 'Ready for Pickup',
-    kdsActionLabel: 'Dispatch / Served',
+    kdsActionLabel: 'Mark as Served',
     kdsActionIcon: 'done_all',
-    orderMgmtActionLabel: 'Mark Handover',
+    orderMgmtActionLabel: 'Mark Served',
     progressPercent: 75,
     trackingMessage: 'Your order is ready for pickup / serving!',
   },
@@ -126,7 +127,7 @@ export const ORDER_STATUS_META: Record<OrderStatus, OrderStepMeta> = {
     kdsActionLabel: null,
     kdsActionIcon: 'check_circle',
     orderMgmtActionLabel: null,
-    progressPercent: 90,
+    progressPercent: 100,
     trackingMessage: 'Served — Enjoy your Seth Sawariya brew!',
   },
   paid: {
@@ -394,7 +395,17 @@ export type PinAuthState =
 // 6. Navigation Workspace Mode Derivation
 // ---------------------------------------------------------------------------
 
-const CUSTOMER_SCREENS = new Set<ScreenId>(['home', 'menu', 'cart', 'tracking', 'rewards', 'profile']);
+const CUSTOMER_SCREENS = new Set<ScreenId>([
+  'home',
+  'menu',
+  'cart',
+  'tracking',
+  'rewards',
+  'profile',
+  'login',
+  'privacy-policy',
+  'terms-and-conditions',
+]);
 
 export function deriveWorkspaceMode(
   screen: ScreenId,

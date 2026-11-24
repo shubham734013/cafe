@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+    <defs>
+      <radialGradient id="berryBg" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#FFF0F3"/>
+        <stop offset="100%" stop-color="#FFCCD5"/>
+      </radialGradient>
+      <linearGradient id="berryLiquid" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#FF758F"/>
+        <stop offset="100%" stop-color="#C9184A"/>
+      </linearGradient>
+    </defs>
+    <circle cx="100" cy="100" r="92" fill="url(#berryBg)"/>
+    <!-- Straw -->
+    <path d="M 125 20 L 105 75 L 98 145" stroke="#E63946" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <path d="M 125 20 L 105 75" stroke="#FFF" stroke-dasharray="6,6" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <!-- Glass Cup -->
+    <path d="M 64 68 L 74 162 C 75 166, 125 166, 126 162 L 136 68 Z" fill="#FFF" opacity="0.35" stroke="#FFB3C1" stroke-width="2"/>
+    <!-- Shake Liquid -->
+    <path d="M 66 82 L 75 160 C 76 163, 124 163, 125 160 L 134 82 Z" fill="url(#berryLiquid)"/>
+    <!-- Whipped Cream Swirl -->
+    <ellipse cx="100" cy="78" rx="35" ry="12" fill="#FFF0F5"/>
+    <ellipse cx="100" cy="70" rx="28" ry="10" fill="#FFF"/>
+    <ellipse cx="100" cy="62" rx="18" ry="8" fill="#FFF"/>
+    <circle cx="100" cy="54" r="6" fill="#FFF"/>
+    <!-- Cherry / Strawberry on top -->
+    <circle cx="106" cy="50" r="8" fill="#D90429"/>
+    <path d="M 106 44 Q 112 36 116 38" stroke="#2B9348" stroke-width="2" fill="none"/>
+  </svg>

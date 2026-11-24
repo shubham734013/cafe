@@ -1,10 +1,20 @@
 import React, { useMemo, useState } from 'react';
-import { CUSTOMER_REVIEWS, MENU_ITEMS } from '../data/cafeSeedData';
-import { CafeOrder, CustomerReview, MenuItem } from '../types/cafe';
+import type { CafeOrder, CustomerReview, MenuItem } from '../types/cafe';
 import type { CustomerFeedbackInput } from '../shared/schemas';
+import TestimonialsSection, {
+  type CommunityTestimonialsData,
+} from '@/components/ui/community-testimonial';
+import { BlurFade } from '@/components/ui/blur-fade';
+import { NumberTicker } from '@/components/ui/number-ticker';
+import { ShinyText } from '@/components/ui/shiny-text';
+
+const GOOGLE_REVIEW_URL =
+  'https://search.google.com/local/writereview?placeid=ChIJKdSBIaazbTkRbOW0-Yl-R00&source=g.page.m.ia._&utm_source=gbp&laa=nmx-review-solicitation-ia2';
 
 interface CustomerReviewsSectionProps {
   orders?: CafeOrder[];
+  customerReviews?: CustomerReview[];
+  menuItems: MenuItem[];
   onSelectDish?: (item: MenuItem) => void;
   onSubmitFeedback: (feedback: CustomerFeedbackInput) => Promise<void>;
   onNotify: (msg: string) => void;
@@ -12,47 +22,78 @@ interface CustomerReviewsSectionProps {
 
 export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
   orders = [],
+  customerReviews = [],
+  menuItems,
   onSelectDish,
   onSubmitFeedback,
   onNotify,
 }) => {
   const [writeModalOpen, setWriteModalOpen] = useState(false);
 
-  const [newRating, setNewRating] = useState<number>(1);
+  const [newRating, setNewRating] = useState<number | null>(null);
   const [newName, setNewName] = useState('');
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
-  // Derive reviews from live completed orders with feedback + user-submitted + seed reviews
+  // Derive reviews only from customer-submitted order feedback.
   const allReviews = useMemo(() => {
     const liveOrderReviews: CustomerReview[] = [];
     orders.forEach((order) => {
       if (order.rating && (order.feedbackComment || order.feedbackTags?.length)) {
         const dishItem = order.items?.[0];
-        const menuItem = dishItem ? MENU_ITEMS.find((m) => m.id === dishItem.menuItemId) : undefined;
-        const tableLabel = order.tableNumber ? order.tableNumber.replace('T', '') : '1';
+        const menuItem = dishItem ? menuItems.find((m) => m.id === dishItem.menuItemId) : undefined;
+        const tableLabel = order.tableNumber?.replace(/^T/, '');
         liveOrderReviews.push({
           id: `order-rev-${order.id}`,
-          customerName: `Guest (Table ${tableLabel})`,
+          customerName: 'Cafe Customer',
           rating: order.rating,
-          comment: order.feedbackComment || 'Great food and wonderful experience! Highly recommended.',
-          dishName: dishItem?.name || menuItem?.name || 'Chef Special',
+          comment: order.feedbackComment || order.feedbackTags?.join(' · ') || '',
+          dishName: dishItem?.name || menuItem?.name,
           diningMode:
             order.serviceMode === 'dine-in'
-              ? `Verified Dine-In • Table ${tableLabel}`
-              : 'Verified Takeaway',
+              ? tableLabel
+                ? `Verified Dine-In • Table ${tableLabel}`
+                : 'Verified Dine-In'
+              : order.serviceMode === 'delivery'
+                ? 'Verified Delivery'
+                : 'Verified Takeaway',
           dateLabel: order.createdAtLabel || 'Recent',
         });
       }
     });
 
-    return [...liveOrderReviews, ...CUSTOMER_REVIEWS];
-  }, [orders]);
+    return [...customerReviews, ...liveOrderReviews];
+  }, [customerReviews, menuItems, orders]);
+  const averageRating =
+    allReviews.reduce((total, review) => total + review.rating, 0) / (allReviews.length || 1);
+  const testimonialsData: CommunityTestimonialsData = {
+    title: 'What our customers say',
+    subtitle: 'Real feedback shared by guests at The Sawariya Cafe.',
+    rows: [
+      {
+        id: 'customer-reviews',
+        speed: '45s',
+        direction: 'left',
+        testimonials: allReviews.map((review) => ({
+          id: review.id,
+          quote: review.comment,
+          authorName: review.customerName,
+          authorTitle: [review.dateLabel, review.diningMode?.replace(/^Verified /, '')]
+            .filter(Boolean)
+            .join(' · '),
+          avatarUrl: review.avatarUrl,
+          initials: review.initials,
+          rating: review.rating,
+          dishName: review.dishName,
+        })),
+      },
+    ],
+  };
 
   const handleDishClick = (dishName?: string) => {
     if (!dishName || !onSelectDish) return;
-    const match = MENU_ITEMS.find(
+    const match = menuItems.find(
       (m) =>
         m.name.toLowerCase().includes(dishName.toLowerCase()) ||
         dishName.toLowerCase().includes(m.name.toLowerCase())
@@ -64,6 +105,11 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
 
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (newRating === null) {
+      setSubmitError('Please select a rating before sending your feedback.');
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitError('');
     try {
@@ -76,7 +122,7 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
       setWriteModalOpen(false);
       setNewName('');
       setNewComment('');
-      setNewRating(1);
+      setNewRating(null);
       onNotify('Thank you. Your feedback has been sent to our team.');
     } catch (error) {
       setSubmitError(
@@ -88,61 +134,66 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
   };
 
   return (
-    <div className="pt-3 pb-8">
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div>
-          <h2 className="text-base font-semibold text-on-surface">Reviews</h2>
+    <BlurFade delay={0.2} inView className="pt-4 pb-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-extrabold text-on-surface tracking-tight">
+            Customer Reviews
+          </h2>
+          {allReviews.length > 0 && (
+            <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/25 text-amber-400 text-xs font-bold">
+              <span>★ {averageRating.toFixed(1)}</span>
+              <span className="text-[10px] text-amber-400/80">
+                (<NumberTicker value={allReviews.length} />)
+              </span>
+            </span>
+          )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setWriteModalOpen(true)}
-          className="text-xs font-semibold text-[#FF6422] hover:text-[#E55518] transition-colors"
-        >
-          Give feedback
-        </button>
+        <div className="flex items-center gap-3">
+          <a
+            href={GOOGLE_REVIEW_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Write a Google review (opens in a new tab)"
+            className="text-xs font-bold text-[#FF6422] hover:text-[#E55518] transition-colors flex items-center gap-1 group"
+          >
+            <span className="material-symbols-outlined text-[16px] group-hover:scale-110 transition-transform">
+              rate_review
+            </span>
+            <ShinyText text="Google Review" speed={2.5} className="font-bold text-[#FF6422]" />
+          </a>
+          <button
+            type="button"
+            onClick={() => setWriteModalOpen(true)}
+            className="text-xs font-semibold text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+          >
+            Give Feedback
+          </button>
+        </div>
       </div>
 
-      <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
-        {allReviews.length === 0 ? (
-          <div className="w-full py-6 text-center text-sm text-on-surface-variant">
-            No reviews yet.
-          </div>
-        ) : (
-          allReviews.map((review) => (
-            <div
-              key={review.id}
-              className="w-[280px] sm:w-[320px] shrink-0 rounded-xl border border-outline-variant/10 bg-surface-container/40 p-4"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="truncate text-sm font-medium text-on-surface">
-                  {review.customerName}
-                </h3>
-                <span className="flex shrink-0 items-center gap-1 text-xs text-amber-400">
-                  <span aria-hidden="true">★</span>
-                  {review.rating}
-                </span>
-              </div>
-              <p className="mt-1 text-[11px] text-on-surface-variant">
-                {review.dateLabel}
-                {review.diningMode ? ` · ${review.diningMode.replace('Verified ', '')}` : ''}
-              </p>
-              <p className="mt-3 text-sm leading-relaxed text-on-surface line-clamp-4">
-                {review.comment}
-              </p>
-              {review.dishName && (
-                <button
-                  type="button"
-                  onClick={() => handleDishClick(review.dishName)}
-                  className="mt-3 text-left text-xs text-on-surface-variant hover:text-[#FF6422]"
-                >
-                  {review.dishName}
-                </button>
-              )}
-            </div>
-          ))
-        )}
-      </div>
+      {allReviews.length === 0 ? (
+        <div
+          role="status"
+          className="mx-auto mt-5 w-full max-w-sm rounded-3xl border border-outline-variant bg-surface-container-low p-6 text-center shadow-sm"
+        >
+          <span className="mx-auto flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <span className="material-symbols-outlined" aria-hidden="true">
+              rate_review
+            </span>
+          </span>
+          <p className="mt-4 font-semibold text-on-surface">No reviews yet</p>
+          <p className="mt-1 text-sm leading-relaxed text-on-surface-variant">
+            Be the first to share your experience with us.
+          </p>
+        </div>
+      ) : (
+        <TestimonialsSection
+          data={testimonialsData}
+          onSelectDish={(dishName) => handleDishClick(dishName)}
+        />
+      )}
 
       {/* Customer Feedback Modal */}
       {writeModalOpen && (
@@ -167,17 +218,20 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
+            <p className="text-xs text-on-surface-variant">
+              Rate a served order in Order Tracking to earn 25 Beans for a future order.
+            </p>
 
             <form onSubmit={handleSubmitReview} className="space-y-3">
               <div>
                 <label className="mb-1 block text-xs text-on-surface-variant">Rating</label>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1" role="group" aria-label="Rating">
                   {[1, 2, 3, 4, 5].map((star) => {
                     return (
                       <button
                         key={star}
                         type="button"
-                        aria-label={`Rate ${star} stars`}
+                        aria-label={`Rate ${star} star${star === 1 ? '' : 's'}`}
                         aria-pressed={star === newRating}
                         onClick={() => setNewRating(star)}
                         className="text-2xl"
@@ -233,7 +287,7 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full rounded-lg bg-[#FF6422] py-2.5 text-sm font-semibold text-white hover:bg-[#E55518] disabled:cursor-wait disabled:opacity-60"
+                className="w-full rounded-lg bg-[#FF6422] py-2.5 text-sm font-semibold text-white hover:bg-[#E55518] disabled:cursor-wait disabled:opacity-60 cursor-pointer"
               >
                 {isSubmitting ? 'Sending...' : 'Send feedback'}
               </button>
@@ -241,6 +295,6 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </BlurFade>
   );
 };

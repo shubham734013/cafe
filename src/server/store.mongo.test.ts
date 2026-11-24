@@ -14,6 +14,11 @@ test(
   'MongoDB persists normalized snapshots, serializes writers, and reopens state',
   { skip: !mongoUri },
   async () => {
+    if (!mongoUri || !isLoopbackMongoUri(mongoUri)) {
+      throw new Error(
+        'CAFE_TEST_MONGODB_URI must target localhost, 127.0.0.1, or ::1 to protect non-test databases.'
+      );
+    }
     const databaseName = `cafeos_test_${crypto.randomUUID().replaceAll('-', '')}`;
     const firstStore = new CafeStore(null);
     const secondStore = new CafeStore(null);
@@ -55,7 +60,7 @@ test(
       await firstStore.flushToPersistence();
       assert.notEqual(firstStore.getBootstrap().updatedAt, initialUpdatedAt);
       await firstStore.recordAuditEvent({
-        actorRole: 'manager',
+        actorRole: 'admin',
         actorName: 'Test Manager',
         method: 'PUT',
         path: '/api/settings',
@@ -99,6 +104,17 @@ test(
   }
 );
 
+function isLoopbackMongoUri(uri: string): boolean {
+  try {
+    const parsed = new URL(uri);
+    return (
+      parsed.protocol === 'mongodb:' &&
+      ['localhost', '127.0.0.1', '[::1]', '::1'].includes(parsed.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
 
 test('local snapshots preserve recipes and payment/inventory idempotency markers across restart', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cafeos-store-'));

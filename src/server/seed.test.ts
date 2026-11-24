@@ -37,11 +37,11 @@ test('Seed script populates full cafe dataset and answers all 5 verification que
     INSERT INTO customers (id, cafe_id, phone, loyalty_points)
     VALUES ('cust_101', 'cafe_main', '+919876543210', 120);
 
-    -- Staff (Owner & Waiter with scrypt hashes)
+    -- Staff (Admin & Kitchen with scrypt hashes)
     INSERT INTO staff (id, cafe_id, name, role, password_hash)
     VALUES
-      ('staff_owner_1', 'cafe_main', 'Vikram Seth', 'owner', 'scrypt:salt:owner_secret_hash'),
-      ('staff_waiter_1', 'cafe_main', 'Rohit Verma', 'waiter', 'scrypt:salt:waiter_secret_hash');
+      ('staff_admin_1', 'cafe_main', 'Vikram Seth', 'admin', 'scrypt:salt:admin_secret_hash'),
+      ('staff_kitchen_1', 'cafe_main', 'Rohit Verma', 'kitchen', 'scrypt:salt:kitchen_secret_hash');
 
     -- 2 Categories
     INSERT INTO menu_categories (id, cafe_id, name)
@@ -92,8 +92,8 @@ test('Seed script populates full cafe dataset and answers all 5 verification que
     INSERT INTO orders (id, cafe_id, table_id, customer_id, staff_id, status, total)
     VALUES
       ('ord_sample_01', 'cafe_main', 'tbl_1', 'cust_101', NULL, 'placed', 320.00),
-      ('ord_sample_02', 'cafe_main', 'tbl_2', NULL, 'staff_waiter_1', 'preparing', 410.00),
-      ('ord_sample_03', 'cafe_main', 'tbl_3', 'cust_101', 'staff_waiter_1', 'paid', 340.00);
+      ('ord_sample_02', 'cafe_main', 'tbl_2', NULL, 'staff_kitchen_1', 'preparing', 410.00),
+      ('ord_sample_03', 'cafe_main', 'tbl_3', 'cust_101', 'staff_kitchen_1', 'paid', 340.00);
 
     INSERT INTO order_items (id, cafe_id, order_id, menu_item_id, qty, unit_price, notes)
     VALUES

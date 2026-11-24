@@ -17,9 +17,7 @@ CREATE TYPE order_status_enum AS ENUM (
 );
 
 CREATE TYPE staff_role_enum AS ENUM (
-  'owner',
-  'manager',
-  'waiter',
+  'admin',
   'kitchen'
 );
 

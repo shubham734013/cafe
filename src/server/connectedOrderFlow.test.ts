@@ -3,9 +3,13 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { createCafeServer } from './app';
 import { CafeStore } from './store';
+import { MENU_ITEMS } from '../data/cafeSeedData';
+
+const TEST_MENU_ITEM = MENU_ITEMS.find((item) => item.id === 'cold-coffee') ?? MENU_ITEMS[0];
+assert.ok(TEST_MENU_ITEM);
 
 async function startServer() {
-  const store = new CafeStore();
+  const store = new CafeStore(null);
   const { app, httpServer } = createCafeServer(store);
 
   await new Promise<void>((resolve) => httpServer.listen(0, resolve));
@@ -26,12 +30,21 @@ async function startServer() {
 test('End-to-End Connected Order Lifecycle: Customer QR -> Accept (Stock Deduct) -> Kitchen Prep -> Serve -> Pay Counter', async (t) => {
   const { baseUrl, store, close } = await startServer();
   t.after(close);
+  const milk = store.addIngredient({
+    name: 'Milk',
+    quantity: 12,
+    unit: 'L',
+    minThreshold: 2,
+    supplier: 'Test supplier',
+    unitCost: 1,
+  });
+  store.setRecipe(TEST_MENU_ITEM.id, [{ ingredientId: milk.id, amount: 0.2 }]);
 
   // 1. Staff logs in with PIN to obtain auth cookie
   const loginRes = await fetch(`${baseUrl}/api/auth/pin`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pin: '1234' }), // manager PIN in development
+    body: JSON.stringify({ pin: '7777' }), // development admin PIN
   });
   assert.equal(loginRes.status, 200);
   const staffCookie = loginRes.headers.get('set-cookie')?.split(';')[0] || '';
@@ -43,7 +56,7 @@ test('End-to-End Connected Order Lifecycle: Customer QR -> Accept (Stock Deduct)
     tableNumber: 'T1',
     items: [
       {
-        menuItemId: 'cappuccino',
+        menuItemId: TEST_MENU_ITEM.id,
         name: 'Client Price Attack', // Client-supplied name/price will be ignored
         price: 1,                    // Canonical price should be authoritative
         quantity: 2,
@@ -59,6 +72,8 @@ test('End-to-End Connected Order Lifecycle: Customer QR -> Accept (Stock Deduct)
     body: JSON.stringify(orderPayload),
   });
   assert.equal(createRes.status, 201);
+  const customerCookie = createRes.headers.get('set-cookie')?.split(';')[0] || '';
+  assert.ok(customerCookie.includes('cafeos_customer_session'));
   const createdBody = (await createRes.json()) as { order: { id: string; status: string; total: number } };
   const orderId = createdBody.order.id;
   assert.equal(createdBody.order.status, 'placed');
@@ -66,7 +81,7 @@ test('End-to-End Connected Order Lifecycle: Customer QR -> Accept (Stock Deduct)
 
   // Check initial milk stock before acceptance
   const initialInventory = store.getInventory();
-  const milkBefore = initialInventory.find((i) => i.id === 'ing-milk')!;
+  const milkBefore = initialInventory.find((i) => i.id === milk.id)!;
   const milkQtyBefore = milkBefore.quantity;
 
   // 3. Staff accepts order: status -> 'accepted'
@@ -83,7 +98,7 @@ test('End-to-End Connected Order Lifecycle: Customer QR -> Accept (Stock Deduct)
   const acceptedBody = (await acceptRes.json()) as { ok: boolean; order: { status: string } };
   assert.equal(acceptedBody.order.status, 'accepted');
 
-  const milkAfter = store.getInventory().find((i) => i.id === 'ing-milk')!;
+  const milkAfter = store.getInventory().find((i) => i.id === milk.id)!;
   assert.equal(
     Math.round((milkQtyBefore - milkAfter.quantity) * 100) / 100,
     0.4,
@@ -125,6 +140,18 @@ test('End-to-End Connected Order Lifecycle: Customer QR -> Accept (Stock Deduct)
   assert.equal(servedRes.status, 200);
   assert.equal(((await servedRes.json()) as any).order.status, 'served');
 
+  const customerBootstrapRes = await fetch(`${baseUrl}/api/bootstrap`, {
+    headers: { Cookie: customerCookie },
+  });
+  assert.equal(customerBootstrapRes.status, 200);
+  const customerBootstrap = (await customerBootstrapRes.json()) as {
+    orders: Array<{ id: string; status: string }>;
+  };
+  assert.equal(
+    customerBootstrap.orders.find((order) => order.id === orderId)?.status,
+    'served'
+  );
+
   // 6. Payment settled at counter via cash
   const payRes = await fetch(`${baseUrl}/api/orders/${orderId}/pay-counter`, {
     method: 'POST',
@@ -153,7 +180,7 @@ test('Customer Table Order Rate Limiting protects tables from spam', async (t) =
     tableNumber: 'T99',
     items: [
       {
-        menuItemId: 'cappuccino',
+        menuItemId: TEST_MENU_ITEM.id,
         price: 129,
         quantity: 1,
         station: 'Barista',
@@ -178,4 +205,352 @@ test('Customer Table Order Rate Limiting protects tables from spam', async (t) =
   }
 
   assert.ok(hitRateLimit, 'Rate limiter correctly guarded table after request burst');
+});
+
+test('Product Add Form Recipe in Grams per 1 pc accurately deducts stock based on order quantity', async (t) => {
+  const { baseUrl, store, close } = await startServer();
+  t.after(close);
+
+  // 1. Setup inventory: 5.0 kg of Dark Roast Coffee Beans
+  const beans = store.addIngredient({
+    name: 'Dark Roast Coffee Beans',
+    quantity: 5.0,
+    unit: 'kg',
+    minThreshold: 1.0,
+    supplier: 'Karnataka Estates',
+    unitCost: 800,
+  });
+
+  // 2. Staff logs in with PIN to obtain admin auth cookie
+  const loginRes = await fetch(`${baseUrl}/api/auth/pin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin: '7777' }),
+  });
+  assert.equal(loginRes.status, 200);
+  const staffCookie = loginRes.headers.get('set-cookie')?.split(';')[0] || '';
+
+  // 3. Admin adds new product with 20 grams per 1 pc
+  const addProductRes = await fetch(`${baseUrl}/api/menu/items`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: staffCookie,
+    },
+    body: JSON.stringify({
+      name: 'Artisan Double Espresso',
+      category: 'Beverages',
+      price: 180,
+      isVeg: true,
+      station: 'Barista',
+      description: 'Handcrafted single origin double shot',
+      recipe: [
+        {
+          ingredientId: beans.id,
+          amount: 20, // 20 grams for 1 pc
+          amountUnit: 'g',
+        },
+      ],
+    }),
+  });
+  assert.equal(addProductRes.status, 201);
+  const newProduct = ((await addProductRes.json()) as any).item;
+  assert.ok(newProduct.id);
+
+  // 4. Customer orders 3 pcs of Artisan Double Espresso
+  // 3 pcs * 20 grams = 60 grams = 0.06 kg deducted
+  const orderRes = await fetch(`${baseUrl}/api/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      serviceMode: 'dine-in',
+      tableNumber: 'T2',
+      items: [
+        {
+          menuItemId: newProduct.id,
+          name: newProduct.name,
+          price: newProduct.price,
+          quantity: 3,
+          station: 'Barista',
+        },
+      ],
+      idempotencyKey: `artisan-order-${Date.now()}`,
+    }),
+  });
+  assert.equal(orderRes.status, 201);
+  const orderId = ((await orderRes.json()) as any).order.id;
+
+  // 5. Staff accepts the order -> triggers recipe stock deduction
+  const acceptRes = await fetch(`${baseUrl}/api/orders/${orderId}/status`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: staffCookie,
+    },
+    body: JSON.stringify({ status: 'accepted' }),
+  });
+  assert.equal(acceptRes.status, 200);
+
+  // 6. Verify inventory decreased by exactly 0.06 kg (60 grams for 3 pcs)
+  const beansAfterFirst = store.getInventory().find((i) => i.id === beans.id)!;
+  assert.equal(beansAfterFirst.quantity, 4.94); // 5.0 - (3 * 0.02) = 4.94 kg
+
+  // 7. Place second order of 5 pcs -> 5 * 20g = 100g = 0.10 kg deducted
+  const order2Res = await fetch(`${baseUrl}/api/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      serviceMode: 'takeaway',
+      items: [
+        {
+          menuItemId: newProduct.id,
+          name: newProduct.name,
+          price: newProduct.price,
+          quantity: 5,
+          station: 'Barista',
+        },
+      ],
+      idempotencyKey: `artisan-order-2-${Date.now()}`,
+    }),
+  });
+  assert.equal(order2Res.status, 201);
+  const order2Id = ((await order2Res.json()) as any).order.id;
+
+  await fetch(`${baseUrl}/api/orders/${order2Id}/status`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: staffCookie,
+    },
+    body: JSON.stringify({ status: 'accepted' }),
+  });
+
+  const beansAfterSecond = store.getInventory().find((i) => i.id === beans.id)!;
+  assert.equal(beansAfterSecond.quantity, 4.84); // 4.94 - 0.10 = 4.84 kg
+});
+
+test('Kitchen can cancel particular item from order, restore stock, and initiate refund', async (t) => {
+  const { baseUrl, store, close } = await startServer();
+  t.after(close);
+
+  // Setup ingredient and recipes
+  const cheese = store.addIngredient({
+    name: 'Mozzarella Cheese',
+    quantity: 10,
+    unit: 'kg',
+    minThreshold: 2,
+    supplier: 'Dairy Farms',
+    unitCost: 400,
+  });
+  store.setRecipe('margherita-pizza', [{ ingredientId: cheese.id, amount: 0.2 }]);
+  store.setRecipe('cheese-burger', [{ ingredientId: cheese.id, amount: 0.2 }]);
+
+  // 1. Staff logs in with admin PIN
+  const loginRes = await fetch(`${baseUrl}/api/auth/pin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin: '7777' }),
+  });
+  assert.equal(loginRes.status, 200);
+  const staffCookie = loginRes.headers.get('set-cookie')?.split(';')[0] || '';
+
+  // 2. Customer places order with 2 items: Margherita Pizza and Cheese Burger
+  const orderRes = await fetch(`${baseUrl}/api/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      serviceMode: 'dine-in',
+      tableNumber: 'T2',
+      items: [
+        {
+          menuItemId: 'margherita-pizza',
+          name: 'Margherita Pizza',
+          price: 129,
+          quantity: 1,
+          station: 'Kitchen',
+        },
+        {
+          menuItemId: 'cheese-burger',
+          name: 'Cheese Burger',
+          price: 79,
+          quantity: 1,
+          station: 'Grill',
+        },
+      ],
+      idempotencyKey: `kitchen-cancel-test-${Date.now()}`,
+    }),
+  });
+  assert.equal(orderRes.status, 201);
+  const orderId = ((await orderRes.json()) as any).order.id;
+
+  // Mark order as paid online to test refund issuance
+  store.attachGatewayPayment(orderId, 'test-gw-order-id', 'paid', 'TESTUTR999');
+
+  // Accepting both menu items deducts 0.4kg of cheese.
+  await fetch(`${baseUrl}/api/orders/${orderId}/status`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: staffCookie,
+    },
+    body: JSON.stringify({ status: 'accepted' }),
+  });
+
+  const cheeseAfterDeduct = store.getInventory().find((i) => i.id === cheese.id)!;
+  assert.equal(cheeseAfterDeduct.quantity, 9.6); // 10.0 - 0.4 = 9.6kg
+
+  // 3. Kitchen cancels only Margherita Pizza due to burnt/out of stock
+  const cancelItemRes = await fetch(`${baseUrl}/api/orders/${orderId}/cancel-item`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: staffCookie,
+    },
+    body: JSON.stringify({
+      menuItemId: 'margherita-pizza',
+      reason: 'Burnt in stone oven by accident',
+      quantity: 1,
+    }),
+  });
+  assert.equal(cancelItemRes.status, 200);
+  const cancelBody = (await cancelItemRes.json()) as any;
+  assert.equal(cancelBody.ok, true);
+  assert.equal(cancelBody.cancelledItem.status, 'cancelled');
+  assert.equal(cancelBody.cancelledItem.cancelledReason, 'Burnt in stone oven by accident');
+  assert.equal(cancelBody.refundAmount, 129);
+  assert.equal(cancelBody.order.refundAmount, 129);
+
+  // 4. Verify only the cancelled item's stock was restored.
+  const cheeseAfterRefund = store.getInventory().find((i) => i.id === cheese.id)!;
+  assert.equal(cheeseAfterRefund.quantity, 9.8);
+
+  // 5. Verify the Burger is STILL active in the order!
+  const burgerItem = cancelBody.order.items.find((i: any) => i.menuItemId === 'cheese-burger');
+  assert.ok(burgerItem);
+  assert.notEqual(burgerItem.status, 'cancelled');
+
+  // 6. Verify activity log recorded item cancellation
+  const actRes = await fetch(`${baseUrl}/api/activity-log`, {
+    headers: { Cookie: staffCookie },
+  });
+  assert.equal(actRes.status, 200);
+  const activities = ((await actRes.json()) as any).activities;
+  const cancelActivity = activities.find((a: any) => a.orderId === orderId && a.title.includes('Item Cancelled & Refunded'));
+  assert.ok(cancelActivity);
+  assert.ok(cancelActivity.description.includes('129'));
+
+  // 7. Kitchen cancels remaining item (Burger) -> whole order becomes refunded
+  const cancelSecondRes = await fetch(`${baseUrl}/api/orders/${orderId}/cancel-item`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: staffCookie,
+    },
+    body: JSON.stringify({
+      menuItemId: 'cheese-burger',
+      reason: 'Customer cancelled rest of order',
+    }),
+  });
+  assert.equal(cancelSecondRes.status, 200);
+  const finalOrder = ((await cancelSecondRes.json()) as any).order;
+  assert.equal(finalOrder.paymentStatus, 'refunded');
+  assert.equal(finalOrder.status, 'served'); // completed/removed from kitchen queue
+});
+
+test('Kitchen and Admin can tag menu items Out of Stock (86) and In Stock, preventing customer orders', async (t) => {
+  const { baseUrl, store, close } = await startServer();
+  t.after(close);
+
+  // 1. Staff logs in with PIN
+  const loginRes = await fetch(`${baseUrl}/api/auth/pin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin: '7777' }),
+  });
+  assert.equal(loginRes.status, 200);
+  const staffCookie = loginRes.headers.get('set-cookie')?.split(';')[0] || '';
+
+  // 2. Kitchen tags the test menu item out of stock
+  const toggleAvailabilityRes = await fetch(
+    `${baseUrl}/api/menu/${encodeURIComponent(TEST_MENU_ITEM.id)}/toggle-availability`,
+    {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: staffCookie,
+    },
+    body: JSON.stringify({ isAvailable: false }),
+    }
+  );
+  assert.equal(toggleAvailabilityRes.status, 200);
+  const toggleAvailabilityBody = (await toggleAvailabilityRes.json()) as any;
+  assert.equal(toggleAvailabilityBody.item.isAvailable, false);
+
+  // Verify store state updated
+  const menuItemInStore = store.getBootstrap().menuItems.find((m: any) => m.id === TEST_MENU_ITEM.id);
+  assert.equal(menuItemInStore?.isAvailable, false);
+
+  // 3. Customer attempts to order the unavailable item -> rejected with 400
+  const orderRes = await fetch(`${baseUrl}/api/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      outletId: 'seth-sawariya-main',
+      serviceMode: 'dine-in',
+      tableNumber: 'T2',
+      paymentMode: 'cash',
+      customer: { name: 'Customer Test', phone: '9876543210' },
+      items: [
+        {
+          menuItemId: TEST_MENU_ITEM.id,
+          name: TEST_MENU_ITEM.name,
+          price: TEST_MENU_ITEM.price,
+          quantity: 1,
+          station: 'Barista',
+        },
+      ],
+    }),
+  });
+  assert.equal(orderRes.status, 400);
+  const errorBody = (await orderRes.json()) as any;
+  assert.match(errorBody.error, /sold out/i);
+
+  // 4. Kitchen / Admin tags the item back in stock
+  const toggleBackRes = await fetch(
+    `${baseUrl}/api/menu/${encodeURIComponent(TEST_MENU_ITEM.id)}/toggle-availability`,
+    {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: staffCookie,
+    },
+    body: JSON.stringify({ isAvailable: true }),
+    }
+  );
+  assert.equal(toggleBackRes.status, 200);
+  const toggleBackBody = (await toggleBackRes.json()) as any;
+  assert.equal(toggleBackBody.item.isAvailable, true);
+
+  // 5. Customer can now place the order successfully!
+  const orderSuccessRes = await fetch(`${baseUrl}/api/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      outletId: 'seth-sawariya-main',
+      serviceMode: 'dine-in',
+      tableNumber: 'T2',
+      paymentMode: 'cash',
+      customer: { name: 'Customer Test', phone: '9876543210' },
+      items: [
+        {
+          menuItemId: TEST_MENU_ITEM.id,
+          name: TEST_MENU_ITEM.name,
+          price: TEST_MENU_ITEM.price,
+          quantity: 1,
+          station: 'Barista',
+        },
+      ],
+    }),
+  });
+  assert.equal(orderSuccessRes.status, 201);
 });

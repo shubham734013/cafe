@@ -54,6 +54,32 @@ test('CashfreeGateway creates order with official Cashfree REST payload', async 
   );
 });
 
+test('CashfreeGateway uses a bounded customer ID with unique CafeOS order references', async () => {
+  const clientOrderId = `CAFEOS-${crypto.randomUUID()}`;
+  const gateway = new CashfreeGateway(config, async (_input, init) => {
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.order_id, clientOrderId);
+    assert.match(body.customer_details.customer_id, /^cafe_[a-f0-9]{32}$/);
+    assert.ok(body.customer_details.customer_id.length <= 45);
+
+    return Response.json({
+      cf_order_id: 'cf_ord_unique',
+      order_id: clientOrderId,
+      order_amount: 1,
+      order_currency: 'INR',
+      payment_session_id: 'session_unique',
+      order_status: 'ACTIVE',
+    });
+  });
+
+  const order = await gateway.createOrder({
+    clientOrderId,
+    amountPaise: 100,
+    note: 'CafeOS unique order reference',
+  });
+  assert.equal(order.clientOrderId, clientOrderId);
+});
+
 test('CashfreeGateway verifies webhook signature and rejects tampered bodies', () => {
   const gateway = new CashfreeGateway(config);
   const now = Math.floor(Date.now() / 1000).toString();

@@ -38,14 +38,16 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
 }) => {
   const [filter, setFilter] = useState<CampaignFilter>('all');
   const [modalOpen, setModalOpen] = useState(false);
-
   const form = useForm<CreateCampaignValues>({
     resolver: zodResolver(createCampaignSchema),
     defaultValues: {
       title: '',
       code: '',
+      discountPercentage: 0,
+      minimumOrderAmount: 0,
       validityLabel: 'Till 28 Feb',
       description: 'Live across POS billing terminal and customer QR menu checkout.',
+      targetSegment: 'all',
     },
   });
 
@@ -76,8 +78,11 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
     form.reset({
       title: '',
       code: '',
+      discountPercentage: 0,
+      minimumOrderAmount: 0,
       validityLabel: 'Till 28 Feb',
       description: 'Live across POS billing terminal and customer QR menu checkout.',
+      targetSegment: 'all',
     });
     setModalOpen(true);
   };
@@ -87,9 +92,12 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
     onCreateCampaign({
       title: parsed.title,
       code: parsed.code,
+      discountPercentage: parsed.discountPercentage,
+      minimumOrderAmount: parsed.minimumOrderAmount,
       status: 'active',
       validityLabel: parsed.validityLabel,
       description: parsed.description,
+      targetSegment: parsed.targetSegment,
       usedLabel: '0 used',
       revenueLabel: '₹0 revenue',
       icon: 'sell',
@@ -111,18 +119,19 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
               <span className="w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse" />
               {counts.active} Active Promos
             </span>
-            <span className="text-on-surface-variant text-[11px]">• Live on POS &amp; QR</span>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleOpenCreate}
-          className="shrink-0 flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-primary-container text-on-primary-container text-xs font-bold shadow-md shadow-primary-container/20 active:scale-95 transition-transform cursor-pointer"
-        >
-          <span className="material-symbols-outlined text-[18px]">add_circle</span>
-          <span>Create</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="shrink-0 flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-primary-container text-on-primary-container text-xs font-bold shadow-md shadow-primary-container/20 active:scale-95 transition-transform cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">add_circle</span>
+            <span>Create</span>
+          </button>
+        </div>
       </div>
 
       {/* Performance Highlights + Visual Anchor */}
@@ -217,7 +226,7 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
         <span className="text-base text-on-surface font-bold">Live Promotions</span>
         <button
           type="button"
-          onClick={() => onNotify('All promos synchronized with POS & table QR codes')}
+          onClick={() => onNotify('All offers active on billing counter & table QR codes')}
           className="text-xs text-primary flex items-center gap-1 font-medium cursor-pointer"
         >
           <span>Auto-sync enabled</span>
@@ -275,79 +284,129 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
             return (
               <div
                 key={camp.id}
-                className="flex flex-col justify-between p-4 rounded-xl bg-surface-container-low shadow-md relative overflow-hidden"
+                className="relative overflow-hidden flex flex-col justify-between p-4 sm:p-5 rounded-3xl liquid-glass-card shadow-2xl transition-all space-y-4 border border-white/[0.08]"
               >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div
-                        className={`w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0 ${iconColor}`}
-                      >
-                        <span className="material-symbols-outlined text-[22px]">{camp.icon}</span>
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <h2 className="text-sm font-bold text-on-surface truncate">{camp.title}</h2>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${statusMeta.badgeClass}`}
-                          >
-                            {camp.status}
-                          </span>
-                          <span className="text-on-surface-variant text-xs">
-                            • {camp.validityLabel}
-                          </span>
-                        </div>
-                      </div>
+                {camp.status === 'active' && (
+                  <div className="absolute -right-8 -top-8 w-24 h-24 bg-primary/15 rounded-full blur-xl pointer-events-none" />
+                )}
+
+                {/* Header Row: Avatar + Title & Promo Code + Action Buttons */}
+                <div className="flex items-center justify-between gap-2.5 relative">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div
+                      className={`relative w-12 h-12 rounded-full flex items-center justify-center text-sm font-black shrink-0 shadow-md ${
+                        camp.tone === 'tertiary'
+                          ? 'bg-gradient-to-tr from-tertiary/30 to-tertiary/10 text-tertiary border border-tertiary/40'
+                          : camp.tone === 'secondary'
+                            ? 'bg-gradient-to-tr from-secondary/30 to-secondary/10 text-secondary border border-secondary/40'
+                            : 'bg-gradient-to-tr from-primary/30 to-primary/10 text-primary border border-primary/40'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[22px]">{camp.icon}</span>
+                      {camp.status === 'active' && (
+                        <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background flex items-center justify-center bg-emerald-500" />
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container-highest text-primary font-mono text-xs font-bold tracking-wider shrink-0">
-                      <span className="material-symbols-outlined text-[13px]">sell</span>
-                      <span>{camp.code}</span>
-                    </div>
-                  </div>
-
-                  <p className="mt-2.5 text-xs text-on-surface-variant leading-relaxed">
-                    {camp.description}
-                  </p>
-                </div>
-
-                <div className="mt-4 pt-2.5 flex items-center justify-between bg-surface-container/60 -mx-4 -mb-4 px-4 py-2.5">
-                  <div className="flex items-center gap-2.5 text-xs">
-                    <span className="text-on-surface font-semibold flex items-center gap-1">
-                      <span
-                        className={`material-symbols-outlined text-[15px] ${statusMeta.metricColor}`}
-                      >
-                        {statusMeta.metricIcon}
-                      </span>
-                      {camp.usedLabel}
-                    </span>
-                    {camp.revenueLabel && (
-                      <>
-                        <span className="text-on-surface-variant">•</span>
-                        <span className={`${iconColor} font-semibold tabular-nums`}>
-                          {camp.revenueLabel}
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm sm:text-base text-on-surface font-extrabold truncate tracking-tight">
+                          {camp.title}
                         </span>
-                      </>
-                    )}
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase shrink-0 ${statusMeta.badgeClass}`}
+                        >
+                          {camp.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-on-surface-variant/80 text-xs sm:text-sm mt-0.5 font-mono font-bold tracking-wider text-primary">
+                        <span className="material-symbols-outlined text-[15px] shrink-0">
+                          sell
+                        </span>
+                        <span>{camp.code}</span>
+                        {camp.discountPercentage !== undefined && camp.discountPercentage > 0 && (
+                          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-black text-emerald-400">
+                            {camp.discountPercentage}% OFF
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  {/* Action Icon Buttons */}
+                  <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
                       aria-label={`Share ${camp.title}`}
                       onClick={() => onNotify(`Copied promo ${camp.code} share link`)}
-                      className="w-8 h-8 rounded flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high cursor-pointer"
+                      className="w-10 h-10 rounded-2xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-on-surface-variant hover:text-primary active:scale-95 transition-all cursor-pointer shadow-sm hover:border-primary/40"
+                      title="Share Promo Code"
                     >
-                      <span className="material-symbols-outlined text-[16px]">share</span>
+                      <span className="material-symbols-outlined text-[18px]">share</span>
                     </button>
                     <button
                       type="button"
                       aria-label={`Toggle ${camp.title}`}
                       onClick={() => onToggleCampaignStatus(camp.id)}
-                      className="px-2 py-1 rounded text-[11px] font-semibold text-primary hover:bg-surface-container-high cursor-pointer"
+                      className={`w-10 h-10 rounded-2xl border flex items-center justify-center active:scale-95 transition-all cursor-pointer shadow-sm ${
+                        camp.status === 'active'
+                          ? 'bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25'
+                          : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25'
+                      }`}
+                      title={statusMeta.actionLabel}
                     >
-                      {statusMeta.actionLabel}
+                      <span className="material-symbols-outlined text-[18px]">
+                        {camp.status === 'active' ? 'pause' : 'play_arrow'}
+                      </span>
                     </button>
+                  </div>
+                </div>
+
+                {/* Middle Metrics Inset Card */}
+                <div className="grid grid-cols-3 gap-2 py-3 px-4 rounded-2xl bg-black/40 backdrop-blur-md border border-white/[0.05] text-center items-center shadow-inner">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Redemptions</span>
+                    <span className="text-xs sm:text-sm md:text-base text-on-surface font-black tabular-nums tracking-tight">
+                      {camp.usedLabel}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Impact</span>
+                    <span className="text-xs sm:text-sm md:text-base text-secondary font-black tabular-nums tracking-tight">
+                      {camp.revenueLabel || 'Active Promo'}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Target</span>
+                    <span className="text-xs sm:text-sm md:text-base text-on-surface font-black tabular-nums tracking-tight uppercase">
+                      {camp.targetSegment && camp.targetSegment !== 'all' ? camp.targetSegment : 'ALL'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Campaign Description Note */}
+                <p className="text-xs text-on-surface-variant/80 leading-relaxed line-clamp-2 px-0.5">
+                  {camp.description}
+                </p>
+                {camp.minimumOrderAmount ? (
+                  <p className="text-[11px] font-semibold text-on-surface-variant">
+                    Minimum order ₹{camp.minimumOrderAmount.toLocaleString('en-IN')}
+                  </p>
+                ) : null}
+
+                {/* Footer Row: Validity & Status */}
+                <div className="flex items-center justify-between gap-3 text-xs sm:text-sm pt-0.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="material-symbols-outlined text-[18px] text-primary shrink-0">
+                      verified
+                    </span>
+                    <span className="text-xs text-on-surface-variant/80 font-medium truncate">
+                      {camp.validityLabel}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 text-on-surface-variant/70 text-xs shrink-0 font-medium">
+                    <span className="material-symbols-outlined text-[15px]">schedule</span>
+                    <span>{camp.status === 'active' ? 'Active' : 'Inactive'}</span>
                   </div>
                 </div>
               </div>
@@ -356,61 +415,6 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
         </div>
       )}
 
-      {/* Marketing Channels */}
-      <div className="space-y-2.5 pt-1">
-        <div className="flex items-center justify-between">
-          <span className="text-base text-on-surface font-bold">Marketing Channels</span>
-          <span className="text-xs text-on-surface-variant">Instant Blast</span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-          <div className="flex items-center justify-between p-3.5 rounded-xl bg-surface-container hover:bg-surface-container-high transition-colors">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-lg bg-tertiary-container/20 text-tertiary flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[22px]">chat</span>
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-bold text-on-surface truncate">
-                  Send WhatsApp Broadcast
-                </span>
-                <span className="text-xs text-on-surface-variant truncate">
-                  Reach 1,240 opt-in cafe patrons
-                </span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNotify('WhatsApp campaign queued for 1,240 patrons')}
-              className="shrink-0 px-3.5 py-2 rounded-lg bg-tertiary-container/30 text-tertiary text-xs font-bold hover:bg-tertiary-container/50 active:scale-95 transition-all cursor-pointer"
-            >
-              Send
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between p-3.5 rounded-xl bg-surface-container hover:bg-surface-container-high transition-colors">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-lg bg-primary-container/20 text-primary-container flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[22px]">aspect_ratio</span>
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-bold text-on-surface truncate">
-                  Banner Promotion Preview
-                </span>
-                <span className="text-xs text-on-surface-variant truncate">
-                  Customer App &amp; Table QR Header
-                </span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNotify('Banner promo active on Customer Home & Table QR header')}
-              className="shrink-0 px-3.5 py-2 rounded-lg bg-surface-container-highest text-on-surface text-xs font-semibold hover:bg-surface-bright active:scale-95 transition-all cursor-pointer"
-            >
-              Preview
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* Create Campaign Dialog */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
@@ -433,7 +437,7 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
                 <input
                   type="text"
                   {...form.register('title')}
-                  placeholder="e.g. Weekend Iced Latte Treat"
+                  placeholder="Campaign title"
                   className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 {form.formState.errors.title && (
@@ -475,6 +479,51 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
                   )}
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                    Discount Percentage
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      {...form.register('discountPercentage')}
+                      className="w-full px-3 py-2.5 pr-9 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-on-surface-variant">
+                      %
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-on-surface-variant">
+                    Set 0 for staff-verified offers.
+                  </p>
+                  {form.formState.errors.discountPercentage && (
+                    <p className="text-[11px] text-error mt-1">
+                      {form.formState.errors.discountPercentage.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                    Minimum Order (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    {...form.register('minimumOrderAmount')}
+                    className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  {form.formState.errors.minimumOrderAmount && (
+                    <p className="text-[11px] text-error mt-1">
+                      {form.formState.errors.minimumOrderAmount.message}
+                    </p>
+                  )}
+                </div>
+              </div>
               <div>
                 <label className="block text-xs font-semibold text-on-surface-variant mb-1">
                   Offer Rule Summary
@@ -482,7 +531,7 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
                 <input
                   type="text"
                   {...form.register('description')}
-                  placeholder="Flat 20% off on orders above ₹199"
+                  placeholder="Offer description"
                   className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 {form.formState.errors.description && (
@@ -490,6 +539,25 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
                     {form.formState.errors.description.message}
                   </p>
                 )}
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                  Customer Group
+                </label>
+                <select
+                  {...form.register('targetSegment')}
+                  className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="all">All customers</option>
+                  <option value="vip">VIP</option>
+                  <option value="loyal">Loyal</option>
+                  <option value="regular">Regular</option>
+                  <option value="new">New</option>
+                  <option value="risk">At Risk</option>
+                </select>
+                <p className="mt-1 text-[11px] text-on-surface-variant">
+                  Segment offers appear only to customers whose verified phone matches a CRM profile.
+                </p>
               </div>
             </div>
 
@@ -511,6 +579,7 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
           </form>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 };

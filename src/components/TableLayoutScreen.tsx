@@ -112,7 +112,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
     resolver: zodResolver(tableTransferMergeSchema),
     defaultValues: {
       sourceTableId: selectedTable,
-      targetTableId: tables.find((t) => t.id !== selectedTable)?.id ?? 'T1',
+      targetTableId: tables.find((t) => t.id !== selectedTable)?.id ?? '',
     },
   });
 
@@ -310,163 +310,201 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {visibleTables.map((table) => {
             const effective = resolveEffectiveTableState(table, orders);
-          const activeOrder = effective.activeOrder;
-          const isOccupied = effective.status === 'occupied';
-          const isReserved = effective.status === 'reserved';
-          const isSelected = selectedTable === table.id;
+            const activeOrder = effective.activeOrder;
+            const isOccupied = effective.status === 'occupied';
+            const isReserved = effective.status === 'reserved';
+            const isSelected = selectedTable === table.id;
+            const itemsCount = activeOrder
+              ? activeOrder.items.reduce((s, i) => s + i.quantity, 0)
+              : readOnly ? 0 : 2;
 
-          const accentBarColor = isOccupied
-            ? 'bg-error'
-            : isReserved
-              ? 'bg-primary'
-              : 'bg-tertiary';
+            return (
+              <div
+                key={table.id}
+                className={`relative overflow-hidden flex flex-col justify-between p-4 sm:p-5 rounded-3xl liquid-glass-card shadow-2xl transition-all space-y-4 border ${
+                  isOccupied
+                    ? 'border-error/40'
+                    : isReserved
+                      ? 'border-amber-500/40'
+                      : 'border-white/[0.08] hover:border-primary/40'
+                } ${isSelected ? 'ring-2 ring-primary/60' : ''}`}
+              >
+                {isOccupied && (
+                  <div className="absolute -right-8 -top-8 w-24 h-24 bg-error/20 rounded-full blur-xl pointer-events-none" />
+                )}
 
-          return (
-            <div
-              key={table.id}
-              className={`rounded-xl p-3 flex flex-col justify-between shadow-sm relative overflow-hidden gap-2 ${
-                isOccupied ? 'bg-surface-container-high' : 'bg-surface-container-low'
-              } ${isSelected ? 'ring-1 ring-primary/50' : ''}`}
-            >
-              <div className={`absolute top-0 left-0 w-full h-1 ${accentBarColor}`} />
+                {/* Header Row: Table Avatar + ID/Seats + Action Buttons */}
+                <div className="flex items-center justify-between gap-2.5 relative">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div
+                      className={`relative w-12 h-12 rounded-full flex items-center justify-center text-sm font-black shrink-0 shadow-md ${
+                        isOccupied
+                          ? 'bg-gradient-to-tr from-error/30 to-error/10 text-error border border-error/40'
+                          : isReserved
+                            ? 'bg-gradient-to-tr from-amber-500/30 to-amber-400/10 text-amber-300 border border-amber-500/40'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      }`}
+                    >
+                      {table.id}
+                      <span
+                        className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background flex items-center justify-center ${
+                          isOccupied ? 'bg-error animate-pulse' : isReserved ? 'bg-amber-400' : 'bg-emerald-500'
+                        }`}
+                      />
+                    </div>
 
-              <div className="flex items-start justify-between gap-1 pt-0.5">
-                <div>
-                  <span className="text-lg font-bold text-on-surface">{table.id}</span>
-                  <p className="text-[11px] text-on-surface-variant">{table.seats}-Seater</p>
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm sm:text-base text-on-surface font-extrabold truncate tracking-tight">
+                          Table {table.id}
+                        </span>
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase shrink-0 ${
+                            isOccupied
+                              ? 'bg-error/20 text-error border border-error/30'
+                              : isReserved
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
+                          }`}
+                        >
+                          {isOccupied ? 'OCCUPIED' : isReserved ? 'RESERVED' : 'FREE'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-on-surface-variant/80 text-xs sm:text-sm mt-0.5">
+                        <span className="material-symbols-outlined text-[15px] shrink-0">
+                          chair
+                        </span>
+                        <span className="tabular-nums font-medium tracking-wide">
+                          {table.seats} Seats · {table.zone}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Icon Buttons */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        aria-label={`Show QR for Table ${table.id}`}
+                        onClick={() => setQrTableId(table.id)}
+                        className="w-10 h-10 rounded-2xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-primary hover:brightness-125 active:scale-95 transition-all cursor-pointer shadow-sm hover:border-primary/40"
+                        title="Display Table QR"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">qr_code_2</span>
+                      </button>
+                    )}
+                    {isOccupied ? (
+                      <button
+                        type="button"
+                        aria-label={`View order for Table ${table.id}`}
+                        onClick={() => {
+                          if (readOnly) {
+                            if (activeOrder) setDetailOrder(activeOrder);
+                          } else {
+                            onSelectTableForPos(table.id);
+                          }
+                        }}
+                        className={`w-10 h-10 rounded-2xl border flex items-center justify-center transition-all cursor-pointer shadow-sm active:scale-95 ${
+                          table.billReady
+                            ? 'bg-primary/20 border-primary/40 text-primary hover:bg-primary/30'
+                            : 'bg-surface-container-high/80 border-white/[0.08] text-on-surface-variant hover:text-on-surface hover:border-white/20'
+                        }`}
+                        title={table.billReady ? 'Settle / Bill Ready' : 'View Live Order'}
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          {table.billReady ? 'payments' : 'receipt_long'}
+                        </span>
+                      </button>
+                    ) : isReserved ? (
+                      <button
+                        type="button"
+                        aria-label={`Check in table ${table.id}`}
+                        disabled={pendingCheckInId === table.id}
+                        onClick={() => void handleCheckIn(table.id)}
+                        className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-300 hover:bg-amber-500/25 active:scale-95 transition-all cursor-pointer shadow-sm"
+                        title="Guest Check-In"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label={`Assign Table ${table.id}`}
+                        onClick={() => onSelectTableForPos(table.id)}
+                        className="w-10 h-10 rounded-2xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-emerald-400 hover:brightness-125 active:scale-95 transition-all cursor-pointer shadow-sm hover:border-emerald-500/30"
+                        title="Assign Guests / Take Order"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">add</span>
+                      </button>
+                    )}
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        data-testid={`print-qr-btn-${table.id}`}
+                        aria-label={`Print QR PDF for Table ${table.id}`}
+                        disabled={printingQrTableId === table.id}
+                        onClick={() => void handlePrintTableQr(table)}
+                        className="w-10 h-10 rounded-2xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-on-surface-variant hover:text-primary active:scale-95 transition-all cursor-pointer shadow-sm hover:border-primary/40 disabled:opacity-50"
+                        title="Print QR PDF"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-1">
-                  {!readOnly && <button
-                    type="button"
-                    aria-label={`Show QR for Table ${table.id}`}
-                    onClick={() => setQrTableId(table.id)}
-                    className="w-7 h-7 rounded-lg bg-surface-container-highest/80 hover:bg-surface-bright text-primary flex items-center justify-center transition-colors cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[15px]">qr_code_2</span>
-                  </button>}
-                  {isOccupied ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-error-container/40 text-error text-[11px] font-semibold tabular-nums">
-                      <span className="w-1.5 h-1.5 rounded-full bg-error animate-pulse" />
-                      {table.elapsedLabel || `${activeOrder?.elapsedMinutes ?? 12}m`}
+                {/* Middle Metrics Inset Card */}
+                <div className="grid grid-cols-3 gap-2 py-3 px-4 rounded-2xl bg-black/40 backdrop-blur-md border border-white/[0.05] text-center items-center shadow-inner">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Capacity</span>
+                    <span className="text-xs sm:text-sm md:text-base text-on-surface font-black tabular-nums tracking-tight">
+                      {table.seats} Seats
                     </span>
-                  ) : isReserved ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container/20 text-primary text-[11px] font-semibold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                      {table.reservedTime || '7:30 PM'}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Active Bill</span>
+                    <span className="text-xs sm:text-sm md:text-base text-secondary font-black tabular-nums tracking-tight">
+                      {isOccupied && activeOrder ? `₹${activeOrder.total}` : isOccupied ? '₹228' : '₹0'}
                     </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-tertiary-container/20 text-tertiary text-[11px] font-semibold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-tertiary" />
-                      Free
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {isOccupied ? (
-                <div className="py-1 flex flex-col gap-0.5">
-                  <span className="text-[11px] text-secondary font-semibold">
-                    #{activeOrder?.id || table.activeOrderId || (readOnly ? 'Order unavailable' : 'SSCB421')}
-                  </span>
-                  <div className="flex items-center justify-between text-on-surface">
-                    <span className="text-xs text-on-surface-variant">
-                      {(() => {
-                        const cnt = activeOrder
-                          ? activeOrder.items.reduce((s, i) => s + i.quantity, 0)
-                          : readOnly ? 0 : 2;
-                        return `${cnt} ${cnt === 1 ? 'item' : 'items'}`;
-                      })()}
-                    </span>
-                    <span className="text-xs font-bold text-primary tabular-nums">
-                      {activeOrder ? `₹${activeOrder.total}` : readOnly ? '' : '₹228'}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Duration</span>
+                    <span className="text-xs sm:text-sm md:text-base text-on-surface font-black tabular-nums tracking-tight">
+                      {isOccupied
+                        ? (table.elapsedLabel || `${activeOrder?.elapsedMinutes ?? 12}m`)
+                        : isReserved
+                          ? (table.reservedTime || '7:30 PM')
+                          : 'Available'}
                     </span>
                   </div>
                 </div>
-              ) : isReserved ? (
-                <div className="py-1 flex flex-col">
-                  <span className="text-xs text-on-surface font-medium truncate">
-                    {readOnly ? 'Reserved' : table.reservedBy}
-                  </span>
-                  {!readOnly && (
-                    <span className="text-[11px] text-on-surface-variant truncate">
-                      Party of {table.reservedPartySize ?? 4}
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <div className="py-2">
-                  <p className="text-xs text-on-surface-variant truncate">{table.zone}</p>
-                </div>
-              )}
 
-              <div className="flex flex-col gap-1.5">
-                {isOccupied ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (readOnly) {
-                        if (activeOrder) setDetailOrder(activeOrder);
-                      } else {
-                        onSelectTableForPos(table.id);
-                      }
-                    }}
-                    disabled={readOnly && !activeOrder}
-                    className={`w-full py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
-                      table.billReady
-                        ? 'bg-primary-container text-on-primary font-bold shadow-md hover:opacity-90'
-                        : 'bg-secondary-container/30 text-secondary hover:bg-secondary-container/50'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[16px]">
-                      {table.billReady ? 'payments' : 'receipt_long'}
+                {/* Bottom Metadata Row */}
+                <div className="flex items-center justify-between gap-3 text-xs sm:text-sm pt-0.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="material-symbols-outlined text-[18px] text-primary shrink-0">
+                      {isOccupied ? 'shopping_bag' : isReserved ? 'event_seat' : 'check_circle'}
                     </span>
-                    <span>{readOnly ? 'View Order Details' : table.billReady ? 'Bill Ready' : 'View Order'}</span>
-                  </button>
-                ) : readOnly ? (
-                  <p className="py-2 text-center text-xs text-on-surface-variant">
-                    {isReserved ? 'Reserved table' : 'No active order'}
-                  </p>
-                ) : isReserved ? (
-                  <button
-                    type="button"
-                    disabled={pendingCheckInId === table.id}
-                    onClick={() => void handleCheckIn(table.id)}
-                    className="w-full py-1.5 rounded-lg bg-surface-container-highest text-primary text-xs font-semibold flex items-center justify-center gap-1 hover:bg-surface-bright transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
-                    <span>{pendingCheckInId === table.id ? 'Checking in...' : 'Check-in'}</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => onSelectTableForPos(table.id)}
-                    className="w-full py-1.5 rounded-lg bg-surface-container-highest text-primary text-xs font-semibold flex items-center justify-center gap-1 hover:bg-surface-bright transition-colors cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">add</span>
-                    <span>Assign</span>
-                  </button>
-                )}
-                {!readOnly && <button
-                  type="button"
-                  data-testid={`print-qr-btn-${table.id}`}
-                  aria-label={`Print QR PDF for Table ${table.id}`}
-                  disabled={printingQrTableId === table.id}
-                  onClick={() => void handlePrintTableQr(table)}
-                  className="w-full py-1.5 rounded-lg bg-surface-container text-on-surface-variant hover:text-primary hover:bg-surface-container-highest text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  <span className="material-symbols-outlined text-[14px]">picture_as_pdf</span>
-                  <span>
-                    {printingQrTableId === table.id ? 'Generating PDF...' : 'Print QR'}
-                  </span>
-                </button>}
+                    <span className="text-xs text-on-surface-variant/80 font-medium truncate">
+                      {isOccupied
+                        ? `${itemsCount} items ordered`
+                        : isReserved
+                          ? `Party of ${table.reservedPartySize ?? 4} (${table.reservedBy || 'Reserved'})`
+                          : `${table.zone} · Ready for guests`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 text-on-surface-variant/70 text-xs shrink-0 font-medium">
+                    <span className="material-symbols-outlined text-[15px]">schedule</span>
+                    <span>{isOccupied ? 'Dining now' : isReserved ? 'Reserved' : 'Ready'}</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
         </div>
       )}
 

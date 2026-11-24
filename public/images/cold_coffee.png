@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+    <defs>
+      <radialGradient id="coffeeBg" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#FFFDF9"/>
+        <stop offset="100%" stop-color="#EEDBC9"/>
+      </radialGradient>
+      <linearGradient id="coffee" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#9C6644"/>
+        <stop offset="100%" stop-color="#582F0E"/>
+      </linearGradient>
+    </defs>
+    <circle cx="100" cy="100" r="92" fill="url(#coffeeBg)"/>
+    <ellipse cx="100" cy="172" rx="45" ry="8" fill="#D7BEA8" opacity="0.7"/>
+    <!-- Straw -->
+    <path d="M 120 22 L 105 75 L 98 145" stroke="#E76F51" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <path d="M 120 22 L 105 75" stroke="#FFF" stroke-dasharray="6,6" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <!-- Glass Cup -->
+    <path d="M 62 65 L 72 162 C 73 166, 127 166, 128 162 L 138 65 Z" fill="#FFF" opacity="0.35" stroke="#C8B6A6" stroke-width="2"/>
+    <!-- Cold Coffee Liquid -->
+    <path d="M 64 80 L 73 160 C 74 163, 126 163, 127 160 L 136 80 Z" fill="url(#coffee)"/>
+    <!-- Ice cubes inside glass -->
+    <rect x="80" y="95" width="18" height="18" rx="3" fill="#FFF" opacity="0.5" transform="rotate(15 89 104)"/>
+    <rect x="102" y="115" width="18" height="18" rx="3" fill="#FFF" opacity="0.5" transform="rotate(-10 111 124)"/>
+    <!-- Froth & Swirl on top -->
+    <ellipse cx="100" cy="78" rx="36" ry="12" fill="#DDB892"/>
+    <ellipse cx="100" cy="74" rx="30" ry="9" fill="#EDE0D4"/>
+    <ellipse cx="100" cy="70" rx="20" ry="6" fill="#FBF5EE"/>
+    <!-- Chocolate Drizzle -->
+    <path d="M 85 73 Q 100 66 115 73 Q 100 78 85 73" stroke="#4A2810" stroke-width="2.5" fill="none"/>
+  </svg>

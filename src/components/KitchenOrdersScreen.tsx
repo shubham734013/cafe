@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -7,13 +7,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ORDER_STATUS_META } from '../state/cafeStateMachines';
-import type { CafeOrder } from '../types/cafe';
+import type { CafeOrder, MenuItem } from '../types/cafe';
 import { deriveKotCardPhase, isKitchenActiveOrder } from '../utils/cafeLogic';
+import { MenuItemStockControlModal } from './MenuItemStockControlModal';
 
 interface KitchenOrdersScreenProps {
   orders: CafeOrder[];
+  menuItems?: MenuItem[];
   onAdvanceOrderStatus?: (orderId: string) => void | Promise<void>;
   onToggleKotItem?: (orderId: string, menuItemId: string) => void;
+  onCancelKotItem?: (orderId: string, menuItemId: string, reason?: string, quantity?: number) => Promise<any>;
+  onToggleMenuAvailability?: (id: string) => Promise<void> | void;
   onRefresh?: () => void;
   onNotify?: (msg: string) => void;
 }
@@ -22,8 +26,11 @@ type KitchenTab = 'active' | 'preparing' | 'ready' | 'dine-in' | 'takeaway' | 'c
 
 export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
   orders,
+  menuItems = [],
   onAdvanceOrderStatus,
   onToggleKotItem,
+  onCancelKotItem,
+  onToggleMenuAvailability,
   onRefresh,
   onNotify,
 }) => {
@@ -31,6 +38,33 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [advancingId, setAdvancingId] = useState<string | null>(null);
+  const [itemStockModalOpen, setItemStockModalOpen] = useState(false);
+
+  // Cancellation state
+  const [cancelTarget, setCancelTarget] = useState<{ order: CafeOrder; item: CafeOrder['items'][number] } | null>(null);
+  const [cancelQty, setCancelQty] = useState(1);
+  const [cancelReason, setCancelReason] = useState('Out of Stock / Ingredient Unavailable');
+  const [cancelCustomReason, setCancelCustomReason] = useState('');
+  const [alsoMark86, setAlsoMark86] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  const outOfStockItemsCount = useMemo(
+    () => menuItems.filter((i) => i.isAvailable === false).length,
+    [menuItems]
+  );
+
+  useEffect(() => {
+    const handleNewOrder = (e: Event) => {
+      const customEvt = e as CustomEvent<{ order?: CafeOrder; orderId?: string }>;
+      const order = customEvt.detail?.order;
+      const ticketLabel = order?.kotNumber || (order?.id ? `#${order.id}` : 'ticket');
+      const tableLabel = order?.tableNumber ? ` (Table ${order.tableNumber})` : '';
+      onNotify?.(`🔔 New Kitchen Order ${ticketLabel}${tableLabel}!`);
+    };
+
+    window.addEventListener('cafe:order:new', handleNewOrder);
+    return () => window.removeEventListener('cafe:order:new', handleNewOrder);
+  }, [onNotify]);
 
   // Active kitchen queue (decluttered: filters out served/cancelled/unpaid upi orders)
   const activeOrders = useMemo(
@@ -103,6 +137,32 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
     }
   };
 
+  const handleConfirmCancelItem = async () => {
+    if (!cancelTarget || !onCancelKotItem || isCancelling) return;
+    setIsCancelling(true);
+    try {
+      const finalReason =
+        cancelReason === 'Other' && cancelCustomReason.trim()
+          ? cancelCustomReason.trim()
+          : cancelReason;
+      await onCancelKotItem(
+        cancelTarget.order.id,
+        cancelTarget.item.menuItemId,
+        finalReason,
+        cancelQty
+      );
+      if (alsoMark86 && onToggleMenuAvailability) {
+        void onToggleMenuAvailability(cancelTarget.item.menuItemId);
+      }
+      setCancelTarget(null);
+      setAlsoMark86(false);
+    } catch {
+      // onNotify is called by mutation handler
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
   return (
     <section className="flex flex-col w-full pb-10 space-y-4">
       {/* Top Header */}
@@ -114,16 +174,29 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
             </h1>
             <span className="px-2.5 py-0.5 rounded-full bg-[#FF6422]/15 text-[#FF6422] text-[11px] font-black inline-flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-[#FF6422] animate-pulse" />
-              Live KDS
+              Kitchen Screen
             </span>
           </div>
-          <p className="text-xs text-on-surface-variant mt-0.5">
-            Synchronized live cooking queue · Zero duplicate tickets
-          </p>
         </div>
 
         {/* Counter Summary Pills */}
         <div className="flex items-center gap-2 shrink-0">
+          {onToggleMenuAvailability && (
+            <button
+              type="button"
+              onClick={() => setItemStockModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-all active:scale-95 cursor-pointer shrink-0"
+            >
+              <span className="material-symbols-outlined text-[17px]">remove_shopping_cart</span>
+              <span className="hidden sm:inline">86 / Item Stock</span>
+              {outOfStockItemsCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                  {outOfStockItemsCount}
+                </span>
+              )}
+            </button>
+          )}
+
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/20 text-amber-500 text-xs font-bold">
             <span>🍳</span>
             <span>{preparingCount} in Prep</span>
@@ -156,7 +229,7 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by KOT, Table #, or dish name..."
+            placeholder="Search by order #, table, or dish name..."
             className="w-full pl-10 pr-4 py-2 bg-surface-container text-xs sm:text-sm text-on-surface placeholder:text-outline rounded-2xl border border-outline-variant/15 focus:outline-none focus:ring-2 focus:ring-[#FF6422]/50"
           />
         </div>
@@ -213,70 +286,185 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
             const isServed = order.status === 'served';
             const isReady = order.status === 'ready';
             const isUrgent = order.elapsedMinutes > 15;
+            const tableLabel = order.tableNumber ? `T${order.tableNumber.replace('T', '')}` : 'CTR';
+            const activeItemsCount = order.items.reduce(
+              (s, i) => s + (i.status !== 'cancelled' ? i.quantity : 0),
+              0
+            );
 
             return (
               <div
                 key={order.id}
                 onClick={() => setSelectedOrderId(order.id)}
-                className={`group rounded-3xl bg-surface-container hover:bg-surface-container-high border transition-all cursor-pointer shadow-sm hover:shadow-md flex flex-col justify-between p-4 sm:p-5 ${
+                className={`relative overflow-hidden flex flex-col justify-between p-4 sm:p-5 rounded-3xl liquid-glass-card shadow-2xl transition-all space-y-4 border cursor-pointer ${
                   isUrgent && !isServed
-                    ? 'border-red-500/40 ring-1 ring-red-500/20'
+                    ? 'border-error/50 ring-1 ring-error/30'
                     : isReady
-                      ? 'border-emerald-500/30'
-                      : 'border-outline-variant/15'
+                      ? 'border-emerald-500/40 ring-1 ring-emerald-500/20'
+                      : 'border-white/[0.08] hover:border-primary/40'
                 }`}
               >
-                {/* Header: KOT Number, Channel, Status Badge */}
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-base text-on-surface group-hover:text-[#FF6422] transition-colors">
-                          KOT {order.kotNumber}
-                        </span>
-                        {isUrgent && !isServed && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 text-[10px] font-black animate-pulse">
-                            URGENT
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-on-surface-variant font-medium mt-0.5">
-                        {order.tableNumber ? `Table ${order.tableNumber.replace('T', '')}` : 'Counter'}{' '}
-                        · <span className="capitalize">{order.serviceMode}</span>
-                      </p>
-                    </div>
+                {isUrgent && !isServed && (
+                  <div className="absolute -right-8 -top-8 w-24 h-24 bg-error/20 rounded-full blur-xl pointer-events-none" />
+                )}
 
-                    {/* Status Badge */}
-                    <span
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-black capitalize shrink-0 ${
-                        isServed
-                          ? 'bg-surface-container-highest text-on-surface-variant'
+                {/* Header Row: Avatar + KOT & Table + Action Buttons */}
+                <div className="flex items-center justify-between gap-2.5 relative">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div
+                      className={`relative w-12 h-12 rounded-full flex items-center justify-center text-sm font-black shrink-0 shadow-md ${
+                        isUrgent && !isServed
+                          ? 'bg-gradient-to-tr from-error/30 to-error/10 text-error border border-error/40'
                           : isReady
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            ? 'bg-gradient-to-tr from-emerald-500/30 to-emerald-400/10 text-emerald-300 border border-emerald-500/40'
+                            : 'bg-surface-container-high/90 text-primary border border-white/[0.08]'
                       }`}
                     >
-                      {statusMeta.kotBadgeLabel}
-                    </span>
+                      {tableLabel}
+                      {isUrgent && !isServed && (
+                        <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-background flex items-center justify-center border border-error/40">
+                          <span className="material-symbols-outlined text-[11px] text-error icon-filled">
+                            priority_high
+                          </span>
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm sm:text-base text-on-surface font-extrabold truncate tracking-tight">
+                          KOT #{order.kotNumber}
+                        </span>
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase shrink-0 ${
+                            isServed
+                              ? 'bg-surface-container-highest text-on-surface-variant border border-white/[0.08]'
+                              : isReady
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                : isUrgent
+                                  ? 'bg-error/20 text-error border border-error/30 animate-pulse'
+                                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          }`}
+                        >
+                          {statusMeta.kotBadgeLabel}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-on-surface-variant/80 text-xs sm:text-sm mt-0.5">
+                        <span className="material-symbols-outlined text-[15px] shrink-0">
+                          table_restaurant
+                        </span>
+                        <span className="tabular-nums font-medium tracking-wide">
+                          {order.tableNumber ? `Table ${order.tableNumber.replace('T', '')}` : 'Counter'} · {order.serviceMode}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Items Checklist */}
-                  <div className="space-y-1.5 py-2 border-t border-b border-outline-variant/10">
-                    {order.items.map((item) => (
+                  {/* Action Icon Buttons */}
+                  <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    {!isServed && onAdvanceOrderStatus && (
+                      <button
+                        type="button"
+                        disabled={advancingId === order.id}
+                        aria-label={`Advance order ${order.kotNumber}`}
+                        onClick={(e) => handleAdvance(e, order)}
+                        className={`w-10 h-10 rounded-2xl border flex items-center justify-center transition-all cursor-pointer shadow-sm active:scale-95 ${
+                          isReady
+                            ? 'bg-blue-600/20 border-blue-500/40 text-blue-400 hover:bg-blue-600/30'
+                            : order.status === 'preparing'
+                              ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/30'
+                              : 'bg-amber-500/20 border-amber-500/40 text-amber-300 hover:bg-amber-500/30'
+                        }`}
+                        title={isReady ? 'Mark Served' : order.status === 'preparing' ? 'Mark Ready' : 'Start Prep'}
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          {isReady ? 'done_all' : order.status === 'preparing' ? 'notifications' : 'skillet'}
+                        </span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      aria-label={`Print ticket for ${order.kotNumber}`}
+                      onClick={() => onNotify?.(`Printed KOT #${order.kotNumber}`)}
+                      className="w-10 h-10 rounded-2xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-95 transition-all cursor-pointer shadow-sm hover:border-white/20"
+                      title="Print KOT Ticket"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">print</span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`View order ${order.kotNumber}`}
+                      onClick={() => setSelectedOrderId(order.id)}
+                      className="w-10 h-10 rounded-2xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-on-surface-variant hover:text-primary active:scale-95 transition-all cursor-pointer shadow-sm hover:border-primary/40"
+                      title="View Details"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">visibility</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Middle Metrics Inset Card */}
+                <div className="grid grid-cols-3 gap-2 py-3 px-4 rounded-2xl bg-black/40 backdrop-blur-md border border-white/[0.05] text-center items-center shadow-inner">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Items</span>
+                    <span className="text-xs sm:text-sm md:text-base text-on-surface font-black tabular-nums tracking-tight">
+                      {activeItemsCount} Items
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Elapsed Time</span>
+                    <span className="text-xs sm:text-sm md:text-base text-secondary font-black tabular-nums tracking-tight">
+                      {order.elapsedMinutes} Mins
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Progress</span>
+                    <span className="text-xs sm:text-sm md:text-base text-on-surface font-black tabular-nums tracking-tight">
+                      {phase.checkedCount}/{phase.totalCount} Ready
+                    </span>
+                  </div>
+                </div>
+
+                {/* Items Checklist Inset Container */}
+                <div className="rounded-2xl liquid-glass-subcard p-3 space-y-1.5 border border-white/[0.04]">
+                  {order.items.map((item, itemIdx) => {
+                    const isCancelled = item.status === 'cancelled';
+                    if (isCancelled) {
+                      return (
+                        <div
+                          key={`${item.menuItemId}-cancelled-${itemIdx}`}
+                          className="flex items-center justify-between gap-2 py-1.5 px-2.5 rounded-xl bg-red-950/20 border border-red-500/20 text-xs"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-4 h-4 rounded-md flex items-center justify-center shrink-0 bg-red-500/20 text-red-400 text-[11px] font-bold">
+                              ✕
+                            </span>
+                            <span className="font-semibold line-through text-red-300 truncate">
+                              {item.quantity}× {item.name}
+                            </span>
+                          </div>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 font-bold shrink-0">
+                            Cancelled · ₹{item.refundAmount || item.price * item.quantity} Refunded
+                          </span>
+                        </div>
+                      );
+                    }
+
+                    return (
                       <div
                         key={item.menuItemId}
                         onClick={(e) => {
                           e.stopPropagation();
                           onToggleKotItem?.(order.id, item.menuItemId);
                         }}
-                        className="flex items-center justify-between gap-2 py-1 px-1.5 rounded-xl hover:bg-surface-variant/40 transition-colors text-xs"
+                        className="flex items-center justify-between gap-2 py-1.5 px-2.5 rounded-xl hover:bg-surface-container-high/60 transition-colors text-xs cursor-pointer group/item"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <span
-                            className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 text-[12px] font-bold transition-all ${
+                            className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 text-[11px] font-bold transition-all ${
                               item.checked
                                 ? 'bg-emerald-500 text-white'
-                                : 'border border-outline-variant text-transparent hover:border-[#FF6422]'
+                                : 'border border-outline-variant text-transparent hover:border-primary'
                             }`}
                           >
                             ✓
@@ -284,75 +472,64 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
                           <span
                             className={`font-semibold truncate ${
                               item.checked
-                                ? 'line-through text-on-surface-variant opacity-70'
+                                ? 'line-through text-on-surface-variant opacity-60'
                                 : 'text-on-surface'
                             }`}
                           >
                             {item.quantity}× {item.name}
                           </span>
                         </div>
-                        {item.note && (
-                          <span className="text-[10px] text-amber-400/90 truncate shrink-0 max-w-[90px]">
-                            {item.note}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {item.note && (
+                            <span className="text-[10px] text-amber-400/90 truncate max-w-[100px] bg-amber-500/10 px-1.5 py-0.5 rounded">
+                              {item.note}
+                            </span>
+                          )}
+                          {onCancelKotItem && !isServed && (
+                            <button
+                              type="button"
+                              title="Cancel item and refund"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCancelTarget({ order, item });
+                                setCancelQty(item.quantity);
+                                setCancelReason('Out of Stock / Ingredient Unavailable');
+                                setCancelCustomReason('');
+                              }}
+                              className="w-6 h-6 rounded flex items-center justify-center text-outline hover:text-red-400 hover:bg-red-500/15 transition-all cursor-pointer opacity-70 group-hover/item:opacity-100"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">cancel</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    ))}
-                  </div>
-
-                  {order.cookingNote && (
-                    <div className="mt-2 p-2 rounded-xl bg-[#FF6422]/10 border border-[#FF6422]/20 text-[11px] text-[#FF6422] font-semibold">
-                      Chef Note: {order.cookingNote}
-                    </div>
-                  )}
+                    );
+                  })}
                 </div>
 
-                {/* Footer Row: Progress & Action Button */}
-                <div className="mt-4 pt-2 flex items-center justify-between gap-3">
-                  <div className="text-[11px] text-on-surface-variant font-medium">
-                    <span>
-                      {phase.checkedCount}/{phase.totalCount} prepped
+                {order.cookingNote && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-container-high/60 text-secondary text-xs">
+                    <span className="material-symbols-outlined text-[14px] shrink-0">
+                      restaurant
                     </span>
-                    <span className="mx-1.5">·</span>
-                    <span className={isUrgent ? 'text-red-400 font-bold' : ''}>
-                      {order.elapsedMinutes}m ago
+                    <span className="text-[11px] truncate font-medium">Chef Note: {order.cookingNote}</span>
+                  </div>
+                )}
+
+                {/* Footer Row: Progress & Schedule */}
+                <div className="flex items-center justify-between gap-3 text-xs sm:text-sm pt-0.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="material-symbols-outlined text-[18px] text-primary shrink-0">
+                      skillet
+                    </span>
+                    <span className="text-xs text-on-surface-variant/80 font-medium truncate">
+                      {order.items[0]?.name || 'Fresh order'}
                     </span>
                   </div>
-
-                  {/* Status Advance Action Button */}
-                  {!isServed && onAdvanceOrderStatus && (
-                    <button
-                      type="button"
-                      disabled={advancingId === order.id}
-                      onClick={(e) => handleAdvance(e, order)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-bold text-white shadow-sm transition-all active:scale-95 cursor-pointer flex items-center gap-1 shrink-0 ${
-                        isReady
-                          ? 'bg-blue-600 hover:bg-blue-500'
-                          : order.status === 'preparing'
-                            ? 'bg-emerald-600 hover:bg-emerald-500'
-                            : 'bg-[#FF6422] hover:bg-[#E55518]'
-                      }`}
-                    >
-                      {advancingId === order.id ? (
-                        <span>Updating...</span>
-                      ) : isReady ? (
-                        <>
-                          <span className="material-symbols-outlined text-[15px]">done_all</span>
-                          <span>Serve</span>
-                        </>
-                      ) : order.status === 'preparing' ? (
-                        <>
-                          <span className="material-symbols-outlined text-[15px]">notifications</span>
-                          <span>Mark Ready</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="material-symbols-outlined text-[15px]">skillet</span>
-                          <span>Start Prep</span>
-                        </>
-                      )}
-                    </button>
-                  )}
+                  <div className="flex items-center gap-1 text-on-surface-variant/70 text-xs shrink-0 font-medium">
+                    <span className="material-symbols-outlined text-[15px]">schedule</span>
+                    <span>{order.elapsedMinutes}m ago</span>
+                  </div>
                 </div>
               </div>
             );
@@ -468,6 +645,188 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
           </DialogContent>
         )}
       </Dialog>
+
+      {/* Item Cancel & Refund Dialog */}
+      <Dialog open={Boolean(cancelTarget)} onOpenChange={(open) => !open && setCancelTarget(null)}>
+        <DialogContent className="max-w-md bg-surface-container dark:bg-slate-900/95 backdrop-blur-2xl border border-outline-variant/30 text-on-surface p-5 rounded-2xl shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-on-surface flex items-center gap-2">
+              <span className="material-symbols-outlined text-red-500 text-[20px]">
+                remove_shopping_cart
+              </span>
+              <span>Cancel Item &amp; Issue Refund</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-on-surface-variant">
+              Order #{cancelTarget?.order.kotNumber || cancelTarget?.order.id} ·{' '}
+              {cancelTarget?.order.tableNumber ? `Table ${cancelTarget.order.tableNumber.replace('T', '')}` : 'Counter'} ·{' '}
+              <span className="capitalize">{cancelTarget?.order.serviceMode}</span>
+            </DialogDescription>
+          </DialogHeader>
+
+          {cancelTarget && (
+            <div className="space-y-4 pt-2">
+              {/* Item Summary Card */}
+              <div className="p-3.5 rounded-xl bg-surface-container-high/60 border border-outline-variant/20 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
+                    <span className="material-symbols-outlined text-[20px]">restaurant</span>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-on-surface">{cancelTarget.item.name}</h4>
+                    <p className="text-xs text-on-surface-variant">
+                      ₹{cancelTarget.item.price} each · Station: {cancelTarget.item.station}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-base font-black text-red-400 tabular-nums">
+                    ₹{cancelTarget.item.price * cancelQty}
+                  </span>
+                  <span className="block text-[10px] text-on-surface-variant font-medium">
+                    Refund Amount
+                  </span>
+                </div>
+              </div>
+
+              {/* Quantity to Cancel (if quantity > 1) */}
+              {cancelTarget.item.quantity > 1 && (
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-surface-container border border-outline-variant/15 text-xs">
+                  <span className="font-semibold text-on-surface">Quantity to Cancel:</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={cancelQty <= 1}
+                      onClick={() => setCancelQty((q) => Math.max(1, q - 1))}
+                      className="w-7 h-7 rounded-lg bg-surface-container-high flex items-center justify-center font-bold text-on-surface disabled:opacity-40 cursor-pointer"
+                    >
+                      -
+                    </button>
+                    <span className="w-6 text-center font-bold text-on-surface tabular-nums">
+                      {cancelQty}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={cancelQty >= cancelTarget.item.quantity}
+                      onClick={() => setCancelQty((q) => Math.min(cancelTarget.item.quantity, q + 1))}
+                      className="w-7 h-7 rounded-lg bg-surface-container-high flex items-center justify-center font-bold text-on-surface disabled:opacity-40 cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Cancellation Reason Dropdown */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-on-surface-variant">
+                  Cancellation Reason:
+                </label>
+                <select
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  className="w-full bg-surface-container-high px-3 py-2 rounded-xl text-xs font-medium text-on-surface border border-outline-variant/20 focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="Out of Stock / Ingredient Unavailable">
+                    Out of Stock / Ingredient Unavailable
+                  </option>
+                  <option value="Burnt / Accidental Spoilage in Kitchen">
+                    Burnt / Accidental Spoilage in Kitchen
+                  </option>
+                  <option value="Customer Cancellation Request">
+                    Customer Cancellation Request
+                  </option>
+                  <option value="Kitchen Station Delay">Kitchen Station Delay</option>
+                  <option value="Other">Other (Custom note)</option>
+                </select>
+              </div>
+
+              {cancelReason === 'Other' && (
+                <input
+                  type="text"
+                  value={cancelCustomReason}
+                  onChange={(e) => setCancelCustomReason(e.target.value)}
+                  placeholder="Type custom cancellation reason..."
+                  className="w-full bg-surface-container-high px-3 py-2 rounded-xl text-xs text-on-surface border border-outline-variant/20 focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              )}
+
+              {/* Payment & Refund Explanation */}
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] leading-relaxed flex items-start gap-2">
+                <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5">info</span>
+                <div>
+                  {cancelTarget.order.paymentStatus === 'paid' ? (
+                    <span>
+                      This order was <strong>Paid Online</strong>. Cancelling will issue an immediate refund of{' '}
+                      <strong>₹{cancelTarget.item.price * cancelQty}</strong> and restore recipe ingredients to inventory.
+                    </span>
+                  ) : (
+                    <span>
+                      This order is <strong>Pay on Counter</strong>. Cancelling will deduct{' '}
+                      <strong>₹{cancelTarget.item.price * cancelQty}</strong> from the order bill and restore recipe ingredients to inventory.
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Option to also 86 the item */}
+              {onToggleMenuAvailability && (
+                <label className="flex items-center gap-2.5 cursor-pointer p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-semibold select-none hover:bg-rose-500/15 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={alsoMark86}
+                    onChange={(e) => setAlsoMark86(e.target.checked)}
+                    className="rounded text-rose-500 focus:ring-rose-400 w-4 h-4 cursor-pointer"
+                  />
+                  <span>Also tag <strong>{cancelTarget.item.name}</strong> as <strong>Out of Stock (86)</strong> for future orders</span>
+                </label>
+              )}
+
+              {/* Modal Action Buttons */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={isCancelling}
+                  onClick={() => setCancelTarget(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-surface-container-high text-xs font-bold text-on-surface hover:bg-surface-bright transition-colors cursor-pointer"
+                >
+                  Keep Item
+                </button>
+                <button
+                  type="button"
+                  disabled={isCancelling}
+                  onClick={handleConfirmCancelItem}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-xs font-bold text-white transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {isCancelling ? (
+                    <>
+                      <span className="material-symbols-outlined text-[16px] animate-spin">
+                        progress_activity
+                      </span>
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                      <span>Confirm Cancel &amp; Refund</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Menu Item Stock Control (86 / In Stock) Dialog */}
+      {onToggleMenuAvailability && (
+        <MenuItemStockControlModal
+          open={itemStockModalOpen}
+          onOpenChange={setItemStockModalOpen}
+          menuItems={menuItems}
+          onToggleAvailability={onToggleMenuAvailability}
+          roleLabel="Kitchen Orders"
+        />
+      )}
     </section>
   );
 };

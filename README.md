@@ -1,52 +1,52 @@
 # Seth Sawariya CafeOS
 
-CafeOS is a cafe management application with customer ordering, staff portals, POS order entry, kitchen workflows, inventory, customer records, loyalty, campaigns, and reporting.
+CafeOS is a cafe management application for customer ordering, staff/POS workflows, kitchen operations, inventory, customer records, loyalty, campaigns, and reporting.
 
-## Run locally
+## Local setup
 
-Requirements: Node.js and MongoDB.
+Requirements: Node.js 22 or newer, npm, and a reachable MongoDB instance. MongoDB is the authoritative runtime store.
 
 ```bash
-npm install
+npm ci
 cp .env.example .env
+# Set MONGODB_URI and MONGODB_DB_NAME if using a non-default local MongoDB.
 npm run dev
 ```
 
-Before starting the app, replace every `CAFE_*_PIN` placeholder in `.env` with a unique 4-digit PIN. Configure `MONGODB_URI` and `MONGODB_DB_NAME` for the MongoDB instance to use. CafeOS exits with a startup error if it cannot connect to MongoDB.
+The development server serves the frontend and API at `http://localhost:3000`. Set distinct 4-digit local values for `CAFE_ADMIN_PIN` and `CAFE_KITCHEN_PIN` in `.env`; production additionally rejects weak/default PINs. For production settings and the exact variable list, see [ENVIRONMENT.md](./ENVIRONMENT.md).
 
-The server and Vite frontend run together. The default local URL is `http://localhost:3000`. Staff PINs and the session signing secret are configured through the `CAFE_*` variables in `.env`; replace the development values before deploying.
+## Production deployment
 
-## Payments
+1. Provision MongoDB and an HTTPS public origin. Configure production variables in the hosting provider's secret/configuration manager, not in source control.
+2. Build the client with `npm ci && npm run build`. Any `VITE_*` values are public browser configuration and must be available at build time.
+3. Run one CafeOS server instance per MongoDB database with `NODE_ENV=production npm start`. Production startup fails unless MongoDB, staff PINs, `CAFE_AUTH_SECRET`, `APP_PUBLIC_URL` (or legacy `APP_URL`), and matching `CORS_ORIGIN` are configured.
+4. Put the server behind an HTTPS reverse proxy. Set `TRUST_PROXY_HOPS` only to the exact trusted proxy count, and prevent clients from reaching the app directly when proxy trust is enabled. Preserve WebSocket upgrades.
+5. Check `GET /health/live` and `GET /health/ready` and complete the deploy checklist in [RUNBOOK_DISASTER_RECOVERY.md](./RUNBOOK_DISASTER_RECOVERY.md).
 
-CafeOS can connect to [UPI Gateway](https://github.com/mynkdev-21/upi-gateway) using its authenticated server API. The Laravel gateway is a separate application; CafeOS does not install or host it.
+Do not run multiple application instances against the same database: the MongoDB lease is intended to prevent concurrent writers. PostgreSQL is optional and is not required for CafeOS runtime operations.
 
-1. Deploy UPI Gateway separately using its installation and production security guides. It requires PHP 8.2+, MySQL, HTTPS, and merchant payment-provider configuration.
-2. Set `UPI_GATEWAY_API_URL` to the gateway origin (without `/api/v1`), then set its live `UPI_GATEWAY_API_KEY` and `UPI_GATEWAY_API_SECRET` in CafeOS's server environment.
-3. Configure the gateway's live webhook URL as `https://<your-cafe-domain>/api/webhooks/upi-gateway` and set the matching live signing secret in `UPI_GATEWAY_WEBHOOK_SECRET`. Use an explicit webhook secret; CafeOS does not fall back to the API secret.
-4. Restart CafeOS. Customer checkout opens the gateway's hosted payment page, then CafeOS checks the gateway's API for the result. Signed webhook notifications trigger the same authoritative status check; webhook contents alone never mark an order paid.
+## Integrations
 
-Keep all gateway credentials server-side and out of source control. The integration currently accepts live gateway orders only. No payment is simulated, and automated tests use a fake gateway rather than initiating a real payment. Complete provider- and hosting-specific testing before accepting live payments.
+Payment gateways, Brevo email, Supabase/Google customer authentication, and CAPTCHA are optional and have not been verified against production accounts. Missing credentials keep the associated provider unavailable; they do not enable a simulated live provider. Use only provider sandboxes until the separate live go-live checks are complete. Payment status is based on server-side provider verification and validated webhook signatures, never a browser success signal. See [ENVIRONMENT.md](./ENVIRONMENT.md).
 
-## Tests and checks
+Google sign-in does not guarantee a phone number. Phone data is only available when the user has granted the applicable Google People API permission; otherwise collect it through the app's phone-entry flow.
+
+## Data, backup, and recovery
+
+MongoDB stores operational state. PostgreSQL migrations and sample seeding are separate optional tools; they do not create or migrate the runtime MongoDB store. Follow [DATABASE_SETUP.md](./DATABASE_SETUP.md) for the MongoDB model and optional PostgreSQL commands, and [RUNBOOK_DISASTER_RECOVERY.md](./RUNBOOK_DISASTER_RECOVERY.md) for backup, restore, monitoring, deploy, and rollback steps.
+
+The provided MongoDB backup script requires MongoDB Database Tools (`mongodump` / `mongorestore`). It does not provide scheduling, encryption, off-site replication, checksums, retention, or point-in-time recovery. Configure and test those separately with the database operator.
+
+## Checks
 
 ```bash
-npm test
 npm run lint
+npm test
 npm run build
 ```
 
-## Workspace routes
+The MongoDB persistence integration test is skipped unless `CAFE_TEST_MONGODB_URI` points to a reachable loopback MongoDB service. It uses a unique temporary database and refuses non-loopback hosts.
 
-Customer pages use `/customer`, `/customer/menu`, `/customer/cart`, `/customer/tracking`, and `/customer/rewards`. The customer interface does not link to staff portals.
+## Routes
 
-Staff pages require a staff PIN session. Managers and owners share permissions across `/manager` and `/admin` routes. Administrative modules live under `/admin/...`; the kitchen portal is separate at `/kitchen`.
-
-| Role | Default route |
-|---|---|
-| Super Admin | `/admin` |
-| Manager / Owner | `/admin` |
-| Cashier | `/manager/pos` |
-| Barista | `/kitchen` |
-| Server | `/manager/tables` |
-
-Navigation is filtered by role, and server APIs enforce role checks. Guest orders use a server-issued customer identity and a signed browser session.
+Customer pages use `/customer`, `/customer/menu`, `/customer/cart`, `/customer/tracking`, and `/customer/rewards`. Staff pages are `/admin/...` and `/kitchen/...`; the server enforces staff roles and customer order ownership.
