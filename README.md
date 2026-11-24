@@ -50,3 +50,4 @@ The MongoDB persistence integration test is skipped unless `CAFE_TEST_MONGODB_UR
 ## Routes
 
 Customer pages use `/customer`, `/customer/menu`, `/customer/cart`, `/customer/tracking`, and `/customer/rewards`. Staff pages are `/admin/...` and `/kitchen/...`; the server enforces staff roles and customer order ownership.
+# cafe
