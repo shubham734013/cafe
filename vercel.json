@@ -7,11 +7,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://fare-pregnancy-eventually-disk.trycloudflare.com/api/:match*"
+      "destination": "https://sawariya-cafe-8bmf.onrender.com/api/:match*"
     },
     {
       "source": "/socket.io/:match*",
-      "destination": "https://fare-pregnancy-eventually-disk.trycloudflare.com/socket.io/:match*"
+      "destination": "https://sawariya-cafe-8bmf.onrender.com/socket.io/:match*"
     },
     {
       "source": "/(.*)",
