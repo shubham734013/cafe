@@ -9,20 +9,20 @@ const STAFF_MODULES: Array<{
 }> = [
   {
     id: 'pos-terminal',
-    title: 'POS Terminal',
+    title: 'Billing Counter',
     description: 'Create and manage in-person orders.',
     icon: 'point_of_sale',
   },
   {
     id: 'kitchen-display-system',
-    title: 'Kitchen KOT',
-    description: 'Prepare and update kitchen tickets.',
+    title: 'Kitchen Screen',
+    description: 'Prepare and update kitchen orders.',
     icon: 'countertops',
   },
   {
     id: 'admin-dashboard',
     title: 'Admin Dashboard',
-    description: 'View live cafe operations.',
+    description: 'Open the operational dashboard.',
     icon: 'dashboard',
   },
   {
@@ -33,7 +33,7 @@ const STAFF_MODULES: Array<{
   },
   {
     id: 'reports-analytics',
-    title: 'Reports & Analytics',
+    title: 'Reports & Sales',
     description: 'Review sales and performance reports.',
     icon: 'insights',
   },
@@ -45,37 +45,37 @@ const STAFF_MODULES: Array<{
   },
   {
     id: 'inventory-stock',
-    title: 'Inventory & Stock',
+    title: 'Stock & Inventory',
     description: 'Track ingredients and stock levels.',
     icon: 'inventory_2',
   },
   {
     id: 'crm-customers',
-    title: 'CRM & Customers',
+    title: 'Customer List',
     description: 'Manage customer profiles.',
     icon: 'groups',
   },
   {
     id: 'loyalty-rewards',
-    title: 'Loyalty & Rewards',
+    title: 'Reward Points',
     description: 'Configure loyalty rules and rewards.',
     icon: 'stars',
   },
   {
     id: 'offers-campaigns',
-    title: 'Offers & Campaigns',
+    title: 'Offers & Discounts',
     description: 'Manage cafe promotions.',
     icon: 'local_offer',
   },
   {
     id: 'staff-roles',
-    title: 'Staff & Roles',
+    title: 'Staff & Team',
     description: 'Manage team members and access.',
     icon: 'badge',
   },
   {
     id: 'settings-cafe-profile',
-    title: 'Settings & Profile',
+    title: 'Cafe Settings',
     description: 'Configure cafe profile and operations.',
     icon: 'settings',
   },
@@ -91,16 +91,21 @@ export function StaffWorkspaceHome({ role, onNavigate }: StaffWorkspaceHomeProps
 
   return (
     <section className="space-y-6">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-wider text-primary">
-          {formatStaffRoleLabel(role)} workspace
-        </p>
-        <h1 className="mt-1 text-2xl font-bold text-on-surface">
-          {role === 'manager' || role === 'owner' ? 'Manager Workspace' : `${formatStaffRoleLabel(role)} Hub`}
-        </h1>
-        <p className="mt-1 text-xs text-on-surface-variant">
-          Select an operational module to begin.
-        </p>
+      <header className="flex items-center gap-3.5">
+        <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-[#D4AF37]/60 shadow-md shrink-0 bg-black p-0.5">
+          <img src="/images/tsc-logo.jpg" alt="The Sawariya Cafe" className="w-full h-full object-cover rounded-full" />
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+            {formatStaffRoleLabel(role)} workspace
+          </p>
+          <h1 className="mt-0.5 text-2xl font-bold text-on-surface">
+            {role === 'admin' ? 'Admin Workspace' : `${formatStaffRoleLabel(role)} Hub`}
+          </h1>
+          <p className="mt-0.5 text-xs text-on-surface-variant">
+            Select an operational module to begin.
+          </p>
+        </div>
       </header>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

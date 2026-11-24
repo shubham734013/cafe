@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+    <defs>
+      <radialGradient id="bgSpecial" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#FFF5EB"/>
+        <stop offset="100%" stop-color="#F3D5B5"/>
+      </radialGradient>
+      <linearGradient id="bunS" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#E76F51"/>
+        <stop offset="100%" stop-color="#C65135"/>
+      </linearGradient>
+    </defs>
+    <circle cx="100" cy="100" r="92" fill="url(#bgSpecial)"/>
+    <ellipse cx="100" cy="172" rx="68" ry="10" fill="#DDBEA9" opacity="0.7"/>
+    <!-- Bottom bun -->
+    <path d="M 44 148 C 44 164, 156 164, 156 148 Z" fill="url(#bunS)"/>
+    <!-- Patty 1 -->
+    <rect x="40" y="132" width="120" height="15" rx="7" fill="#6F4518"/>
+    <!-- Cheese 1 -->
+    <path d="M 42 131 L 158 131 L 138 142 L 62 142 Z" fill="#FFB703"/>
+    <!-- Middle Bun -->
+    <rect x="42" y="118" width="116" height="12" rx="5" fill="#E76F51"/>
+    <!-- Paneer Slab -->
+    <rect x="46" y="106" width="108" height="11" rx="4" fill="#FFF3B0" stroke="#E09F3E" stroke-width="1.5"/>
+    <!-- Sauce & Lettuce -->
+    <path d="M 38 104 Q 50 94 62 104 Q 75 94 88 104 Q 100 93 112 104 Q 125 94 138 104 Q 150 94 162 104 L 158 108 L 42 108 Z" fill="#588157"/>
+    <!-- Tomato -->
+    <rect x="48" y="94" width="48" height="9" rx="4" fill="#D90429"/>
+    <rect x="104" y="94" width="48" height="9" rx="4" fill="#D90429"/>
+    <!-- Top Bun -->
+    <path d="M 40 90 C 40 35, 160 35, 160 90 Z" fill="url(#bunS)"/>
+    <!-- Special Crown Badge -->
+    <circle cx="100" cy="38" r="14" fill="#C67C4E"/>
+    <text x="100" y="42" font-size="11" font-weight="900" fill="#FFF" text-anchor="middle" font-family="sans-serif">TSC</text>
+    <!-- Seeds -->
+    <ellipse cx="75" cy="62" rx="3" ry="1.5" fill="#FFF" opacity="0.9" transform="rotate(-15 75 62)"/>
+    <ellipse cx="100" cy="58" rx="3" ry="1.5" fill="#FFF" opacity="0.9"/>
+    <ellipse cx="125" cy="62" rx="3" ry="1.5" fill="#FFF" opacity="0.9" transform="rotate(15 125 62)"/>
+  </svg>

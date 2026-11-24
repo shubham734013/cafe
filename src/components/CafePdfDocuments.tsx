@@ -370,7 +370,7 @@ const TableQrPdf: React.FC<{
 
       <View style={tableQrStyles.footerBox}>
         <Text style={tableQrStyles.footerSteps}>
-          1. Point phone camera at QR  •  2. Open {orderPath}  •  3. Fresh order goes straight to Kitchen KOT
+          1. Point phone camera at QR  •  2. Open {orderPath}  •  3. Fresh order goes straight to the Kitchen
         </Text>
       </View>
     </Page>

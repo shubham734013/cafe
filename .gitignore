@@ -7,6 +7,7 @@ coverage/
 .env*
 !.env.example
 .data/
+.codex-build/
 .playwright-cli/
 upi-gateway/vendor/
 upi-gateway/bootstrap/cache/

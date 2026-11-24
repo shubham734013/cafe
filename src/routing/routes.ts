@@ -8,22 +8,26 @@ const CUSTOMER_PATHS: Record<Exclude<ScreenId, 'splash' | StaffScreenId>, string
   tracking: '/customer/tracking',
   rewards: '/customer/rewards',
   profile: '/customer/profile',
+  login: '/customer/login',
+  'privacy-policy': '/privacy-policy',
+  'terms-and-conditions': '/terms-and-conditions',
+  akshat: '/akshat',
 };
 
-const STAFF_PATHS: Record<StaffScreenId, string> = {
-  'staff-home': '/manager',
-  'pos-terminal': '/manager/pos',
-  'pos-orders': '/kitchen/pos-orders',
-  'kitchen-display-system': '/kitchen',
-  'kitchen-tables': '/kitchen/tables',
+const ADMIN_PATHS: Record<StaffScreenId, string> = {
+  'staff-home': '/admin/home',
+  'pos-terminal': '/admin/pos',
+  'pos-orders': '/admin/pos-orders',
+  'kitchen-display-system': '/admin/kitchen',
+  'kitchen-tables': '/admin/kitchen/tables',
   'admin-dashboard': '/admin',
-  'order-management': '/manager/orders',
-  'reports-analytics': '/manager/reports',
-  'table-layout': '/manager/tables',
-  'inventory-stock': '/manager/inventory',
-  'crm-customers': '/manager/customers',
-  'loyalty-rewards': '/manager/loyalty',
-  'offers-campaigns': '/manager/campaigns',
+  'order-management': '/admin/orders',
+  'reports-analytics': '/admin/reports',
+  'table-layout': '/admin/tables',
+  'inventory-stock': '/admin/inventory',
+  'crm-customers': '/admin/customers',
+  'loyalty-rewards': '/admin/loyalty',
+  'offers-campaigns': '/admin/campaigns',
   'staff-roles': '/admin/team',
   'settings-cafe-profile': '/admin/settings',
 };
@@ -36,33 +40,14 @@ const KITCHEN_PATHS: Partial<Record<StaffScreenId, string>> = {
   'order-management': '/kitchen/orders',
   'table-layout': '/kitchen/tables-management',
   'inventory-stock': '/kitchen/inventory',
-};
-
-const MANAGER_PATHS: Partial<Record<StaffScreenId, string>> = {
-  'kitchen-display-system': '/manager/kitchen',
-  'kitchen-tables': '/manager/table-details',
+  'settings-cafe-profile': '/kitchen/settings',
 };
 
 const PATH_TO_SCREEN = new Map<string, ScreenId>(
   [
     ...Object.entries(CUSTOMER_PATHS),
-    ...Object.entries(STAFF_PATHS),
+    ...Object.entries(ADMIN_PATHS),
     ...Object.entries(KITCHEN_PATHS),
-    ...Object.entries(MANAGER_PATHS),
-    ['staff-home', '/staff'],
-    ['pos-terminal', '/staff/pos'],
-    ['pos-orders', '/staff/pos-orders'],
-    ['kitchen-display-system', '/staff/kitchen'],
-    ['admin-dashboard', '/staff/dashboard'],
-    ['order-management', '/staff/orders'],
-    ['reports-analytics', '/staff/reports'],
-    ['table-layout', '/staff/tables'],
-    ['inventory-stock', '/staff/inventory'],
-    ['crm-customers', '/staff/customers'],
-    ['loyalty-rewards', '/staff/loyalty'],
-    ['offers-campaigns', '/staff/campaigns'],
-    ['staff-roles', '/staff/team'],
-    ['settings-cafe-profile', '/staff/settings'],
   ].map(([screen, pathname]) => [pathname, screen as ScreenId])
 );
 
@@ -79,9 +64,8 @@ export function isKitchenPath(pathname: string): boolean {
   return pathname === '/kitchen' || pathname.startsWith('/kitchen/');
 }
 
-export function isManagerPath(pathname: string): boolean {
-  return pathname === '/manager' || pathname.startsWith('/manager/') ||
-    pathname === '/admin' || pathname.startsWith('/admin/');
+export function isAdminPath(pathname: string): boolean {
+  return pathname === '/admin' || pathname.startsWith('/admin/');
 }
 
 export function resolveCafeRoute(pathname: string, search = ''): CafeRoute {
@@ -90,13 +74,19 @@ export function resolveCafeRoute(pathname: string, search = ''): CafeRoute {
 
   if (!screen && normalizedPath === '/') {
     const params = new URLSearchParams(search);
-    const legacyScreen = params.get('screen');
-    if (legacyScreen && CUSTOMER_SCREEN_IDS.has(legacyScreen as ScreenId)) {
-      screen = legacyScreen as ScreenId;
-    } else if (params.get('table')?.trim()) {
-      screen = 'menu';
-    } else if (params.get('autostart') === '1') {
-      screen = 'home';
+    if (params.get('brand') === 'akshat' || params.get('screen') === 'akshat') {
+      screen = 'akshat';
+    } else {
+      const legacyScreen = params.get('screen');
+      if (legacyScreen && CUSTOMER_SCREEN_IDS.has(legacyScreen as ScreenId)) {
+        screen = legacyScreen as ScreenId;
+      } else if (params.get('orderId')?.trim()) {
+        screen = 'tracking';
+      } else if (params.get('table')?.trim()) {
+        screen = 'menu';
+      } else if (params.get('autostart') === '1') {
+        screen = 'home';
+      }
     }
   }
 
@@ -109,16 +99,16 @@ export function resolveCafeRoute(pathname: string, search = ''): CafeRoute {
 
 export function getPathForScreen(
   screen: ScreenId,
-  options: { kitchen?: boolean; manager?: boolean } = {}
+  options: { kitchen?: boolean; admin?: boolean } = {}
 ): string {
   if (screen === 'splash') return '/';
   if (options.kitchen) {
     const kitchenPath = KITCHEN_PATHS[screen as StaffScreenId];
     if (kitchenPath) return kitchenPath;
   }
-  if (options.manager) {
-    const managerPath = MANAGER_PATHS[screen as StaffScreenId];
-    if (managerPath) return managerPath;
+  if (options.admin) {
+    const adminPath = ADMIN_PATHS[screen as StaffScreenId];
+    if (adminPath) return adminPath;
   }
-  return CUSTOMER_PATHS[screen as keyof typeof CUSTOMER_PATHS] ?? STAFF_PATHS[screen as StaffScreenId];
+  return CUSTOMER_PATHS[screen as keyof typeof CUSTOMER_PATHS] ?? ADMIN_PATHS[screen as StaffScreenId];
 }

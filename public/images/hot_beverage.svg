@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+    <defs>
+      <radialGradient id="teaBg" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#FFFDF9"/>
+        <stop offset="100%" stop-color="#F2DFCE"/>
+      </radialGradient>
+      <linearGradient id="tea" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#C67C4E"/>
+        <stop offset="100%" stop-color="#8B4513"/>
+      </linearGradient>
+    </defs>
+    <circle cx="100" cy="100" r="92" fill="url(#teaBg)"/>
+    <!-- Steam -->
+    <path d="M 85 52 Q 80 40 88 30" stroke="#C67C4E" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.6"/>
+    <path d="M 100 48 Q 106 36 100 26" stroke="#C67C4E" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.6"/>
+    <path d="M 115 52 Q 110 40 118 30" stroke="#C67C4E" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.6"/>
+    <!-- Saucer -->
+    <ellipse cx="100" cy="155" rx="65" ry="14" fill="#E9ECEF" stroke="#CED4DA" stroke-width="2"/>
+    <ellipse cx="100" cy="153" rx="42" ry="8" fill="#CED4DA"/>
+    <!-- Cup Body -->
+    <path d="M 58 80 L 68 140 C 69 146, 131 146, 132 140 L 142 80 Z" fill="#FFF" stroke="#CED4DA" stroke-width="2"/>
+    <!-- Handle -->
+    <path d="M 140 92 C 162 92, 162 128, 135 128" stroke="#CED4DA" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <!-- Tea Liquid Surface -->
+    <ellipse cx="100" cy="80" rx="40" ry="10" fill="url(#tea)"/>
+    <ellipse cx="100" cy="80" rx="25" ry="5" fill="#DDA15E" opacity="0.7"/>
+  </svg>

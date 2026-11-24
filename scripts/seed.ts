@@ -2,10 +2,14 @@ import 'dotenv/config';
 import crypto from 'node:crypto';
 import { Pool } from 'pg';
 
-const connectionString =
-  process.env.DATABASE_URL ||
-  process.env.POSTGRES_URL ||
-  'postgresql://postgres:postgres@localhost:5432/cafeos';
+const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+
+function createPool(): Pool {
+  if (!connectionString) {
+    throw new Error('Set DATABASE_URL or POSTGRES_URL to use the optional PostgreSQL demo seed.');
+  }
+  return new Pool({ connectionString });
+}
 
 function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -18,7 +22,10 @@ function generateQrToken(): string {
 }
 
 export async function seedDatabase(customPool?: Pool) {
-  const pool = customPool || new Pool({ connectionString });
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('The sample PostgreSQL seed is disabled in production.');
+  }
+  const pool = customPool || createPool();
   const client = await pool.connect();
 
   try {
@@ -69,28 +76,28 @@ export async function seedDatabase(customPool?: Pool) {
     );
     console.log('✔ Sample customer created with loyalty points');
 
-    // 4. Staff (1 Owner account with securely hashed password)
-    const ownerId = 'staff_owner_1';
-    const ownerPassHash = hashPassword('OwnerSecret123!');
+    // 4. Admin and Kitchen accounts with securely hashed passwords
+    const adminId = 'staff_admin_1';
+    const adminPassHash = hashPassword('AdminSecret123!');
     await client.query(
       `
       INSERT INTO staff (id, cafe_id, name, role, password_hash)
       VALUES ($1, $2, $3, $4, $5)
       ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash;
     `,
-      [ownerId, cafeId, 'Vikram Seth', 'owner', ownerPassHash]
+      [adminId, cafeId, 'Vikram Seth', 'admin', adminPassHash]
     );
 
-    const waiterId = 'staff_waiter_1';
+    const kitchenId = 'staff_kitchen_1';
     await client.query(
       `
       INSERT INTO staff (id, cafe_id, name, role, password_hash)
       VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (id) DO NOTHING;
+      ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash;
     `,
-      [waiterId, cafeId, 'Rohit Verma', 'waiter', hashPassword('Waiter1234!')]
+      [kitchenId, cafeId, 'Rohit Verma', 'kitchen', hashPassword('KitchenSecret123!')]
     );
-    console.log('✔ Staff accounts created (Owner & Waiter with scrypt hashes)');
+    console.log('✔ Staff accounts created (Admin & Kitchen with scrypt hashes)');
 
     // 5. 2 Categories
     const categories = [
@@ -206,7 +213,7 @@ export async function seedDatabase(customPool?: Pool) {
       [cafeId, order1Id]
     );
 
-    // Order 2: 'preparing' (Kitchen is working on it, waiter Rohit took it at Table 2)
+    // Order 2: 'preparing' (Kitchen is working on it at Table 2)
     const order2Id = 'ord_sample_02';
     await client.query(
       `
@@ -214,7 +221,7 @@ export async function seedDatabase(customPool?: Pool) {
       VALUES ($1, $2, $3, NULL, $4, 'preparing', 410.00)
       ON CONFLICT (id) DO NOTHING;
     `,
-      [order2Id, cafeId, 'tbl_2', waiterId]
+      [order2Id, cafeId, 'tbl_2', kitchenId]
     );
 
     await client.query(
@@ -236,7 +243,7 @@ export async function seedDatabase(customPool?: Pool) {
       VALUES ($1, $2, $3, $4, $5, 'paid', 340.00)
       ON CONFLICT (id) DO NOTHING;
     `,
-      [order3Id, cafeId, 'tbl_3', customerId, waiterId]
+      [order3Id, cafeId, 'tbl_3', customerId, kitchenId]
     );
 
     await client.query(

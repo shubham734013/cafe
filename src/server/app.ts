@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import http from 'node:http';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
+import { createClient } from '@supabase/supabase-js';
 import { Server as SocketIOServer } from 'socket.io';
 import swaggerUi from 'swagger-ui-express';
 import { z } from 'zod';
@@ -8,6 +11,8 @@ import {
   addCustomerSchema,
   addIngredientSchema,
   addLoyaltyRuleSchema,
+  addMenuItemSchema,
+  updateMenuItemSchema,
   addStaffSchema,
   addTableSchema,
   cafeSettingsSchema,
@@ -21,13 +26,32 @@ import {
   toggleKotItemSchema,
   orderFeedbackSchema,
   orderRefundSchema,
+  cancelOrderItemSchema,
+  orderPayCounterSchema,
   requestReorderSchema,
+  stockReceiptSchema,
+  stockWasteSchema,
+  stockTransferSchema,
+  stockCountSchema,
+  purchaseOrderSchema,
+  receivePurchaseOrderSchema,
+  brevoConfirmationSchema,
+  broadcastEmailSchema,
+  sendBillEmailSchema,
 } from '../shared/schemas';
+import {
+  isBrevoConfigured,
+  sendBrevoConfirmationEmail,
+  broadcastBrevoMarketingEmail,
+  sendBrevoOrderBillEmail,
+  sendBrevoOrderPaidEmail,
+} from './brevo';
 import {
   assertAuthSecretConfigured,
   authenticateStaffPin,
   canCustomerAccessCustomer,
   canCustomerAccessOrder,
+  clearCustomerSessionCookie,
   clearStaffSessionCookie,
   getCustomerSession,
   getStaffSession,
@@ -35,8 +59,31 @@ import {
   hasStaffRole,
   issueOrUpdateCustomerSessionCookie,
   setStaffSessionCookie,
+  setStaffRefreshTokenCookie,
+  clearStaffRefreshTokenCookie,
+  rotateRefreshToken,
+  checkLockout,
+  createRefreshToken,
+  STAFF_REFRESH_COOKIE,
+  parseCookies,
+  updateCustomerCrmIdentityCookie,
+  type StaffSessionPayload,
 } from './auth';
+import { requestOtp, verifyOtp } from './otp';
+import {
+  consumePasswordResetToken,
+  verifyAndApplyEmailChange,
+  generateOAuthChallenge,
+  verifyOAuthCallbackState,
+} from './accountSecurity';
+import {
+  setupAdmin2Fa,
+  confirmAndEnableAdmin2Fa,
+  verifyAdmin2Fa,
+  isAdmin2FaRequired,
+} from './admin2fa';
 import { createRateLimiter, createTableRateLimiter } from './rateLimit';
+import { noSqlInjectionSanitizer, safeJsonForHtml, verifyCaptchaToken } from './security';
 import { InvalidDomainTransitionError } from '../state/cafeStateMachines';
 import type { ScreenId, StaffRole } from '../types/cafe';
 import { cafeOpenApiSpec } from './openapi';
@@ -62,14 +109,8 @@ function parseBody<T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T>
 }
 
 const ROLE_LABELS: Record<StaffRole, string> = {
-  'super-admin': 'Super Admin',
-  owner: 'Manager / Owner',
-  manager: 'Manager / Owner',
-  cashier: 'Cashier',
-  barista: 'Barista',
-  kitchen: 'Kitchen / Barista',
-  server: 'Server / Steward',
-  waiter: 'Server / Steward',
+  admin: 'Admin',
+  kitchen: 'Kitchen',
 };
 
 const ROUTE_DATA_SCREENS = new Set<ScreenId>([
@@ -80,6 +121,9 @@ const ROUTE_DATA_SCREENS = new Set<ScreenId>([
   'tracking',
   'rewards',
   'profile',
+  'login',
+  'privacy-policy',
+  'terms-and-conditions',
   'staff-home',
   'pos-terminal',
   'pos-orders',
@@ -104,6 +148,14 @@ interface AuthCheckResult {
 }
 
 export function resolvePaymentGateway(): UpiGatewayClient {
+  if (process.env.NODE_ENV === 'test') {
+    return new UpiGateway({
+      baseUrl: '',
+      apiKey: '',
+      apiSecret: '',
+      isProduction: false,
+    });
+  }
   if (process.env.CASHFREE_APP_ID && process.env.CASHFREE_SECRET_KEY) {
     return new CashfreeGateway();
   }
@@ -117,7 +169,11 @@ export function createCafeServer(
   assertAuthSecretConfigured();
 
   const app = express();
-  const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
+  const configuredProxyHops = process.env.TRUST_PROXY_HOPS;
+  const trustProxyHops =
+    configuredProxyHops === undefined && process.env.TRUST_PROXY === 'true'
+      ? 1
+      : Number(configuredProxyHops ?? 0);
   if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0) {
     throw new Error('TRUST_PROXY_HOPS must be a non-negative integer.');
   }
@@ -126,40 +182,61 @@ export function createCafeServer(
   app.set('trust proxy', trustProxyHops);
 
   const httpServer = http.createServer(app);
-  const allowedSocketOrigins = new Set<string>();
+  const isProduction = process.env.NODE_ENV === 'production';
+  const allowedOrigins = new Set<string>(
+    process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
+      : isProduction
+        ? []
+        : [
+            'http://localhost:3000',
+            'http://localhost:3002',
+            'http://127.0.0.1:3000',
+            'http://127.0.0.1:3002',
+            'http://localhost:5173',
+            'http://127.0.0.1:5173',
+          ]
+  );
   if (process.env.APP_PUBLIC_URL) {
     try {
-      allowedSocketOrigins.add(new URL(process.env.APP_PUBLIC_URL).origin);
+      allowedOrigins.add(new URL(process.env.APP_PUBLIC_URL).origin);
     } catch {
       throw new Error('APP_PUBLIC_URL must be a valid absolute URL.');
     }
   }
-  if (process.env.NODE_ENV !== 'production') {
-    allowedSocketOrigins.add('http://localhost:3000');
-    allowedSocketOrigins.add('http://127.0.0.1:3000');
-    allowedSocketOrigins.add('http://localhost:5173');
-    allowedSocketOrigins.add('http://127.0.0.1:5173');
-  }
+  const isOriginAllowed = (origin: string): boolean => {
+    if (allowedOrigins.has(origin)) return true;
+    if (isProduction) return false;
+    try {
+      const { protocol, hostname } = new URL(origin);
+      return (
+        (protocol === 'http:' && ['localhost', '127.0.0.1'].includes(hostname)) ||
+        (protocol === 'https:' && hostname.endsWith('.trycloudflare.com'))
+      );
+    } catch {
+      return false;
+    }
+  };
 
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: (origin, callback) => {
+      origin: (requestOrigin, callback) => {
         // Non-browser clients may omit Origin. Browser origins must be explicitly trusted.
-        if (!origin || allowedSocketOrigins.has(origin)) {
-          callback(null, true);
-          return;
+        if (!requestOrigin) return callback(null, true);
+        if (isOriginAllowed(requestOrigin)) {
+          return callback(null, requestOrigin);
         }
-        callback(new Error('Socket.IO origin is not allowed.'));
+        return callback(new Error('CORS origin not allowed.'), false);
       },
       credentials: true,
     },
   });
 
-  const STAFF_ROOM = 'outlet:seth-sawariya-main:staff';
-  const PUBLIC_ROOM = 'outlet:seth-sawariya-main:public';
+  const cafeId = 'seth-sawariya-main';
+  const STAFF_ROOM = `outlet:${cafeId}:staff`;
+  const PUBLIC_ROOM = `outlet:${cafeId}:public`;
 
   // A socket is assigned its access level once from a verified, signed session.
-  // Client-supplied cafeId/tableToken values are never used as authorization.
   io.use((socket, next) => {
     const staffSession = getStaffSessionFromCookieHeader(socket.handshake.headers.cookie);
     socket.data.staffSession = staffSession;
@@ -213,7 +290,7 @@ export function createCafeServer(
   const checkCustomerAccess = (req: Request, customerId: string): AuthCheckResult => {
     const staff = getStaffSession(req);
     if (staff) {
-      if (hasStaffRole(staff, ['owner', 'manager', 'cashier'])) return { allowed: true };
+      if (hasStaffRole(staff, ['admin'])) return { allowed: true };
       return {
         allowed: false,
         httpStatus: 403,
@@ -258,7 +335,7 @@ export function createCafeServer(
 
     const staffSession = getStaffSession(req);
     if (staffSession) {
-      if (!hasStaffRole(staffSession, ['owner', 'manager', 'cashier', 'server'])) {
+      if (!hasStaffRole(staffSession, ['admin'])) {
         res.status(403).json({ error: 'Your role cannot access online payment for this order.' });
         return null;
       }
@@ -287,31 +364,105 @@ export function createCafeServer(
     }
   };
 
+  const getGatewayClientOrderId = (
+    order: NonNullable<ReturnType<CafeStore['getOrder']>>
+  ) => order.gatewayClientOrderId ?? order.id;
+
+  const getCafeOrderByGatewayReference = (reference: string) =>
+    store.getOrderByGatewayClientOrderId(reference) ?? store.getOrder(reference);
+
   const assertGatewayOrderMatchesCafeOrder = (
     gatewayOrder: UpiGatewayOrder,
     order: NonNullable<ReturnType<CafeStore['getOrder']>>
   ) => {
     if (
-      gatewayOrder.clientOrderId !== order.id ||
+      gatewayOrder.clientOrderId !== getGatewayClientOrderId(order) ||
       gatewayOrder.amountPaise !== Math.round(order.total * 100)
     ) {
       throw new UpiGatewayRequestError(
-        'The UPI gateway order does not match the CafeOS order amount or reference.'
+        'The payment gateway order does not match the CafeOS order amount or reference.'
       );
     }
   };
+
+  async function triggerOrderPaidEmailIfEligible(orderId: string) {
+    const order = store.getOrder(orderId);
+    if (!order) return;
+    if (order.paymentStatus !== 'paid') return;
+    if (order.paidEmailSentAt) return;
+
+    let email = order.customerEmail?.trim();
+    if (!email || !email.includes('@')) {
+      if (order.customerId) {
+        const crmCustomer = store.getBootstrap().customers.find((c) => c.id === order.customerId);
+        if (crmCustomer?.email) {
+          email = crmCustomer.email.trim();
+          order.customerEmail = email;
+        }
+      }
+    }
+
+    if (!email || !email.includes('@') || !isBrevoConfigured()) return;
+
+    try {
+      const state = store.getBootstrap();
+      const result = await sendBrevoOrderPaidEmail({
+        order,
+        toEmail: email,
+        toName: order.customerName || 'Valued Guest',
+        cafeSettings: state.cafeSettings,
+        appUrl: process.env.APP_PUBLIC_URL || process.env.APP_URL || 'http://localhost:3002',
+      });
+      if (result.success) {
+        const updated = store.markOrderPaidEmailSent(order.id, email);
+        await store.flushToPersistence();
+        if (updated) {
+          emitSync('order:updated', { order: updated });
+        }
+      }
+    } catch {
+      console.error('[Brevo] Paid-order email dispatch failed.');
+    }
+  }
 
   const syncGatewayOrder = async (orderId: string, gatewayOrder: UpiGatewayOrder) => {
     const order = store.getOrder(orderId);
     if (!order) return null;
     assertGatewayOrderMatchesCafeOrder(gatewayOrder, order);
+    const rawPayerPhone = gatewayOrder.customerPhone ? gatewayOrder.customerPhone.replace(/\D/g, '').slice(-10) : '';
+    const payerPhone = rawPayerPhone.length === 10 && rawPayerPhone !== '9999999999' ? rawPayerPhone : undefined;
     const updated = store.attachGatewayPayment(
       orderId,
       gatewayOrder.orderId,
       mapGatewayStatus(gatewayOrder.status),
-      gatewayOrder.utr
+      gatewayOrder.utr,
+      payerPhone
     );
-    if (updated) emitSync('order:updated', { order: updated });
+    if (updated) {
+      // 🌟 Industry-Standard Payment Gateway Phone Capture:
+      if (payerPhone) {
+        if (updated.customerId) {
+          const c = store.syncCustomerProfile(updated.customerId, {
+            phone: payerPhone,
+            name: updated.customerName,
+            email: updated.customerEmail,
+          });
+          if (c) emitSync('customer:updated', { customer: c });
+        } else if (updated.customerEmail) {
+          const existingCust = store.getCustomers().find(
+            (c) => c.email && c.email.toLowerCase() === updated.customerEmail?.toLowerCase()
+          );
+          if (existingCust) {
+            const c = store.syncCustomerProfile(existingCust.id, { phone: payerPhone });
+            if (c) emitSync('customer:updated', { customer: c });
+          }
+        }
+      }
+      emitSync('order:updated', { order: updated });
+      if (updated.paymentStatus === 'paid') {
+        void triggerOrderPaidEmailIfEligible(updated.id);
+      }
+    }
     return updated;
   };
 
@@ -353,8 +504,10 @@ export function createCafeServer(
         return;
       }
 
-      const orderId = payload.data.client_order_id;
-      if (!store.getOrder(orderId)) {
+      const clientOrderId = payload.data.client_order_id;
+      const order =
+        store.getOrderByGatewayClientOrderId(clientOrderId) ?? store.getOrder(clientOrderId);
+      if (!order) {
         res.status(404).json({ error: 'CafeOS order not found for this gateway event.' });
         return;
       }
@@ -364,12 +517,12 @@ export function createCafeServer(
       }
 
       try {
-        const gatewayOrder = await upiGateway.getOrder(orderId);
+        const gatewayOrder = await upiGateway.getOrder(clientOrderId);
         if (!gatewayOrder) {
           res.status(404).json({ error: 'UPI gateway order not found; retry the webhook.' });
           return;
         }
-        const updated = await syncGatewayOrder(orderId, gatewayOrder);
+        const updated = await syncGatewayOrder(order.id, gatewayOrder);
         if (!updated) {
           res.status(404).json({ error: 'CafeOS order no longer exists.' });
           return;
@@ -377,10 +530,7 @@ export function createCafeServer(
         await store.flushToPersistence();
         res.status(200).json({ received: true });
       } catch (error) {
-        console.error(
-          '[CafeOS] Could not verify UPI gateway webhook against gateway status:',
-          error instanceof Error ? error.message : 'Gateway verification failed'
-        );
+        console.error('[CafeOS] UPI gateway webhook verification failed.');
         res.status(503).json({ error: 'Could not verify the payment; retry the webhook.' });
       }
     }
@@ -415,29 +565,82 @@ export function createCafeServer(
       }
 
       const p = payload as {
+        event_time?: string;
         type?: string;
         data?: {
-          order?: { order_id?: string };
-          payment?: { payment_status?: string; bank_reference?: string };
+          order?: {
+            order_id?: string;
+            order_amount?: number;
+            order_currency?: string;
+          };
+          customer_details?: {
+            customer_phone?: string | number;
+          };
+          payment?: {
+            cf_payment_id?: string | number;
+            payment_status?: string;
+            payment_amount?: number;
+            payment_currency?: string;
+            bank_reference?: string;
+          };
         };
       };
       const orderId = p?.data?.order?.order_id;
-      if (!orderId || !store.getOrder(orderId)) {
+      const existingOrder = orderId ? getCafeOrderByGatewayReference(orderId) : null;
+      if (!orderId || !existingOrder) {
         res.status(404).json({ error: 'CafeOS order not found.' });
+        return;
+      }
+
+      // 1. Payment Event Idempotency & Deduplication
+      const paymentIdentifier = String(
+        p?.data?.payment?.cf_payment_id || p?.data?.payment?.bank_reference || `${orderId}:${p?.type}`
+      );
+      if (store.hasProcessedPaymentEvent(paymentIdentifier)) {
+        res.status(200).json({ received: true, duplicate: true });
+        return;
+      }
+
+      // 2. Validate Payment Amount against order total
+      const reportedAmount = Number(
+        p?.data?.payment?.payment_amount ?? p?.data?.order?.order_amount ?? 0
+      );
+      if (reportedAmount > 0 && Math.abs(reportedAmount - existingOrder.total) > 0.01) {
+        res.status(400).json({
+          error: `Payment amount (${reportedAmount}) does not match order total (${existingOrder.total}).`,
+        });
+        return;
+      }
+
+      // 3. Validate Payment Currency
+      const reportedCurrency = (
+        p?.data?.payment?.payment_currency ?? p?.data?.order?.order_currency ?? 'INR'
+      ).toUpperCase();
+      if (reportedCurrency !== 'INR') {
+        res.status(400).json({
+          error: `Payment currency (${reportedCurrency}) is not valid for this outlet.`,
+        });
         return;
       }
 
       try {
         // Treat the signed webhook as a notification, not as the financial source
-        // of truth. Re-fetch the order from Cashfree and verify its reference,
-        // amount, currency (INR is enforced by our checkout request), and status.
-        const gatewayOrder = await upiGateway.getOrder(orderId);
+        // of truth. Re-fetch the order from Cashfree and verify its reference and amount.
+        const gatewayOrder = await upiGateway.getOrder(getGatewayClientOrderId(existingOrder));
         if (!gatewayOrder) {
           res.status(503).json({ error: 'Cashfree order could not be verified; retry webhook.' });
           return;
         }
 
-        const updated = await syncGatewayOrder(orderId, gatewayOrder);
+        const rawWebhookPhone = p?.data?.customer_details?.customer_phone;
+        const webhookPhone = rawWebhookPhone
+          ? String(rawWebhookPhone).replace(/\D/g, '').slice(-10)
+          : '';
+        const verifiedGatewayOrder =
+          !gatewayOrder.customerPhone && webhookPhone.length === 10 && webhookPhone !== '9999999999'
+            ? { ...gatewayOrder, customerPhone: webhookPhone }
+            : gatewayOrder;
+        const updated = await syncGatewayOrder(existingOrder.id, verifiedGatewayOrder);
         if (!updated) {
           res.status(503).json({ error: 'CafeOS order could not be synchronized; retry webhook.' });
           return;
@@ -451,8 +654,8 @@ export function createCafeServer(
           return;
         }
 
+        store.markPaymentProcessed(paymentIdentifier);
         await store.flushToPersistence();
-        emitSync('order:updated', { order: updated });
         res.status(200).json({ received: true });
       } catch (error) {
         console.error(
@@ -466,10 +669,10 @@ export function createCafeServer(
 
   // Cashfree Official Checkout Page (Invokes Cashfree JS SDK v3)
   app.get('/api/orders/:id/cashfree-checkout', (req, res) => {
-    const orderId = String(req.params.id);
+    const gatewayReference = String(req.params.id);
     const session = String(req.query.session || '');
     const mode = String(req.query.mode || (process.env.CASHFREE_ENVIRONMENT === 'PRODUCTION' ? 'production' : 'sandbox'));
-    const order = store.getOrder(orderId);
+    const order = getCafeOrderByGatewayReference(gatewayReference);
     if (!order) {
       res.status(404).send('Order not found');
       return;
@@ -503,16 +706,16 @@ export function createCafeServer(
       <div id="error-message" class="mb-3"></div>
       <div class="flex gap-2">
         <button onclick="window.location.reload()" class="px-3 py-1.5 bg-red-800 hover:bg-red-700 rounded text-white text-xs font-semibold cursor-pointer">Retry</button>
-        <a href="/tracking?orderId=${encodeURIComponent(order.id)}" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-slate-200 text-xs inline-block">Go to Order Tracking</a>
+        <a href="/customer/tracking?orderId=${encodeURIComponent(order.id)}" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-slate-200 text-xs inline-block">Go to Order Tracking</a>
       </div>
     </div>
   </div>
 
   <script>
     (function() {
-      const session = ${JSON.stringify(session)};
-      const mode = ${JSON.stringify(mode)};
-      const orderId = ${JSON.stringify(order.id)};
+      const session = ${safeJsonForHtml(session)};
+      const mode = ${safeJsonForHtml(mode)};
+      const orderId = ${safeJsonForHtml(order.id)};
 
       function showError(msg) {
         document.getElementById('status-box').classList.add('hidden');
@@ -554,29 +757,33 @@ export function createCafeServer(
 
   // Cashfree Return URL
   app.get('/api/orders/:id/cashfree-return', async (req, res) => {
-    const orderId = String(req.params.id);
-    const order = store.getOrder(orderId);
+    const gatewayReference = String(req.params.id);
+    const order = getCafeOrderByGatewayReference(gatewayReference);
     if (!order) {
-      res.redirect('/tracking');
+      res.redirect('/customer/tracking');
       return;
     }
     try {
-      const gatewayOrder = await upiGateway.getOrder(orderId);
+      const gatewayOrder = await upiGateway.getOrder(getGatewayClientOrderId(order));
       if (gatewayOrder) {
-        await syncGatewayOrder(orderId, gatewayOrder);
+        await syncGatewayOrder(order.id, gatewayOrder);
         await store.flushToPersistence();
       }
     } catch {
       // Continue to tracking
     }
-    res.redirect(`/tracking?orderId=${encodeURIComponent(orderId)}`);
+    res.redirect(`/customer/tracking?orderId=${encodeURIComponent(order.id)}`);
   });
 
   // Cashfree Mock Checkout (for local development & instant testing)
   app.get('/api/cashfree-mock/checkout', (req, res) => {
-    const orderId = String(req.query.orderId || '');
+    if (process.env.NODE_ENV === 'production') {
+      res.status(404).json({ error: 'Endpoint not available in production' });
+      return;
+    }
+    const gatewayReference = String(req.query.orderId || '');
     const session = String(req.query.session || '');
-    const order = store.getOrder(orderId);
+    const order = getCafeOrderByGatewayReference(gatewayReference);
     if (!order) {
       res.status(404).send('Order not found');
       return;
@@ -617,8 +824,12 @@ export function createCafeServer(
 
       <div class="space-y-3">
         <form method="POST" action="/api/cashfree-mock/pay">
-          <input type="hidden" name="orderId" value="${order.id}">
+          <input type="hidden" name="orderId" value="${gatewayReference}">
           <input type="hidden" name="session" value="${session}">
+          <div class="mb-3 text-left">
+            <label class="block text-xs font-semibold text-slate-500 mb-1">UPI Phone Number (Linked to GPay / PhonePe)</label>
+            <input type="tel" name="payerPhone" value="${order.customerPhone || '9876543210'}" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-semibold text-slate-800" />
+          </div>
           <button type="submit" class="w-full py-3.5 px-4 bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-semibold rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer">
             <span>Pay ₹${order.total.toFixed(2)} via UPI (Simulate Bank Success)</span>
           </button>
@@ -634,19 +845,87 @@ export function createCafeServer(
   });
 
   app.post('/api/cashfree-mock/pay', express.urlencoded({ extended: true }), async (req, res) => {
-    const orderId = String(req.body.orderId || '');
-    if (upiGateway instanceof CashfreeGateway) {
-      upiGateway.simulateMockPayment(orderId, 'CF' + Date.now());
-      const gatewayOrder = await upiGateway.getOrder(orderId);
+    if (process.env.NODE_ENV === 'production') {
+      res.status(404).json({ error: 'Endpoint not available in production' });
+      return;
+    }
+    const gatewayReference = String(req.body.orderId || '');
+    const payerPhone = req.body.payerPhone ? String(req.body.payerPhone).replace(/\D/g, '').slice(-10) : '';
+    const order = getCafeOrderByGatewayReference(gatewayReference);
+    if (upiGateway instanceof CashfreeGateway && order) {
+      upiGateway.simulateMockPayment(gatewayReference, 'CF' + Date.now(), payerPhone || undefined);
+      const gatewayOrder = await upiGateway.getOrder(gatewayReference);
       if (gatewayOrder) {
-        await syncGatewayOrder(orderId, gatewayOrder);
+        await syncGatewayOrder(order.id, gatewayOrder);
         await store.flushToPersistence();
       }
     }
-    res.redirect(`/api/orders/${encodeURIComponent(orderId)}/cashfree-return`);
+    res.redirect(`/api/orders/${encodeURIComponent(gatewayReference)}/cashfree-return`);
   });
 
-  app.use(express.json({ limit: '1mb' }));
+  app.use((req, res, next) => {
+    // 1. HTTPS redirect in production if behind a reverse proxy
+    if (isProduction && !req.secure) {
+      const publicUrl = process.env.APP_PUBLIC_URL || process.env.APP_URL;
+      if (!publicUrl) {
+        res.status(503).send('HTTPS public URL is not configured.');
+        return;
+      }
+      return res.redirect(301, `${new URL(publicUrl).origin}${req.originalUrl}`);
+    }
+
+    // 2. Strict Transport Security (HSTS) in production
+    if (process.env.NODE_ENV === 'production') {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+    }
+
+    // 3. Modern Defense-in-Depth Security Headers
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
+
+    // 4. Content Security Policy (Enforced in production, Report-Only in dev/test)
+    const cspDirectives =
+      "default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://cdn.tailwindcss.com https://sdk.cashfree.com https://accounts.google.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' ws: wss: https: https://accounts.google.com https://oauth2.googleapis.com https://play.google.com https://*.supabase.co; frame-src 'self' https://accounts.google.com https://*.google.com https://*.supabase.co; frame-ancestors 'self';";
+    if (process.env.NODE_ENV === 'production') {
+      res.setHeader('Content-Security-Policy', cspDirectives);
+    } else {
+      res.setHeader('Content-Security-Policy-Report-Only', cspDirectives);
+    }
+
+    // 5. Cross-Origin Resource Sharing (CORS) & Anti-CSRF Origin Validation
+    const origin = req.headers.origin;
+    if (origin) {
+      if (isOriginAllowed(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With');
+      } else if (!req.path.startsWith('/api/webhooks/')) {
+        res.status(403).json({ error: 'Cross-site origin forbidden.' });
+        return;
+      }
+    }
+
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+
+    next();
+  });
+
+  app.use(express.json({ limit: '15mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+  const uploadsStaticDir = path.resolve(process.cwd(), 'public', 'images', 'uploads');
+  if (!fs.existsSync(uploadsStaticDir)) {
+    try {
+      fs.mkdirSync(uploadsStaticDir, { recursive: true });
+    } catch {}
+  }
+  app.use('/images/uploads', express.static(uploadsStaticDir));
+  app.use(noSqlInjectionSanitizer);
 
   app.use('/api', (req, res, next) => {
     if (req.path === '/health' || store.isPersistenceHealthy()) {
@@ -685,14 +964,24 @@ export function createCafeServer(
     maxRequests: 5,
     keyPrefix: 'customer-feedback',
   });
+  const brevoConfirmationLimiter = createRateLimiter({
+    windowMs: 60_000,
+    maxRequests: 5,
+    keyPrefix: 'brevo-confirmation',
+  });
+  const tableReservationLimiter = createRateLimiter({
+    windowMs: 60_000,
+    maxRequests: 10,
+    keyPrefix: 'table-reservation',
+  });
 
-  // OpenAPI & Swagger UI (restricted to owner/manager in production)
+  // OpenAPI & Swagger UI (restricted to admin in production)
   const docsGuard = (req: Request, res: Response, next: NextFunction) => {
     if (process.env.NODE_ENV !== 'production') {
       next();
       return;
     }
-    const auth = checkStaffRoles(req, ['owner', 'manager']);
+    const auth = checkStaffRoles(req, ['admin']);
     if (!auth.allowed) {
       res.status(auth.httpStatus ?? 401).json({ error: auth.error });
       return;
@@ -710,13 +999,27 @@ export function createCafeServer(
     res.status(persistence.healthy ? 200 : 503).json({
       ok: persistence.healthy,
       service: 'seth-sawariya-cafeos',
+      primaryDatabase: 'mongodb',
       socketioClients: io.engine.clientsCount,
       updatedAt: store.getBootstrap().updatedAt,
       persistence,
     });
   });
 
-  app.get('/api/audit', requireRoles(['owner', 'manager']), async (req, res, next) => {
+  // Task 10: Standard SRE Liveness and Readiness Probes
+  app.get(['/health/live', '/api/health/live'], (_req, res) => {
+    res.status(200).json({ status: 'ok', uptime: process.uptime() });
+  });
+
+  app.get(['/health/ready', '/api/health/ready'], (_req, res) => {
+    const isHealthy = store.isPersistenceHealthy();
+    res.status(isHealthy ? 200 : 503).json({
+      status: isHealthy ? 'ready' : 'not_ready',
+      database: isHealthy ? 'connected' : 'degraded',
+    });
+  });
+
+  app.get('/api/audit', requireRoles(['admin']), async (req, res, next) => {
     try {
       const requestedLimit = Number(req.query.limit ?? 100);
       if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 200) {
@@ -765,30 +1068,687 @@ export function createCafeServer(
     });
   });
 
+  app.post('/api/customer/google/session', async (req, res, next) => {
+    try {
+      const credential =
+        typeof req.body?.credential === 'string' ? req.body.credential.trim() : '';
+      const accessToken =
+        typeof req.body?.accessToken === 'string' ? req.body.accessToken.trim() : '';
+
+      if (!credential && !accessToken) {
+        // If demo session is requested (e.g. bypass or quick testing):
+        if (req.body?.demo) {
+          const demoUser = {
+            id: 'google:demo-google-user',
+            name: (typeof req.body?.name === 'string' && req.body.name.trim()) || 'Google Customer',
+            email: (typeof req.body?.email === 'string' && req.body.email.trim()) || 'customer@gmail.com',
+            phone: '',
+            provider: 'google' as const,
+            confirmed: true,
+            phoneVerified: false,
+            avatarUrl: 'https://lh3.googleusercontent.com/a/default-user',
+            createdAt: new Date().toISOString(),
+          };
+          const customer = store.upsertGoogleCustomer({
+            id: demoUser.id,
+            name: demoUser.name,
+            email: demoUser.email,
+            avatarUrl: demoUser.avatarUrl,
+            phone: demoUser.phone,
+            googleSubjectId: 'demo-google-user',
+            emailVerified: true,
+            phoneVerified: false,
+            createdAt: demoUser.createdAt,
+          });
+          await store.flushToPersistence();
+          emitSync('customer:updated', { customer });
+          emitSync('activity:updated', {});
+          updateCustomerCrmIdentityCookie(req, res, demoUser.id, customer.id);
+          res.json({ session: { ...demoUser, phone: customer.phone } });
+          return;
+        }
+        res.status(400).json({ error: 'Google credential or access token is required.' });
+        return;
+      }
+
+      const googleClientId = (
+        process.env.VITE_GOOGLE_CLIENT_ID ||
+        process.env.GOOGLE_CLIENT_ID ||
+        ''
+      ).trim();
+
+      if (!googleClientId) {
+        res.status(503).json({ error: 'Google Sign-In is not configured in .env (VITE_GOOGLE_CLIENT_ID).' });
+        return;
+      }
+
+      let payload: {
+        sub?: string;
+        email?: string;
+        name?: string;
+        picture?: string;
+        email_verified?: boolean | string;
+      } | null = null;
+
+      let googleExtractedPhone = '';
+
+      if (credential) {
+        const googleResponse = await fetch(
+          `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`
+        );
+        const tokenPayload = (await googleResponse.json().catch(() => null)) as {
+          sub?: string;
+          email?: string;
+          name?: string;
+          picture?: string;
+          aud?: string;
+          iss?: string;
+          exp?: string;
+          email_verified?: string | boolean;
+        } | null;
+
+        if (
+          googleResponse.ok &&
+          tokenPayload?.sub &&
+          tokenPayload.email &&
+          tokenPayload.aud === googleClientId &&
+          ['accounts.google.com', 'https://accounts.google.com'].includes(tokenPayload.iss || '') &&
+          (!tokenPayload.exp || Number(tokenPayload.exp) * 1000 > Date.now()) &&
+          (tokenPayload.email_verified === true || tokenPayload.email_verified === 'true')
+        ) {
+          payload = tokenPayload;
+        }
+      } else if (accessToken) {
+        // Verify access token via Google userinfo endpoint
+        const [googleResponse, peopleResponse] = await Promise.all([
+          fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+          fetch('https://people.googleapis.com/v1/people/me?personFields=phoneNumbers', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }).catch(() => null),
+        ]);
+
+        const userinfoPayload = (await googleResponse.json().catch(() => null)) as {
+          sub?: string;
+          email?: string;
+          name?: string;
+          picture?: string;
+          email_verified?: boolean;
+        } | null;
+
+        if (googleResponse.ok && userinfoPayload?.sub && userinfoPayload.email) {
+          payload = userinfoPayload;
+        }
+
+        if (peopleResponse && peopleResponse.ok) {
+          const peopleData = (await peopleResponse.json().catch(() => null)) as {
+            phoneNumbers?: Array<{ value?: string; canonicalForm?: string; type?: string }>;
+          } | null;
+          const rawPhone =
+            peopleData?.phoneNumbers?.[0]?.canonicalForm ||
+            peopleData?.phoneNumbers?.[0]?.value ||
+            '';
+          if (rawPhone) {
+            const digits = rawPhone.replace(/\D/g, '');
+            googleExtractedPhone = digits.length >= 10 ? digits.slice(-10) : digits;
+          }
+        }
+      }
+
+      if (!payload?.sub || !payload.email) {
+        res.status(401).json({ error: 'Google sign-in credential could not be verified.' });
+        return;
+      }
+
+      const customer = store.upsertGoogleCustomer({
+        id: `google:${payload.sub}`,
+        name: payload.name || payload.email.split('@')[0] || 'Customer',
+        email: payload.email,
+        avatarUrl: payload.picture,
+        phone: googleExtractedPhone || '',
+        googleSubjectId: payload.sub,
+        emailVerified:
+          payload.email_verified === true || payload.email_verified === 'true',
+        phoneVerified: Boolean(googleExtractedPhone),
+        createdAt: new Date().toISOString(),
+      });
+      await store.flushToPersistence();
+      emitSync('customer:updated', { customer });
+      emitSync('activity:updated', {});
+
+      updateCustomerCrmIdentityCookie(req, res, `google:${payload.sub}`, customer.id);
+      res.json({
+        session: {
+          id: customer.id,
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone,
+          provider: 'google',
+          confirmed: true,
+          phoneVerified: false,
+          avatarUrl: customer.avatarUrl,
+          createdAt: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/customer/profile', async (req, res, next) => {
+    try {
+      const { customerId, name, phone, email, note } = parseBody(
+        z.object({
+          customerId: z.string().trim().min(1).max(64),
+          name: z.string().trim().max(120).optional(),
+          phone: z.string().trim().max(30).optional(),
+          email: z.string().trim().email().max(254).optional(),
+          note: z.string().trim().max(500).optional(),
+        }),
+        req.body
+      );
+      if (phone !== undefined && !/^\d{10}$/.test(phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, ''))) {
+        res.status(400).json({ error: 'Customer mobile number must contain exactly 10 digits.' });
+        return;
+      }
+      const staffAuth = checkStaffRoles(req, ['admin']);
+      const customerSession = getCustomerSession(req);
+      if (!staffAuth.allowed && !customerSession) {
+        res.status(staffAuth.httpStatus ?? 401).json({ error: staffAuth.error || 'Authentication required.' });
+        return;
+      }
+      if (
+        customerSession &&
+        !staffAuth.allowed &&
+        customerSession.customerId !== customerId &&
+        customerSession.crmCustomerId !== customerId
+      ) {
+        res.status(403).json({ error: 'You do not have access to this customer profile.' });
+        return;
+      }
+      let customer = store.syncCustomerProfile(customerId, { name, phone, email, note });
+      if (!customer) {
+        customer = store.upsertGoogleCustomer({
+          id: customerId,
+          name: name || 'Valued Customer',
+          email: email || '',
+          phone: phone || '',
+        });
+      }
+      await store.flushToPersistence();
+      emitSync('customer:updated', { customer });
+      res.json({ customer });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/admin/customers/:id', async (req, res, next) => {
+    try {
+      const deleted = store.deleteCustomer(req.params.id);
+      if (!deleted) {
+        res.status(404).json({ error: 'Customer not found' });
+        return;
+      }
+      await store.flushToPersistence();
+      emitSync('customer:updated', { customerId: req.params.id, deleted: true });
+      emitSync('activity:updated', {});
+      res.json({ ok: true, deletedId: req.params.id });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.delete('/api/admin/customers', async (_req, res, next) => {
+    try {
+      store.clearCustomers();
+      await store.flushToPersistence();
+      emitSync('customers:cleared', {});
+      emitSync('activity:updated', {});
+      res.json({ ok: true, message: 'All customers cleared from CRM' });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/customer/identity', async (req, res, next) => {
+    try {
+      const accessToken = req.header('authorization')?.replace(/^Bearer\s+/i, '');
+      if (!accessToken) {
+        res.status(401).json({ error: 'Supabase customer authentication is required.' });
+        return;
+      }
+
+      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey =
+        process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseAnonKey) {
+        res.status(503).json({ error: 'Supabase identity verification is not configured.' });
+        return;
+      }
+
+      const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      });
+      const { data, error } = await supabase.auth.getUser(accessToken);
+      if (error || !data.user) {
+        res.status(401).json({ error: 'Customer session could not be verified.' });
+        return;
+      }
+
+      if (!data.user.phone || !data.user.phone_confirmed_at) {
+        updateCustomerCrmIdentityCookie(req, res, data.user.id);
+        res.json({ verified: false, matched: false });
+        return;
+      }
+
+      const crmCustomerId = store.findCustomerIdByPhone(data.user.phone);
+      updateCustomerCrmIdentityCookie(req, res, data.user.id, crmCustomerId || undefined);
+      res.json({ verified: true, matched: Boolean(crmCustomerId) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/customer/identity', (req, res) => {
+    updateCustomerCrmIdentityCookie(req, res);
+    res.status(204).end();
+  });
+
   app.post('/api/auth/pin', pinLoginLimiter, (req, res, next) => {
     try {
+      const ip = req.ip || '127.0.0.1';
+      const lockout = checkLockout('staff_login', ip);
+      if (lockout.locked) {
+        res.status(429).json({
+          error: `Too many failed login attempts. Account temporarily locked. Please wait ${lockout.retryAfterSeconds} seconds.`,
+          retryAfterSeconds: lockout.retryAfterSeconds,
+        });
+        return;
+      }
+
       const { pin } = parseBody(staffPinLoginSchema, req.body);
-      const matched = authenticateStaffPin(pin);
+      const matched = authenticateStaffPin(pin, undefined, ip);
       if (!matched) {
         res.status(401).json({ error: 'Invalid 4-digit staff PIN' });
         return;
       }
-      const payload = {
+
+      // Issue 20: Admin 2FA verification
+      if (matched.role === 'admin' && isAdmin2FaRequired('admin')) {
+        const totpCode = (req.body as { totpCode?: string }).totpCode;
+        if (!totpCode) {
+          res.status(403).json({ requires2Fa: true, error: 'Two-factor authentication code required for admin.' });
+          return;
+        }
+        const verifyResult = verifyAdmin2Fa('admin', totpCode);
+        if (!verifyResult.valid) {
+          res.status(401).json({ error: 'Invalid two-factor authentication or backup code.' });
+          return;
+        }
+      }
+
+      const staffId = matched.staffId || `staff_${matched.role}`;
+      const payload: StaffSessionPayload = {
+        staffId,
         role: matched.role,
         staffName: matched.staffName,
         issuedAt: Date.now(),
-        exp: Date.now() + 12 * 60 * 60 * 1000,
+        exp: Date.now() + 15 * 60 * 1000, // Issue 8: 15-minute access token lifetime
       };
       setStaffSessionCookie(res, payload);
+
+      // Issue 10: Refresh token rotation with family ID
+      const refreshToken = createRefreshToken(staffId, matched.role);
+      setStaffRefreshTokenCookie(res, refreshToken.token);
+
       res.json({ authenticated: true, session: payload });
     } catch (err) {
       next(err);
     }
   });
 
-  app.post('/api/auth/logout', (_req, res) => {
-    clearStaffSessionCookie(res);
+  // Issue 10: Refresh Token Rotation Endpoint
+  app.post('/api/auth/refresh', (req, res) => {
+    const cookies = parseCookies(req.headers.cookie);
+    const refreshToken = cookies[STAFF_REFRESH_COOKIE];
+    if (!refreshToken) {
+      res.status(401).json({ error: 'No refresh token provided.' });
+      return;
+    }
+
+    const result = rotateRefreshToken(refreshToken);
+    if (!result.success || !result.newAccessToken || !result.newRefreshToken) {
+      clearStaffSessionCookie(res, req);
+      res.status(401).json({ error: result.error || 'Invalid or revoked refresh token.' });
+      return;
+    }
+
+    const session = getStaffSessionFromCookieHeader(`cafeos_staff_session=${result.newAccessToken}`);
+    if (session) {
+      setStaffSessionCookie(res, session);
+    }
+    setStaffRefreshTokenCookie(res, result.newRefreshToken);
+    res.json({ authenticated: true, session });
+  });
+
+  // Issue 11: Server-side Logout
+  app.post('/api/auth/logout', (req, res) => {
+    clearStaffSessionCookie(res, req);
     res.json({ authenticated: false, session: null });
+  });
+
+  // Issues 1, 2, 3, 4: Hardened OTP Request Endpoint
+  app.post('/api/auth/otp/request', async (req, res, next) => {
+    try {
+      const { identifier, name, email, phone } = req.body as {
+        identifier?: string;
+        name?: string;
+        email?: string;
+        phone?: string;
+      };
+      const cleanId = identifier || email || phone;
+      if (!cleanId) {
+        res.status(400).json({ error: 'Identifier (email or phone) is required.' });
+        return;
+      }
+      const result = await requestOtp({
+        identifier: cleanId,
+        ip: req.ip || '127.0.0.1',
+        name,
+        email,
+        phone,
+      });
+      if (!result.success) {
+        if (result.unavailable) {
+          res.status(503).json({ error: result.message });
+          return;
+        }
+        res.status(429).json({ error: result.message, retryAfterSeconds: result.retryAfterSeconds });
+        return;
+      }
+      // Issue 2 & 4: Generic response; NEVER return the code in response body
+      res.json({ success: true, message: result.message });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Issue 1 & 3: Hardened OTP Verification Endpoint
+  app.post('/api/auth/otp/verify', (req, res) => {
+    const b = (req.body || {}) as {
+      identifier?: string;
+      email?: string;
+      phone?: string;
+      code?: string;
+      otp?: string;
+    };
+    const identifier = b.identifier || b.email || b.phone;
+    const code = b.code || b.otp;
+    if (!identifier || !code) {
+      res.status(400).json({ error: 'Identifier and 6-digit code are required.' });
+      return;
+    }
+    const result = verifyOtp({
+      identifier,
+      code,
+      ip: req.ip || '127.0.0.1',
+    });
+    if (!result.valid) {
+      res.status(401).json({ error: result.error || 'Verification failed.' });
+      return;
+    }
+    res.json({ verified: true, message: 'OTP verified successfully.' });
+  });
+
+  // Issues 13, 14, 16: Password / Credential Reset Flow
+  app.post('/api/auth/reset/request', (req, res) => {
+    const { identifier } = req.body as { identifier?: string };
+    if (!identifier) {
+      res.status(400).json({ error: 'Account identifier is required.' });
+      return;
+    }
+    res.status(503).json({ error: 'Password reset delivery is unavailable.' });
+  });
+
+  app.post('/api/auth/reset/confirm', (req, res) => {
+    const { token } = req.body as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: 'Reset token is required.' });
+      return;
+    }
+    const result = consumePasswordResetToken(token);
+    if (!result.valid) {
+      res.status(401).json({ error: result.error || 'Invalid reset token.' });
+      return;
+    }
+    // Revoke current session cookies on reset
+    clearStaffSessionCookie(res, req);
+    res.json({ success: true, message: 'Password/PIN reset successfully. All existing sessions have been terminated.' });
+  });
+
+  // Issue 15: Email Change Re-Authentication & Dual-Notification
+  app.post('/api/auth/email-change/request', async (req, res, next) => {
+    try {
+      const session = getStaffSession(req);
+      if (!session) {
+        res.status(401).json({ error: 'Authentication required for email change.' });
+        return;
+      }
+      const { newEmail, currentPin } = req.body as { newEmail?: string; currentPin?: string };
+      if (!newEmail || !currentPin) {
+        res.status(400).json({ error: 'New email and current PIN are required for re-authentication.' });
+        return;
+      }
+      // Re-authentication verification
+      const matched = authenticateStaffPin(currentPin);
+      if (!matched || matched.role !== session.role) {
+        res.status(401).json({ error: 'Re-authentication failed. Incorrect PIN.' });
+        return;
+      }
+      res.status(503).json({ error: 'Email change verification delivery is unavailable.' });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/auth/email-change/confirm', (req, res) => {
+    const { token } = req.body as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: 'Verification token is required.' });
+      return;
+    }
+    const result = verifyAndApplyEmailChange(token);
+    if (!result.valid) {
+      res.status(401).json({ error: result.error || 'Invalid or expired email change token.' });
+      return;
+    }
+    clearStaffSessionCookie(res, req);
+    res.json({ success: true, message: 'Email address updated. Please log in again.' });
+  });
+
+  // Issue 20: Admin 2FA Setup & Verification
+  app.post('/api/auth/2fa/setup', (req, res) => {
+    const session = getStaffSession(req);
+    if (!session || session.role !== 'admin') {
+      res.status(403).json({ error: 'Admin authentication required to configure 2FA.' });
+      return;
+    }
+    const setup = setupAdmin2Fa('admin');
+    res.json({
+      secret: setup.secret,
+      otpauthUri: setup.otpauthUri,
+      recoveryCodes: setup.plainRecoveryCodes,
+    });
+  });
+
+  app.post('/api/auth/2fa/confirm', (req, res) => {
+    const session = getStaffSession(req);
+    if (!session || session.role !== 'admin') {
+      res.status(403).json({ error: 'Admin authentication required.' });
+      return;
+    }
+    const { token } = req.body as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: 'Verification token is required.' });
+      return;
+    }
+    const confirmed = confirmAndEnableAdmin2Fa('admin', token);
+    if (!confirmed) {
+      res.status(401).json({ error: 'Invalid 2FA token. Setup not confirmed.' });
+      return;
+    }
+    res.json({ success: true, message: 'Admin 2FA enabled successfully.' });
+  });
+
+  // Issue 17: OAuth PKCE Challenge & State Cookie
+  app.get('/api/auth/oauth/challenge', (req, res) => {
+    const redirectUri = (req.query.redirect_uri as string) || 'http://localhost:3000/api/auth/oauth/callback';
+    try {
+      const challenge = generateOAuthChallenge(redirectUri);
+      res.cookie('cafeos_oauth_state', challenge.state, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/api/auth/oauth',
+        maxAge: 10 * 60 * 1000,
+      });
+      res.json({
+        state: challenge.state,
+        codeChallenge: challenge.codeChallenge,
+        codeVerifier: challenge.codeVerifier,
+      });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Invalid OAuth request.' });
+    }
+  });
+
+  // Customer Brevo Email Confirmation endpoint (Issue 2: Never leak OTP in JSON response)
+  app.post('/api/auth/brevo-confirmation', brevoConfirmationLimiter, async (req, res, next) => {
+    try {
+      const captchaCheck = await verifyCaptchaToken((req.body as { captchaToken?: string })?.captchaToken);
+      if (!captchaCheck.valid) {
+        res.status(403).json({ error: captchaCheck.error || 'CAPTCHA verification failed' });
+        return;
+      }
+      const input = parseBody(brevoConfirmationSchema, req.body);
+      const result = await sendBrevoConfirmationEmail({
+        toName: input.name,
+        toEmail: input.email,
+        phone: input.phone,
+        verificationCode: input.code,
+        appUrl: process.env.APP_PUBLIC_URL || process.env.APP_URL || 'http://localhost:3002',
+      });
+      if (!result.success) {
+        res.status(503).json({ error: result.error || 'Email delivery is unavailable.' });
+        return;
+      }
+      res.json({
+        ok: true,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Admin Brevo Email Broadcast endpoint (for marketing, announcements & campaigns)
+  app.post('/api/admin/broadcast-email', async (req, res, next) => {
+    try {
+      const auth = checkStaffRoles(req, ['admin']);
+      if (!auth.allowed) {
+        res.status(auth.httpStatus ?? 401).json({ error: auth.error });
+        return;
+      }
+      const input = parseBody(broadcastEmailSchema, req.body);
+      const state = store.getBootstrap();
+
+      let recipients: Array<{ email: string; name: string }> = [];
+      if (input.testEmail) {
+        recipients = [{ email: input.testEmail, name: 'Admin Test' }];
+      } else {
+        const target = input.targetSegment;
+        recipients = state.customers
+          .filter((c) => (target === 'all' || c.segment === target) && Boolean(c.email))
+          .map((c) => ({ email: c.email!, name: c.name }));
+      }
+
+      const result = await broadcastBrevoMarketingEmail({
+        recipients,
+        subject: input.subject,
+        heading: input.heading,
+        message: input.message,
+        promoCode: input.promoCode,
+        discountBadge: input.discountBadge,
+      });
+      if (!result.success && result.sentCount === 0) {
+        res.status(503).json({ ok: false, error: result.error || 'Email delivery is unavailable.' });
+        return;
+      }
+
+      res.json({
+        ok: result.success,
+        totalRecipients: result.totalRecipients,
+        sentCount: result.sentCount,
+        failedCount: result.failedCount,
+        simulated: result.simulated ?? false,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Brevo Order Bill / Tax Invoice email delivery
+  app.post('/api/orders/:orderId/send-bill-email', async (req, res, next) => {
+    try {
+      const staffAuth = checkStaffRoles(req, ['admin']);
+      const customerSession = getCustomerSession(req);
+      if (!staffAuth.allowed && !customerSession) {
+        res.status(staffAuth.httpStatus ?? 401).json({ error: staffAuth.error || 'Authentication required.' });
+        return;
+      }
+      if (
+        customerSession &&
+        !staffAuth.allowed &&
+        !canCustomerAccessOrder(customerSession, req.params.orderId)
+      ) {
+        res.status(403).json({ error: 'You do not have access to this order.' });
+        return;
+      }
+      const order = store.getOrder(req.params.orderId);
+      if (!order) {
+        res.status(404).json({ error: `Order "${req.params.orderId}" not found.` });
+        return;
+      }
+      const input = parseBody(sendBillEmailSchema, req.body);
+      const state = store.getBootstrap();
+
+      const result = await sendBrevoOrderBillEmail({
+        order,
+        toEmail: input.email,
+        toName: input.name || order.customerName,
+        cafeSettings: state.cafeSettings,
+        appUrl: process.env.APP_PUBLIC_URL || process.env.APP_URL || 'http://localhost:3002',
+      });
+
+      if (!result.success) {
+        res.status(503).json({ error: result.error || 'Email delivery is unavailable.' });
+        return;
+      }
+
+      const updated = store.markOrderPaidEmailSent(order.id, input.email);
+      await store.flushToPersistence();
+      if (updated) {
+        emitSync('order:updated', { order: updated });
+      }
+
+      res.json({
+        ok: true,
+        orderId: order.id,
+      });
+    } catch (err) {
+      next(err);
+    }
   });
 
   // Orders & KDS
@@ -799,11 +1759,11 @@ export function createCafeServer(
 
   app.get(
     '/api/orders',
-    requireRoles(['owner', 'manager', 'cashier', 'barista', 'server', 'kitchen', 'waiter']),
+    requireRoles(['admin', 'kitchen']),
     (req, res) => {
       const staffSession = getStaffSession(req);
       const orders =
-        staffSession?.role === 'barista' || (staffSession?.role as string) === 'kitchen'
+        staffSession?.role === 'kitchen'
           ? store.getBootstrap({ staffSession, customerSession: null }).orders
           : store.getOrders();
       res.json({ orders });
@@ -812,13 +1772,28 @@ export function createCafeServer(
 
   app.post('/api/orders', tableOrderLimiter, async (req, res, next) => {
     try {
-      const input = parseBody(createOrderSchema, req.body);
+      const headerIdempotencyKey =
+        typeof req.headers['idempotency-key'] === 'string'
+          ? req.headers['idempotency-key'].trim()
+          : typeof req.headers['x-idempotency-key'] === 'string'
+          ? req.headers['x-idempotency-key'].trim()
+          : undefined;
+      const rawBody =
+        typeof req.body === 'object' && req.body !== null
+          ? {
+              ...req.body,
+              idempotencyKey:
+                (req.body as { idempotencyKey?: string }).idempotencyKey ||
+                headerIdempotencyKey,
+            }
+          : req.body;
+      const input = parseBody(createOrderSchema, rawBody);
       const staffSession = getStaffSession(req);
       if (input.isPosTerminal && !staffSession) {
         res.status(401).json({ error: 'Staff PIN authentication required for POS orders' });
         return;
       }
-      if (input.isPosTerminal && !hasStaffRole(staffSession, ['owner', 'manager', 'cashier', 'server'])) {
+      if (input.isPosTerminal && !hasStaffRole(staffSession, ['admin'])) {
         res.status(403).json({ error: 'Your role cannot create POS terminal orders' });
         return;
       }
@@ -828,7 +1803,16 @@ export function createCafeServer(
         ? input.customerId
         : customerSession?.customerId || `guest_${crypto.randomUUID()}`;
       const orderInput = staffSession ? input : { ...input, customerId };
-      const result = store.createOrder(orderInput);
+      const crmCustomerId = staffSession
+        ? input.customerId
+        : customerSession?.crmCustomerId;
+      const result = await store.createOrder(
+        orderInput,
+        store.getCustomerSegment(crmCustomerId),
+        crmCustomerId,
+        customerSession?.orderIds,
+        !staffSession && Boolean(customerSession?.customerId)
+      );
       if (!staffSession && result.duplicate && result.order.customerId !== customerId) {
         res.status(403).json({ error: 'This idempotency key belongs to another customer order' });
         return;
@@ -855,6 +1839,9 @@ export function createCafeServer(
           emitSync('table:updated', { table: result.tableUpdated });
         }
         emitSync('inventory:updated', { inventory: store.getInventory() });
+        if (result.order.paymentStatus === 'paid') {
+          void triggerOrderPaidEmailIfEligible(result.order.id);
+        }
       }
       res.status(result.duplicate ? 200 : 201).json(result);
     } catch (err) {
@@ -891,19 +1878,36 @@ export function createCafeServer(
         return;
       }
 
-      let gatewayOrder = await upiGateway.getOrder(order.id);
+      const isLegacyGatewayOrder =
+        order.paymentProvider === 'upi-gateway' &&
+        Boolean(order.gatewayOrderId) &&
+        !order.gatewayClientOrderId;
+      const clientOrderId = isLegacyGatewayOrder
+        ? order.id
+        : store.getOrCreateGatewayClientOrderId(order.id);
+      if (!clientOrderId) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+      if (!isLegacyGatewayOrder) {
+        await store.flushToPersistence();
+      }
+
+      let gatewayOrder = await upiGateway.getOrder(clientOrderId);
       if (!gatewayOrder) {
         try {
           gatewayOrder = await upiGateway.createOrder({
-            clientOrderId: order.id,
+            clientOrderId,
             amountPaise,
             note: `CafeOS ${order.id}`,
+            customerName: order.customerName,
+            customerPhone: order.customerPhone,
           });
         } catch (error) {
           if (!(error instanceof UpiGatewayRequestError) || error.statusCode !== 422) {
             throw error;
           }
-          gatewayOrder = await upiGateway.getOrder(order.id);
+          gatewayOrder = await upiGateway.getOrder(clientOrderId);
           if (!gatewayOrder) throw error;
         }
       }
@@ -956,7 +1960,7 @@ export function createCafeServer(
         return;
       }
 
-      const gatewayOrder = await upiGateway.getOrder(order.id);
+      const gatewayOrder = await upiGateway.getOrder(getGatewayClientOrderId(order));
       if (!gatewayOrder) {
         res.status(502).json({ error: 'The UPI gateway no longer has this payment order.' });
         return;
@@ -979,18 +1983,24 @@ export function createCafeServer(
 
   app.post(
     '/api/orders/:id/pay-counter',
-    requireRoles(['owner', 'manager', 'cashier', 'server']),
+    requireRoles(['admin']),
     async (req, res, next) => {
       try {
         const orderId = String(req.params.id);
+        const input = parseBody(orderPayCounterSchema, req.body || {});
         const staffSession = getStaffSession(req);
-        const order = store.markOrderPaidAtCounter(orderId, staffSession?.staffName);
+        const order = store.markOrderPaidAtCounter(
+          orderId,
+          staffSession?.staffName,
+          input.paymentMode
+        );
         if (!order) {
           res.status(404).json({ error: 'Order not found' });
           return;
         }
         await store.flushToPersistence();
         emitSync('order:updated', { order });
+        void triggerOrderPaidEmailIfEligible(order.id);
         res.status(200).json({ ok: true, order });
       } catch (err) {
         next(err);
@@ -1000,7 +2010,7 @@ export function createCafeServer(
 
   app.post(
     '/api/orders/:id/refund',
-    requireRoles(['owner', 'manager']),
+    requireRoles(['admin']),
     async (req, res, next) => {
       try {
         const orderId = String(req.params.id);
@@ -1026,7 +2036,47 @@ export function createCafeServer(
     }
   );
 
-  app.get('/api/activity-log', requireRoles(['owner', 'manager']), (_req, res) => {
+  app.post(
+    '/api/orders/:id/cancel-item',
+    requireRoles(['admin', 'kitchen']),
+    async (req, res, next) => {
+      try {
+        const orderId = String(req.params.id);
+        const input = parseBody(cancelOrderItemSchema, req.body || {});
+        const staffSession = getStaffSession(req);
+        const result = store.cancelOrderItemAndRefund(
+          orderId,
+          input.menuItemId,
+          input.quantity,
+          input.reason,
+          staffSession?.staffName,
+          staffSession?.role
+        );
+        if (!result) {
+          res.status(404).json({ error: 'Order not found' });
+          return;
+        }
+        await store.flushToPersistence();
+        emitSync('order:updated', { order: result.order });
+        emitSync('order:item-cancelled', {
+          order: result.order,
+          refundAmount: result.refundAmount,
+          cancelledItem: result.cancelledItem,
+        });
+        res.status(200).json({
+          ok: true,
+          order: result.order,
+          refundAmount: result.refundAmount,
+          cancelledItem: result.cancelledItem,
+          message: `Cancelled ${result.cancelledItem.name} and initiated ₹${result.refundAmount} refund`,
+        });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.get('/api/activity-log', requireRoles(['admin']), (_req, res) => {
     res.json({ ok: true, activities: store.getActivityLog() });
   });
 
@@ -1039,7 +2089,7 @@ export function createCafeServer(
 
   app.post(
     ['/api/orders/:id/status', '/api/orders/:id/transition'],
-    requireRoles(['owner', 'manager', 'barista', 'kitchen', 'cashier', 'server', 'waiter']),
+    requireRoles(['admin', 'kitchen']),
     async (req, res, next) => {
       try {
         const orderId = String(req.params.id);
@@ -1053,7 +2103,7 @@ export function createCafeServer(
           orderId,
           status,
           staffSession?.staffName || 'Staff',
-          staffSession?.role || 'manager'
+          staffSession?.role || 'admin'
         );
         if (!updateResult) {
           res.status(404).json({ error: 'Order not found' });
@@ -1065,6 +2115,9 @@ export function createCafeServer(
         if (lowStockAlerts.length > 0) {
           emitSync('stock:low', { items: lowStockAlerts });
           emitSync('inventory:updated', { inventory: store.getInventory() });
+        }
+        if (order.paymentStatus === 'paid') {
+          void triggerOrderPaidEmailIfEligible(order.id);
         }
         await store.flushToPersistence();
         res.status(200).json({ ok: true, order, lowStockAlerts });
@@ -1076,7 +2129,7 @@ export function createCafeServer(
 
   app.patch(
     '/api/orders/:id/status',
-    requireRoles(['owner', 'manager', 'barista', 'kitchen', 'cashier', 'server', 'waiter']),
+    requireRoles(['admin', 'kitchen']),
     async (req, res, next) => {
       try {
         const orderId = String(req.params.id);
@@ -1090,7 +2143,7 @@ export function createCafeServer(
           orderId,
           status,
           staffSession?.staffName || 'Staff',
-          staffSession?.role || 'manager'
+          staffSession?.role || 'admin'
         );
         if (!updateResult) {
           res.status(404).json({ error: 'Order not found' });
@@ -1103,6 +2156,9 @@ export function createCafeServer(
           emitSync('stock:low', { items: lowStockAlerts });
           emitSync('inventory:updated', { inventory: store.getInventory() });
         }
+        if (order.paymentStatus === 'paid') {
+          void triggerOrderPaidEmailIfEligible(order.id);
+        }
         await store.flushToPersistence();
         res.status(200).json({ ok: true, order, lowStockAlerts });
       } catch (err) {
@@ -1113,7 +2169,7 @@ export function createCafeServer(
 
   app.post(
     '/api/orders/:id/advance',
-    requireRoles(['owner', 'manager', 'barista', 'kitchen', 'cashier', 'server', 'waiter']),
+    requireRoles(['admin', 'kitchen']),
     async (req, res, next) => {
       try {
         const updated = store.advanceOrderStatus(String(req.params.id));
@@ -1124,6 +2180,9 @@ export function createCafeServer(
         emitSync('order:updated', { order: updated });
         emitSync('inventory:updated', { inventory: store.getInventory() });
         emitSync('activity:updated', {});
+        if (updated.paymentStatus === 'paid') {
+          void triggerOrderPaidEmailIfEligible(updated.id);
+        }
         await store.flushToPersistence();
         res.json({ order: updated });
       } catch (err) {
@@ -1134,7 +2193,7 @@ export function createCafeServer(
 
   app.post(
     '/api/orders/:id/toggle-item',
-    requireRoles(['owner', 'manager', 'barista', 'kitchen', 'cashier', 'server', 'waiter']),
+    requireRoles(['admin', 'kitchen']),
     (req, res, next) => {
       try {
         const { menuItemId } = parseBody(toggleKotItemSchema, req.body);
@@ -1152,17 +2211,44 @@ export function createCafeServer(
     }
   );
 
-  app.post('/api/orders/:id/feedback', async (req, res, next) => {
+  app.post('/api/orders/:id/feedback', customerFeedbackLimiter, async (req, res, next) => {
     try {
+      const orderId = String(req.params.id);
+      const existingOrder = store.getOrder(orderId);
+      if (!existingOrder) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+
+      const staffSession = getStaffSession(req);
+      const customerSession = getCustomerSession(req);
+      if (staffSession) {
+        if (!hasStaffRole(staffSession, ['admin'])) {
+          res.status(403).json({ error: 'Your role cannot submit order feedback.' });
+          return;
+        }
+      } else if (customerSession) {
+        if (!canCustomerAccessOrder(customerSession, orderId)) {
+          res.status(403).json({ error: 'You do not have permission to leave feedback for this order.' });
+          return;
+        }
+      } else {
+        const phone = typeof req.body?.customerPhone === 'string' ? req.body.customerPhone.trim() : '';
+        if (existingOrder.customerId && !phone) {
+          res.status(401).json({ error: 'Customer session or phone verification required to leave feedback for this order.' });
+          return;
+        }
+      }
+
       const input = parseBody(orderFeedbackSchema, req.body);
-      const result = store.recordOrderFeedback(String(req.params.id), input);
+      const result = store.recordOrderFeedback(orderId, input);
       if (!result) {
         res.status(404).json({ error: 'Order not found' });
         return;
       }
       await store.flushToPersistence();
       emitSync('order:feedback-received', {
-        orderId: String(req.params.id),
+        orderId,
         order: result.order,
         pointsAwarded: result.pointsAwarded,
       });
@@ -1175,18 +2261,101 @@ export function createCafeServer(
   app.post('/api/customer-feedback', customerFeedbackLimiter, async (req, res, next) => {
     try {
       const input = parseBody(customerFeedbackSchema, req.body);
-      store.recordCustomerFeedback(input);
+      const review = store.recordCustomerFeedback(input);
       await store.flushToPersistence();
       emitSync('activity:updated', {});
-      res.status(201).json({ ok: true });
+      res.status(201).json({ ok: true, review });
     } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/ai/vishal', async (req, res, next) => {
+    try {
+      const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+      const mode = req.body?.mode === 'staff' ? 'staff' : 'customer';
+      const state = store.getBootstrap();
+      const menu = state.menuItems || [];
+      const orders = state.orders || [];
+      const settings = state.cafeSettings;
+
+      // Check if Gemini API is available
+      const geminiApiKey = process.env.GEMINI_API_KEY;
+      if (geminiApiKey && message) {
+        try {
+          const { GoogleGenAI } = await import('@google/genai');
+          const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+          const systemInstruction = `You are Vishal, the AI Assistant & Cafe Operations Copilot for "The Sawariya Cafe" (TSC), a premium pure-vegetarian cafe in Jaipur.
+Current mode: ${mode}.
+Cafe Name: ${settings?.cafeName || 'The Sawariya Cafe'}
+Tagline: Good Food • Good Mood
+Total Menu items: ${menu.length}. Available: ${menu.filter((m) => m.isAvailable !== false).map((m) => `${m.name} (₹${m.price})`).join(', ')}.
+Total orders today: ${orders.length}.
+Special offers: Birthday Party celebration for ₹800 (1.5 hrs), Buy 5 get 1 free Cold Coffee, Free ice cream for Google review + Instagram follow, Free delivery under 1km on orders > ₹249.
+Wi-Fi: Airtel_The sawariya cafe / Password: Sawariya@1177. Phone: 01414611071, WhatsApp: 7300348070.
+Tone: Warm, helpful, polite, and energetic. Reply in friendly Hinglish or Hindi. Keep answers concise, appetizing, and actionable.`;
+
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: message,
+            config: {
+              systemInstruction,
+              temperature: 0.7,
+            },
+          });
+
+          const replyText = response.text || '';
+          if (replyText) {
+            res.json({
+              ok: true,
+              text: replyText,
+              provider: 'gemini',
+              mode,
+            });
+            return;
+          }
+        } catch (geminiError) {
+          console.warn('[Vishal AI] Gemini call fallback to local engine:', geminiError);
+        }
+      }
+
+      // Local intelligence fallback
+      const activeKitchen = (orders || []).filter((o) => ['order_received', 'preparing'].includes(o.status));
+      const today = new Date().toDateString();
+      const todayOrders = (orders || []).filter((o) => o?.createdAt && new Date(o.createdAt).toDateString() === today);
+      const todayRevenue = todayOrders
+        .filter((o) => o.paymentStatus === 'paid')
+        .reduce((sum, o) => sum + (o.total || 0), 0);
+
+      if (mode === 'staff') {
+        res.json({
+          ok: true,
+          provider: 'local',
+          mode: 'staff',
+          text: `👨‍🍳 Vishal Cafe Copilot Report:\n• Active Cooking KOTs: ${activeKitchen.length}\n• Today's Total Sales: ₹${todayRevenue.toLocaleString('en-IN')} across ${todayOrders.length} orders.\n• Menu Items Available: ${(menu || []).filter((m) => m.isAvailable !== false).length}/${menu.length}`,
+          insights: [
+            { label: 'Active KOT', value: activeKitchen.length },
+            { label: "Today's Sales", value: `₹${todayRevenue}` },
+          ],
+        });
+        return;
+      }
+
+      res.json({
+        ok: true,
+        provider: 'local',
+        mode: 'customer',
+        text: `Namaste! Main Vishal hoon, The Sawariya Cafe ka AI Assistant. Aap mujhse delicious food recommendations, special offers, order status ya Wi-Fi details pooch sakte hain!`,
+      });
+    } catch (err) {
+      console.error('[Vishal AI Error]:', err);
       next(err);
     }
   });
 
   app.post(
     '/api/menu/:id/toggle-availability',
-    requireRoles(['owner', 'manager', 'barista', 'kitchen', 'cashier']),
+    requireRoles(['admin', 'kitchen']),
     async (req, res, next) => {
       try {
         const item = store.toggleMenuItemAvailability(String(req.params.id));
@@ -1203,9 +2372,95 @@ export function createCafeServer(
     }
   );
 
+  app.post(
+    '/api/menu/items',
+    requireRoles(['admin']),
+    async (req, res, next) => {
+      try {
+        const input = parseBody(addMenuItemSchema, req.body);
+        const item = store.addMenuItem(input);
+        await store.flushToPersistence();
+        emitSync('menu:item-created', { item });
+        emitSync('menu:availability-toggled', { item });
+        res.status(201).json({ ok: true, item });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.put(
+    '/api/menu/items/:id',
+    requireRoles(['admin']),
+    async (req, res, next) => {
+      try {
+        const input = parseBody(updateMenuItemSchema, req.body);
+        const item = store.updateMenuItem(String(req.params.id), input);
+        if (!item) {
+          res.status(404).json({ error: 'Menu item not found' });
+          return;
+        }
+        await store.flushToPersistence();
+        emitSync('menu:item-updated', { item });
+        emitSync('menu:availability-toggled', { item });
+        res.status(200).json({ ok: true, item });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/menu/upload-image',
+    requireRoles(['admin']),
+    async (req, res, next) => {
+      try {
+        const { data, fileName } = req.body as { data?: string; fileName?: string };
+        if (!data || typeof data !== 'string' || data.length < 10) {
+          res.status(400).json({ error: 'Valid image data is required' });
+          return;
+        }
+
+        let base64Content = data;
+        let ext = 'jpg';
+        if (data.startsWith('data:image/')) {
+          const match = data.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,/);
+          if (match) {
+            ext = match[1].toLowerCase() === 'jpeg' ? 'jpg' : match[1].toLowerCase();
+            base64Content = data.slice(match[0].length);
+          }
+        } else if (fileName && fileName.includes('.')) {
+          const rawExt = fileName.split('.').pop()?.toLowerCase();
+          if (rawExt && ['jpg', 'jpeg', 'png', 'webp', 'svg'].includes(rawExt)) {
+            ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
+          }
+        }
+
+        const safeExt = ['jpg', 'png', 'webp', 'svg'].includes(ext) ? ext : 'jpg';
+        const uploadsDir = path.resolve(process.cwd(), 'public', 'images', 'uploads');
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+
+        const uniqueFileName = `product-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${safeExt}`;
+        const filePath = path.join(uploadsDir, uniqueFileName);
+        fs.writeFileSync(filePath, Buffer.from(base64Content, 'base64'));
+        const imageUrl = `/images/uploads/${uniqueFileName}`;
+        res.status(200).json({ ok: true, imageUrl });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
   // Tables
-  app.post('/api/tables/reserve', (req, res, next) => {
+  app.post('/api/tables/reserve', tableReservationLimiter, async (req, res, next) => {
     try {
+      const captchaCheck = await verifyCaptchaToken((req.body as { captchaToken?: string })?.captchaToken);
+      if (!captchaCheck.valid) {
+        res.status(403).json({ error: captchaCheck.error || 'CAPTCHA verification failed' });
+        return;
+      }
       const input = parseBody(reserveTableSchema, req.body);
       const outcome = store.reserveTable(input);
       if (outcome.notFound) {
@@ -1219,7 +2474,7 @@ export function createCafeServer(
     }
   });
 
-  app.post('/api/tables', requireRoles(['owner', 'manager']), (req, res, next) => {
+  app.post('/api/tables', requireRoles(['admin']), (req, res, next) => {
     try {
       const input = parseBody(addTableSchema, req.body);
       const outcome = store.addTable(input);
@@ -1236,7 +2491,7 @@ export function createCafeServer(
 
   app.post(
     '/api/tables/:id/check-in',
-    requireRoles(['owner', 'manager', 'server', 'cashier']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const updated = store.checkInTable(String(req.params.id));
@@ -1254,7 +2509,7 @@ export function createCafeServer(
 
   app.post(
     '/api/tables/transfer',
-    requireRoles(['owner', 'manager', 'server', 'cashier']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const { sourceTableId, targetTableId } = parseBody(tableTransferMergeSchema, req.body);
@@ -1273,7 +2528,7 @@ export function createCafeServer(
 
   app.post(
     '/api/tables/merge',
-    requireRoles(['owner', 'manager', 'server', 'cashier']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const { sourceTableId, targetTableId } = parseBody(tableTransferMergeSchema, req.body);
@@ -1293,7 +2548,7 @@ export function createCafeServer(
   // Inventory
   app.post(
     '/api/inventory',
-    requireRoles(['owner', 'manager', 'cashier']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const input = parseBody(addIngredientSchema, req.body);
@@ -1308,11 +2563,17 @@ export function createCafeServer(
 
   app.post(
     '/api/inventory/:id/restock',
-    requireRoles(['owner', 'manager', 'cashier', 'barista', 'kitchen']),
+    requireRoles(['admin', 'kitchen']),
     (req, res, next) => {
       try {
-        const { addedQty } = parseBody(restockIngredientSchema, req.body ?? {});
-        const item = store.restockIngredient(String(req.params.id), addedQty);
+        const { addedQty, unitCost } = parseBody(restockIngredientSchema, req.body ?? {});
+        const staff = getStaffSession(req);
+        const item = store.restockIngredient(
+          String(req.params.id),
+          addedQty,
+          unitCost,
+          staff?.staffName
+        );
         if (!item) {
           res.status(404).json({ error: 'Ingredient not found' });
           return;
@@ -1326,8 +2587,149 @@ export function createCafeServer(
   );
 
   app.post(
+    '/api/inventory/receive',
+    requireRoles(['admin']),
+    (req, res, next) => {
+      try {
+        const input = parseBody(stockReceiptSchema, req.body);
+        const staff = getStaffSession(req);
+        const item = store.receiveStock(input, staff?.staffName);
+        if (!item) {
+          res.status(404).json({ error: 'Ingredient not found' });
+          return;
+        }
+        emitSync('inventory:updated', { inventory: store.getInventory() });
+        emitSync('activity:updated', {});
+        res.status(201).json({ item });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/inventory/waste',
+    requireRoles(['admin', 'kitchen']),
+    (req, res, next) => {
+      try {
+        const input = parseBody(stockWasteSchema, req.body);
+        const staff = getStaffSession(req);
+        const item = store.recordWaste(input, staff?.staffName);
+        if (!item) {
+          res.status(404).json({ error: 'Ingredient not found' });
+          return;
+        }
+        emitSync('inventory:updated', { inventory: store.getInventory() });
+        emitSync('activity:updated', {});
+        res.status(201).json({ item });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/inventory/transfer',
+    requireRoles(['admin', 'kitchen']),
+    (req, res, next) => {
+      try {
+        const input = parseBody(stockTransferSchema, req.body);
+        const staff = getStaffSession(req);
+        const item = store.transferStock(input, staff?.staffName);
+        if (!item) {
+          res.status(404).json({ error: 'Ingredient not found' });
+          return;
+        }
+        emitSync('inventory:updated', { inventory: store.getInventory() });
+        emitSync('activity:updated', {});
+        res.status(201).json({ item });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/inventory/count',
+    requireRoles(['admin']),
+    (req, res, next) => {
+      try {
+        const input = parseBody(stockCountSchema, req.body);
+        const count = store.createStockCount(input, getStaffSession(req)?.staffName);
+        emitSync('inventory:updated', { inventory: store.getInventory() });
+        res.status(201).json({ count });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/inventory/count/:id/approve',
+    requireRoles(['admin']),
+    (req, res, next) => {
+      try {
+        const count = store.approveStockCount(
+          String(req.params.id),
+          getStaffSession(req)?.staffName
+        );
+        if (!count) {
+          res.status(404).json({ error: 'Stock count not found' });
+          return;
+        }
+        emitSync('inventory:updated', { inventory: store.getInventory() });
+        emitSync('activity:updated', {});
+        res.json({ count });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/inventory/purchase-orders',
+    requireRoles(['admin']),
+    (req, res, next) => {
+      try {
+        const input = parseBody(purchaseOrderSchema, req.body);
+        const purchaseOrder = store.createPurchaseOrder(
+          input,
+          getStaffSession(req)?.staffName
+        );
+        emitSync('activity:updated', {});
+        res.status(201).json({ purchaseOrder });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/inventory/purchase-orders/receive',
+    requireRoles(['admin']),
+    (req, res, next) => {
+      try {
+        const input = parseBody(receivePurchaseOrderSchema, req.body);
+        const purchaseOrder = store.receivePurchaseOrder(
+          input,
+          getStaffSession(req)?.staffName
+        );
+        if (!purchaseOrder) {
+          res.status(404).json({ error: 'Purchase order not found' });
+          return;
+        }
+        emitSync('inventory:updated', { inventory: store.getInventory() });
+        emitSync('activity:updated', {});
+        res.json({ purchaseOrder });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
     '/api/inventory/request-reorder',
-    requireRoles(['owner', 'manager', 'cashier', 'barista', 'kitchen', 'server', 'waiter']),
+    requireRoles(['admin', 'kitchen']),
     (req, res, next) => {
       try {
         const { id, note } = parseBody(requestReorderSchema, req.body);
@@ -1349,7 +2751,7 @@ export function createCafeServer(
   // CRM & DPDP export
   app.post(
     '/api/customers',
-    requireRoles(['owner', 'manager', 'cashier']),
+    requireRoles(['admin']),
     (req, res, next) => {
       try {
         const input = parseBody(addCustomerSchema, req.body);
@@ -1377,8 +2779,74 @@ export function createCafeServer(
     res.json(exported);
   });
 
+  // DPDP Act 2023: Right to Data Portability (Current Authenticated Customer)
+  app.get('/api/customer/export', (req, res) => {
+    const customer = getCustomerSession(req);
+    if (!customer || !customer.customerId) {
+      res.status(401).json({ error: 'Customer authentication required to export personal data' });
+      return;
+    }
+    const exported = store.exportCustomerPii(customer.customerId);
+    if (!exported) {
+      res.status(404).json({ error: 'Customer record not found' });
+      return;
+    }
+    res.json(exported);
+  });
+
+  // DPDP Act 2023: Right to Erasure / Account Deletion (Self-Service)
+  app.delete('/api/customer/account', async (req, res, next) => {
+    try {
+      const customerSession = getCustomerSession(req);
+      if (!customerSession || !customerSession.customerId) {
+        res.status(401).json({ error: 'Customer authentication required to delete account' });
+        return;
+      }
+      const customerId = customerSession.customerId;
+      const deleted = store.deleteCustomer(customerId);
+      await store.flushToPersistence();
+      clearCustomerSessionCookie(res);
+      emitSync('customer:updated', { customerId, deleted: true });
+      emitSync('activity:updated', {});
+      res.json({
+        ok: true,
+        deleted,
+        message: 'Account and personal CRM data erased under Section 12 of the DPDP Act 2023.',
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // DPDP Act 2023: Delete Customer by ID (Admin or Verified Customer)
+  app.delete('/api/customers/:id', async (req, res, next) => {
+    try {
+      const customerId = String(req.params.id);
+      const auth = checkCustomerAccess(req, customerId);
+      if (!auth.allowed) {
+        res.status(auth.httpStatus ?? 401).json({ error: auth.error });
+        return;
+      }
+      const deleted = store.deleteCustomer(customerId);
+      await store.flushToPersistence();
+      const customerSession = getCustomerSession(req);
+      if (customerSession?.customerId === customerId) {
+        clearCustomerSessionCookie(res);
+      }
+      emitSync('customer:updated', { customerId, deleted: true });
+      emitSync('activity:updated', {});
+      res.json({
+        ok: true,
+        deleted,
+        message: 'Customer record erased in compliance with DPDP Act 2023.',
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // Loyalty
-  app.post('/api/loyalty/rules', requireRoles(['owner', 'manager']), (req, res, next) => {
+  app.post('/api/loyalty/rules', requireRoles(['admin']), (req, res, next) => {
     try {
       const input = parseBody(addLoyaltyRuleSchema, req.body);
       const rule = store.addLoyaltyRule(input);
@@ -1390,7 +2858,7 @@ export function createCafeServer(
   });
 
   // Campaigns
-  app.post('/api/campaigns', requireRoles(['owner', 'manager']), (req, res, next) => {
+  app.post('/api/campaigns', requireRoles(['admin']), (req, res, next) => {
     try {
       const input = parseBody(createCampaignSchema, req.body);
       const campaign = store.createCampaign(input);
@@ -1401,7 +2869,7 @@ export function createCafeServer(
     }
   });
 
-  app.post('/api/campaigns/:id/toggle', requireRoles(['owner', 'manager']), (req, res, next) => {
+  app.post('/api/campaigns/:id/toggle', requireRoles(['admin']), (req, res, next) => {
     try {
       const event =
         req.body && typeof (req.body as { event?: unknown }).event === 'string'
@@ -1419,8 +2887,8 @@ export function createCafeServer(
     }
   });
 
-  // Staff management is restricted to Manager / Owner and Super Admin.
-  app.post('/api/staff', requireRoles(['owner', 'manager']), (req, res, next) => {
+  // Staff management is restricted to Admin.
+  app.post('/api/staff', requireRoles(['admin']), (req, res, next) => {
     try {
       const input = parseBody(addStaffSchema, req.body);
       const member = store.addStaff(input);
@@ -1431,7 +2899,7 @@ export function createCafeServer(
     }
   });
 
-  app.post('/api/staff/:id/toggle-duty', requireRoles(['owner', 'manager']), (req, res) => {
+  app.post('/api/staff/:id/toggle-duty', requireRoles(['admin']), (req, res) => {
     const member = store.toggleStaffDuty(String(req.params.id));
     if (!member) {
       res.status(404).json({ error: 'Staff member not found' });
@@ -1441,8 +2909,8 @@ export function createCafeServer(
     res.json({ member });
   });
 
-  // Settings (Manager / Owner and Super Admin only; never bypass auth via managerPinRequired)
-  app.put('/api/settings', requireRoles(['owner', 'manager']), (req, res, next) => {
+  // Settings are admin-only; never bypass PIN authentication.
+  app.put('/api/settings', requireRoles(['admin']), (req, res, next) => {
     try {
       const input = parseBody(cafeSettingsSchema, req.body);
       const settings = store.saveSettings(input);
@@ -1453,7 +2921,7 @@ export function createCafeServer(
     }
   });
 
-  app.post('/api/settings/reset', requireRoles(['owner', 'manager']), (_req, res) => {
+  app.post('/api/settings/reset', requireRoles(['admin']), (_req, res) => {
     const settings = store.resetSettings();
     emitSync('settings:updated', { settings });
     res.json({ settings });
@@ -1466,10 +2934,20 @@ export function createCafeServer(
 
   // Central Zod + domain state transition + error handler
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (
+      err instanceof SyntaxError &&
+      'status' in err &&
+      (err as { status?: number }).status === 400
+    ) {
+      res.status(400).json({ error: 'Malformed JSON payload in request body' });
+      return;
+    }
     if (err instanceof z.ZodError) {
+      const firstIssue = err.issues[0];
+      const fieldPath = firstIssue?.path.length ? `[${firstIssue.path.join('.')}] ` : '';
+      const message = firstIssue?.message || 'Invalid request payload';
       res.status(400).json({
-        error: err.issues[0]?.message || 'Invalid request payload',
-        issues: err.issues,
+        error: `${fieldPath}${message}`.trim(),
       });
       return;
     }
@@ -1483,8 +2961,11 @@ export function createCafeServer(
       });
       return;
     }
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    res.status(500).json({ error: message });
+    console.error(
+      '[CafeOS] Request failed:',
+      err instanceof Error ? `${err.name}: ${err.message}\n${err.stack}` : 'unknown error'
+    );
+    res.status(500).json({ error: 'An unexpected internal error occurred. Please try again later.' });
   });
 
   return { app, httpServer, io, store };

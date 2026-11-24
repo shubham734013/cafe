@@ -1,14 +1,6 @@
 export type WorkspaceMode = 'customer' | 'staff';
 
-export type StaffRole =
-  | 'super-admin'
-  | 'owner'
-  | 'manager'
-  | 'cashier'
-  | 'barista'
-  | 'server'
-  | 'kitchen'
-  | 'waiter';
+export type StaffRole = 'admin' | 'kitchen';
 
 export interface AuthSessionState {
   authenticated: boolean;
@@ -19,7 +11,17 @@ export interface AuthSessionState {
     exp: number;
   } | null;
 }
-export type CustomerScreenId = 'home' | 'menu' | 'cart' | 'tracking' | 'rewards' | 'profile';
+export type CustomerScreenId =
+  | 'home'
+  | 'menu'
+  | 'cart'
+  | 'tracking'
+  | 'rewards'
+  | 'profile'
+  | 'login'
+  | 'privacy-policy'
+  | 'terms-and-conditions'
+  | 'akshat';
 export type StaffScreenId =
   | 'staff-home'
   | 'pos-terminal'
@@ -51,24 +53,40 @@ export type OrderStatus =
   | 'served'
   | 'paid'
   | 'cancelled';
-export type MenuCategory =
-  | 'All'
-  | 'Best Sellers'
-  | 'Beverages'
-  | 'Snacks'
-  | 'Meals'
-  | 'Combos'
-  | 'Desserts'
-  | 'Pizza'
-  | 'Burger'
-  | 'Pasta'
-  | 'Salad'
-  | 'Drink'
-  | 'Dessert';
-export type DateRangeKey = 'Today' | 'Last 7 Days' | 'This Month' | 'Quarter to Date';
-export type ReportCategory = 'Sales Report' | 'Item Report' | 'Inventory Report' | 'Customer Report' | 'Staff Performance';
+export const MENU_ITEM_CATEGORIES = [
+  'Burgers',
+  'Pizza',
+  'Maggi',
+  'Sandwiches',
+  'Special Bread Pizza',
+  'Fries & Momos',
+  'Cold Coffee',
+  'Shakes',
+  'Hot Beverages',
+  'Combos',
+  'Beverages',
+  'Snacks',
+  'Meals',
+  'Desserts',
+  'Burger',
+  'Pasta',
+  'Salad',
+  'Drink',
+  'Dessert',
+] as const;
 
-export type InventoryTab = 'Inventory' | 'Low Stock' | 'Ingredients' | 'Stock In' | 'Stock Out' | 'Suppliers';
+export type MenuItemCategory = (typeof MENU_ITEM_CATEGORIES)[number];
+export type MenuCategory = 'All' | 'Best Sellers' | MenuItemCategory;
+export type DateRangeKey = 'Today' | 'Last 7 Days' | 'Last 30 Days' | 'This Month' | 'Quarter to Date';
+export type ReportCategory = 'Sales Report' | 'Item Report' | 'Inventory Report' | 'Customer Report' | 'Staff Roster';
+
+export type InventoryTab =
+  | 'Inventory'
+  | 'Low Stock'
+  | 'Stock In'
+  | 'Stock Out'
+  | 'Suppliers'
+  | 'Purchase Orders';
 export type InventoryStatus = 'Good' | 'Reorder Soon' | 'Critical';
 
 export type TableFloor = 'Floor 1 (Main Hall)' | 'Floor 2 (Rooftop)' | 'Outdoor Patio';
@@ -78,12 +96,18 @@ export type CustomerSegment = 'all' | 'vip' | 'loyal' | 'regular' | 'new' | 'ris
 export type CampaignFilter = 'all' | 'active' | 'scheduled' | 'paused' | 'expired';
 export type StaffShiftFilter = 'all' | 'active' | 'morning' | 'fullday';
 
+export interface RecipeBurnItem {
+  ingredientId: string;
+  amount: number;
+  amountUnit?: 'g' | 'kg' | 'ml' | 'L' | 'pcs';
+}
+
 export interface MenuItem {
   id: string;
   name: string;
   description: string;
   price: number;
-  category: Exclude<MenuCategory, 'All' | 'Best Sellers'>;
+  category: MenuItemCategory;
   rating: number;
   isVeg: boolean;
   isBestSeller?: boolean;
@@ -93,6 +117,8 @@ export interface MenuItem {
   imageUrl: string;
   unitsSold: number;
   reviewsCount?: number;
+  recipe?: RecipeBurnItem[];
+  variants?: Array<{ size: string; price: number }>;
 }
 
 export interface CartItem {
@@ -100,10 +126,17 @@ export interface CartItem {
   name: string;
   price: number;
   quantity: number;
+  size?: string;
   note: string;
   imageUrl: string;
   station: MenuItem['station'];
   checked?: boolean;
+  status?: 'active' | 'cancelled';
+  cancelledQuantity?: number;
+  cancelledReason?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
+  refundAmount?: number;
 }
 
 export interface CardPaymentMetadata {
@@ -121,6 +154,11 @@ export interface CafeOrder {
   isPosTerminal?: boolean;
   serviceMode: ServiceMode;
   tableNumber?: string;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  paidEmailSentAt?: string;
+  deliveryAddress?: string;
   deliveryPartner?: string;
   riderNote?: string;
   items: CartItem[];
@@ -132,13 +170,17 @@ export interface CafeOrder {
   paymentStatus?: 'unpaid' | 'pending' | 'observed' | 'paid' | 'manual_review' | 'failed' | 'expired' | 'cancelled' | 'refunded';
   paymentProvider?: 'upi-gateway';
   gatewayOrderId?: string;
+  gatewayClientOrderId?: string;
   customerId?: string;
   paymentRef?: string;
   paymentChannelLabel?: string;
   cardDetails?: CardPaymentMetadata;
   loyaltyPointsAwarded?: number;
+  pointsDiscount?: number;
+  pointsRedeemed?: number;
   status: OrderStatus;
   createdAtLabel: string;
+  createdAt?: string;
   elapsedMinutes: number;
   isUrgent?: boolean;
   serverName?: string;
@@ -162,7 +204,8 @@ export interface CafeActivityLogItem {
     | 'stock_updated'
     | 'table_updated'
     | 'feedback_received'
-    | 'campaign_toggled';
+    | 'campaign_toggled'
+    | 'customer_signed_up';
   title: string;
   description: string;
   actorName: string;
@@ -207,11 +250,96 @@ export interface InventoryIngredient {
   reorderNote?: string;
 }
 
+export type StockMovementType =
+  | 'receipt'
+  | 'issue'
+  | 'sale'
+  | 'waste'
+  | 'transfer'
+  | 'stock_count'
+  | 'refund'
+  | 'adjustment';
+
+export interface StockMovement {
+  id: string;
+  ingredientId: string;
+  ingredientName: string;
+  type: StockMovementType;
+  quantityDelta: number;
+  beforeQuantity: number;
+  afterQuantity: number;
+  unit: string;
+  unitCost: number;
+  referenceId?: string;
+  note?: string;
+  actorName?: string;
+  createdAt: string;
+}
+
+export interface InventoryBatch {
+  id: string;
+  ingredientId: string;
+  ingredientName: string;
+  batchNumber: string;
+  quantity: number;
+  unit: string;
+  unitCost: number;
+  receivedAt: string;
+  expiryDate?: string;
+  supplier?: string;
+  status: 'active' | 'consumed' | 'expired';
+}
+
+export interface PurchaseOrderLine {
+  ingredientId: string;
+  ingredientName: string;
+  orderedQuantity: number;
+  receivedQuantity: number;
+  unit: string;
+  unitCost: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  supplier: string;
+  status: 'draft' | 'ordered' | 'partially_received' | 'received' | 'cancelled';
+  lines: PurchaseOrderLine[];
+  createdAt: string;
+  receivedAt?: string;
+  note?: string;
+}
+
+export interface StockCountLine {
+  ingredientId: string;
+  ingredientName: string;
+  systemQuantity: number;
+  physicalQuantity: number;
+  variance: number;
+  unit: string;
+  unitCost: number;
+}
+
+export interface StockCount {
+  id: string;
+  status: 'draft' | 'approved';
+  lines: StockCountLine[];
+  createdAt: string;
+  approvedAt?: string;
+  note?: string;
+}
+
 export interface CustomerProfile {
   id: string;
   initials: string;
   name: string;
   phone: string;
+  email?: string;
+  avatarUrl?: string;
+  provider?: 'google' | 'email';
+  googleSubjectId?: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+  createdAt?: string;
   segment: Exclude<CustomerSegment, 'all'>;
   visits: number;
   totalSpent: number;
@@ -246,6 +374,15 @@ export interface PromoCampaign {
   id: string;
   title: string;
   code: string;
+  discountPercentage?: number;
+  offerType?: 'percentage' | 'first_order_percentage' | 'buy_x_get_y' | 'manual';
+  minimumOrderAmount?: number;
+  manualRedemptionMessage?: string;
+  qualifyingMenuItemId?: string;
+  qualifyingSize?: string;
+  buyQuantity?: number;
+  freeQuantity?: number;
+  freeItemPrice?: number;
   status: Exclude<CampaignFilter, 'all'>;
   validityLabel: string;
   description: string;
@@ -253,13 +390,14 @@ export interface PromoCampaign {
   revenueLabel?: string;
   icon: string;
   tone: 'primary' | 'secondary' | 'tertiary';
+  targetSegment?: CustomerSegment;
 }
 
 export interface StaffMember {
   id: string;
   initials: string;
   name: string;
-  role: string;
+  role: 'Admin' | 'Kitchen';
   roleIcon: string;
   shiftLabel: string;
   shiftBucket: Exclude<StaffShiftFilter, 'all' | 'active'> | 'afternoon' | 'evening';
@@ -274,6 +412,7 @@ export interface StaffMember {
 
 export interface CafeSettings {
   cafeName: string;
+  logoUrl?: string;
   subCategory: string;
   address: string;
   phone: string;
@@ -282,11 +421,16 @@ export interface CafeSettings {
   gstin: string;
   serviceChargePct: number;
   qrOrderingEnabled: boolean;
-  managerPinRequired: boolean;
+  adminPinRequired: boolean;
   kotPrinterConnected: boolean;
   posPrinterConnected: boolean;
   upiVpa?: string;
   upiPayeeName?: string;
+  whatsapp?: string;
+  instagramHandle?: string;
+  wifiSsid?: string;
+  wifiPassword?: string;
+  minDeliveryOrder?: number;
 }
 
 export interface DailyRevenuePoint {

@@ -8,28 +8,26 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ORDER_STATUS_META } from '../state/cafeStateMachines';
-import { CafeOrder, InventoryIngredient, OrderStatus } from '../types/cafe';
+import { CafeOrder, InventoryIngredient, MenuItem, OrderStatus } from '../types/cafe';
 import { deriveKotCardPhase, isKitchenActiveOrder } from '../utils/cafeLogic';
+import { MenuItemStockControlModal } from './MenuItemStockControlModal';
 
 interface KitchenDisplayScreenProps {
   orders: CafeOrder[];
   inventory?: InventoryIngredient[];
+  menuItems?: MenuItem[];
+  isConnected?: boolean;
   pendingOrderId?: string | null;
   onToggleKotItem: (orderId: string, menuItemId: string) => void;
+  onCancelKotItem?: (orderId: string, menuItemId: string, reason?: string, quantity?: number) => Promise<any>;
   onAdvanceOrderStatus: (orderId: string) => void | Promise<void>;
+  onRefresh?: () => void;
   onRequestReorder?: (ingredientId: string, note?: string) => Promise<void>;
+  onToggleMenuAvailability?: (id: string) => Promise<void> | void;
   onNotify: (msg: string) => void;
 }
 
 type KotFilter = 'all' | 'dine-in' | 'takeaway' | 'priority';
-
-function deterministicOffsetSeconds(orderId: string): number {
-  let hash = 0;
-  for (let i = 0; i < orderId.length; i += 1) {
-    hash = (hash * 31 + orderId.charCodeAt(i)) % 60;
-  }
-  return hash;
-}
 
 function playKitchenChime() {
   if (typeof window === 'undefined') return;
@@ -69,27 +67,30 @@ function playKitchenChime() {
   }
 }
 
-const KotElapsedBadge: React.FC<{ baseMinutes: number; orderId: string }> = React.memo(
-  ({ baseMinutes, orderId }) => {
-    const [elapsedOffsetSec, setElapsedOffsetSec] = useState(0);
+const KotElapsedBadge: React.FC<{ baseMinutes: number; createdAt?: string }> = React.memo(
+  ({ baseMinutes, createdAt }) => {
+    const mountedAt = useRef(Date.now()).current;
+    const [now, setNow] = useState(mountedAt);
 
     useEffect(() => {
       const interval = setInterval(() => {
-        setElapsedOffsetSec((s) => s + 1);
+        setNow(Date.now());
       }, 1000);
       return () => clearInterval(interval);
     }, []);
 
-    const initialSec = deterministicOffsetSeconds(orderId);
-    const totalSec = Math.max(0, baseMinutes * 60 + ((initialSec + elapsedOffsetSec) % 3600));
+    const createdAtMs = createdAt ? Date.parse(createdAt) : Number.NaN;
+    const totalSec = Number.isFinite(createdAtMs)
+      ? Math.max(0, Math.floor((now - createdAtMs) / 1000))
+      : Math.max(0, baseMinutes * 60 + Math.floor((now - mountedAt) / 1000));
     const min = Math.floor(totalSec / 60);
     const sec = totalSec % 60;
     return (
-      <div className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface-container-lowest text-primary shadow-inner shrink-0">
-        <span className="material-symbols-outlined text-[16px] text-primary-container animate-pulse">
+      <div className="flex items-center gap-1.5 text-on-surface shrink-0">
+        <span className="material-symbols-outlined text-[20px] text-on-surface-variant">
           timer
         </span>
-        <span className="text-sm font-bold tracking-wider tabular-nums">
+        <span className="text-lg font-bold tracking-tight tabular-nums">
           {String(min).padStart(2, '0')}:{String(sec).padStart(2, '0')}
         </span>
       </div>
@@ -102,10 +103,15 @@ KotElapsedBadge.displayName = 'KotElapsedBadge';
 export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
   orders,
   inventory = [],
+  menuItems = [],
+  isConnected = false,
   pendingOrderId = null,
   onToggleKotItem,
+  onCancelKotItem,
   onAdvanceOrderStatus,
+  onRefresh,
   onRequestReorder,
+  onToggleMenuAvailability,
   onNotify,
 }) => {
   const [filter, setFilter] = useState<KotFilter>('all');
@@ -113,11 +119,25 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
   const [localPendingId, setLocalPendingId] = useState<string | null>(null);
   const [justPreparedIds, setJustPreparedIds] = useState<Set<string>>(() => new Set());
   const [stockModalOpen, setStockModalOpen] = useState(false);
+  const [itemStockModalOpen, setItemStockModalOpen] = useState(false);
   const [stockSearch, setStockSearch] = useState('');
   const [reorderNotes, setReorderNotes] = useState<Record<string, string>>({});
   const [requestingId, setRequestingId] = useState<string | null>(null);
+
+  // State for cancelling an individual item from kitchen KOT
+  const [cancelTarget, setCancelTarget] = useState<{ order: CafeOrder; item: CafeOrder['items'][number] } | null>(null);
+  const [cancelQty, setCancelQty] = useState(1);
+  const [cancelReason, setCancelReason] = useState('Out of Stock / Ingredient Unavailable');
+  const [cancelCustomReason, setCancelCustomReason] = useState('');
+  const [alsoMark86, setAlsoMark86] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const prevStatusMapRef = useRef<Record<string, OrderStatus>>({});
   const prevOrderCountRef = useRef<number | null>(null);
+
+  const outOfStockItemsCount = useMemo(
+    () => menuItems.filter((i) => i.isAvailable === false).length,
+    [menuItems]
+  );
 
   const lowStockCount = useMemo(
     () =>
@@ -141,13 +161,29 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
     try {
       const note = reorderNotes[item.id] || 'Kitchen chef flagged item as low';
       await onRequestReorder(item.id, note);
-      onNotify(`Reorder request sent to manager for ${item.name}!`);
+      onNotify(`Reorder request sent to admin for ${item.name}!`);
     } catch {
       onNotify(`Failed to send reorder request for ${item.name}`);
     } finally {
       setRequestingId(null);
     }
   };
+
+  useEffect(() => {
+    const handleNewOrder = (e: Event) => {
+      const customEvt = e as CustomEvent<{ order?: CafeOrder; orderId?: string }>;
+      const order = customEvt.detail?.order;
+      if (!isMuted) {
+        playKitchenChime();
+      }
+      const ticketLabel = order?.kotNumber || (order?.id ? `#${order.id}` : 'ticket');
+      const tableLabel = order?.tableNumber ? ` (Table ${order.tableNumber})` : '';
+      onNotify(`🔔 New Kitchen Order ${ticketLabel}${tableLabel}!`);
+    };
+
+    window.addEventListener('cafe:order:new', handleNewOrder);
+    return () => window.removeEventListener('cafe:order:new', handleNewOrder);
+  }, [isMuted, onNotify]);
 
   useEffect(() => {
     const prev = prevStatusMapRef.current;
@@ -218,23 +254,49 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
     }
   };
 
+  const handleConfirmCancelItem = async () => {
+    if (!cancelTarget || !onCancelKotItem || isCancelling) return;
+    setIsCancelling(true);
+    try {
+      const finalReason =
+        cancelReason === 'Other' && cancelCustomReason.trim()
+          ? cancelCustomReason.trim()
+          : cancelReason;
+      await onCancelKotItem(
+        cancelTarget.order.id,
+        cancelTarget.item.menuItemId,
+        finalReason,
+        cancelQty
+      );
+      if (alsoMark86 && onToggleMenuAvailability) {
+        void onToggleMenuAvailability(cancelTarget.item.menuItemId);
+      }
+      setCancelTarget(null);
+      setAlsoMark86(false);
+    } catch {
+      // onNotify is called by the mutation handler
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
   return (
     <MotionConfig reducedMotion="user">
       <div className="flex flex-col w-full pb-6 space-y-4">
         {/* Live KOT Top Banner & Sound Controls */}
         <div className="w-full bg-surface-container rounded-3xl p-4 sm:p-5 border border-outline-variant/15 shadow-sm flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-[#FF6422]/15 flex items-center justify-center text-[#FF6422] shrink-0">
-              <span className="material-symbols-outlined text-[26px]">soup_kitchen</span>
+            <div className="w-12 h-12 rounded-2xl overflow-hidden border border-[#D4AF37]/60 shadow-sm shrink-0 bg-black p-0.5">
+              <img src="/images/tsc-logo.jpg" alt="The Sawariya Cafe" className="w-full h-full object-cover rounded-xl" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg sm:text-xl font-black text-on-surface tracking-tight">
-                  Kitchen Orders (KOT)
+                  Live Kitchen Orders
                 </h1>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-black">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  Live Sync
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[11px] font-black">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-outline'}`} />
+                  {isConnected ? 'Connected' : 'Connecting'}
                 </span>
               </div>
               <p className="text-xs text-on-surface-variant flex items-center gap-2 mt-0.5 tabular-nums">
@@ -250,6 +312,23 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Menu Item Stock Control (86 / In Stock) */}
+            {onToggleMenuAvailability && (
+              <button
+                type="button"
+                onClick={() => setItemStockModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-all active:scale-95 cursor-pointer shrink-0"
+              >
+                <span className="material-symbols-outlined text-[18px]">remove_shopping_cart</span>
+                <span className="hidden sm:inline">86 / Item Stock</span>
+                {outOfStockItemsCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                    {outOfStockItemsCount}
+                  </span>
+                )}
+              </button>
+            )}
+
             {/* Kitchen Stock Alert & Reorder Button */}
             <button
               type="button"
@@ -267,10 +346,10 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
 
             <button
               type="button"
-              aria-label={isMuted ? 'Unmute KOT chime audio alert' : 'Mute KOT chime audio alert'}
+              aria-label={isMuted ? 'Unmute order audio alert' : 'Mute order audio alert'}
               onClick={() => {
                 setIsMuted((m) => !m);
-                onNotify(isMuted ? 'KOT chime enabled' : 'KOT chime muted');
+                onNotify(isMuted ? 'Order bell sound enabled' : 'Order bell sound muted');
               }}
               className={`w-10 h-10 rounded-full bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 flex items-center justify-center transition-colors cursor-pointer ${
                 isMuted ? 'text-red-400' : 'text-on-surface-variant hover:text-[#FF6422]'
@@ -282,8 +361,11 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
             </button>
             <button
               type="button"
-              aria-label="Refresh KOT feed"
-              onClick={() => onNotify('KOT feed synchronized')}
+              aria-label="Refresh orders feed"
+              onClick={() => {
+                onRefresh?.();
+                onNotify('Kitchen orders refreshed');
+              }}
               className="w-10 h-10 rounded-full bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 flex items-center justify-center text-on-surface-variant hover:text-[#FF6422] transition-colors cursor-pointer"
             >
               <span className="material-symbols-outlined text-[20px]">refresh</span>
@@ -340,17 +422,13 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
               check_circle
             </span>
             <p className="text-base font-bold text-on-surface">Kitchen Queue Clear</p>
-            <p className="text-xs text-on-surface-variant mt-1">
-              All tickets in this filter have been dispatched. Place an order from POS or Customer
-              Menu to see live KOT tickets.
-            </p>
           </motion.div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
             <AnimatePresence mode="popLayout">
               {filteredOrders.map((order, cardIdx) => {
                 const statusMeta = ORDER_STATUS_META[order.status];
-                const isGreenCta = order.status === 'preparing' || order.status === 'ready';
+                const isServed = order.status === 'served';
                 const isBusy = pendingOrderId === order.id || localPendingId === order.id;
                 const cardPhase = deriveKotCardPhase(order);
                 const isPrepared = cardPhase.phase === 'prepared';
@@ -376,109 +454,73 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
                       delay: isJustPrepared ? 0 : Math.min(cardIdx * 0.04, 0.16),
                       ease: [0.22, 1, 0.36, 1],
                     }}
-                    className={`w-full rounded-3xl overflow-hidden flex flex-col border transition-colors duration-300 ${
+                    className={`w-full rounded-[1.75rem] overflow-hidden flex flex-col border font-sans transition-colors duration-300 ${
                       isPrepared
-                        ? 'bg-emerald-500/[0.06] border-emerald-500/50 shadow-[0_0_24px_rgba(16,185,129,0.16)]'
-                        : 'bg-surface-container border-outline-variant/15 shadow-sm'
+                        ? 'bg-tertiary/10 border-tertiary/35 shadow-[0_8px_24px_rgba(27,54,37,0.1)]'
+                        : 'bg-surface-container border-outline-variant/70 shadow-[0_6px_20px_rgba(85,62,42,0.08)]'
                     }`}
                   >
-                    {/* Top Progress Bar animating from Pending -> Prepared */}
-                    <div className="w-full h-1 bg-surface-container-highest overflow-hidden">
-                      <motion.div
-                        className={`h-full transition-colors duration-300 ${
-                          isPrepared ? 'bg-emerald-500' : 'bg-[#FF6422]'
-                        }`}
-                        initial={false}
-                        animate={{ width: `${cardPhase.completionPct}%` }}
-                        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                      />
-                    </div>
-
-                    <div
-                      className={`p-4 flex items-center justify-between gap-2 transition-colors duration-300 ${
-                        isPrepared ? 'bg-tertiary/12' : 'bg-surface-container-high'
-                      }`}
-                    >
-                      <div className="flex flex-col min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-lg font-bold tracking-tight text-primary">
-                            #{order.id}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 ${
-                              order.serviceMode === 'dine-in'
-                                ? 'bg-secondary-container text-on-secondary-container'
-                                : 'bg-surface-container-highest text-primary-fixed'
-                            }`}
-                          >
-                            {order.serviceMode === 'takeaway' && (
-                              <span className="material-symbols-outlined text-[13px]">
-                                shopping_bag
-                              </span>
-                            )}
-                            {order.serviceMode === 'dine-in'
-                              ? `Table ${order.tableNumber || 'T3'}`
-                              : order.serviceMode === 'delivery'
-                                ? order.deliveryPartner || 'Delivery'
-                                : 'Takeaway'}
-                          </span>
-
-                          {order.paymentMode === 'cash' || order.paymentChannelLabel === 'Pay on Counter' ? (
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
-                              <span className="material-symbols-outlined text-[12px]">payments</span>
-                              <span>Pay on Counter (₹{order.total})</span>
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                              <span className="material-symbols-outlined text-[12px]">verified</span>
-                              <span>Paid Online</span>
-                            </span>
-                          )}
-
-                          {/* Animated Pending -> Prepared Status Badge */}
-                          <AnimatePresence mode="wait">
-                            <motion.span
-                              key={order.status}
-                              data-testid={`kot-status-badge-${order.id}`}
-                              initial={{ opacity: 0, y: -5, scale: 0.88 }}
-                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                              exit={{ opacity: 0, y: 5, scale: 0.88 }}
-                              transition={{ duration: 0.12 }}
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${
-                                isPrepared
-                                  ? 'bg-tertiary-container text-on-tertiary-container shadow-sm'
-                                  : order.status === 'preparing'
-                                    ? 'bg-primary-container/20 text-primary'
-                                    : 'bg-surface-container-highest text-on-surface-variant'
-                              }`}
-                            >
-                              <span className="material-symbols-outlined text-[12px]">
-                                {isPrepared
-                                  ? 'check_circle'
-                                  : order.status === 'preparing'
-                                    ? 'skillet'
-                                    : 'schedule'}
-                              </span>
-                              {isPrepared
-                                ? 'Prepared'
+                    <div className={`px-4 pt-4 pb-3 ${isPrepared ? 'bg-tertiary/10' : ''}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-xl sm:text-2xl font-black tracking-tight text-on-surface truncate">
+                          #{order.id}
+                        </span>
+                        <KotElapsedBadge
+                          baseMinutes={order.elapsedMinutes}
+                          createdAt={order.createdAt}
+                        />
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm font-medium">
+                        <span className="text-on-surface">
+                          {order.serviceMode === 'dine-in'
+                            ? order.tableNumber
+                              ? `Table ${order.tableNumber}`
+                              : 'Dine-In'
+                            : order.serviceMode === 'delivery'
+                              ? order.deliveryPartner || 'Delivery'
+                              : 'Takeaway'}
+                        </span>
+                        <span aria-hidden="true" className="text-on-surface-variant">·</span>
+                        <AnimatePresence mode="wait">
+                          <motion.span
+                            key={order.status}
+                            data-testid={`kot-status-badge-${order.id}`}
+                            initial={{ opacity: 0, y: -5 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 5 }}
+                            transition={{ duration: 0.12 }}
+                            className={
+                              isPrepared
+                                ? 'text-emerald-300'
                                 : order.status === 'preparing'
-                                  ? 'Preparing'
-                                  : 'Pending'}
-                            </motion.span>
-                          </AnimatePresence>
-                        </div>
-                        <span className="text-[11px] text-on-surface-variant mt-0.5 tabular-nums">
-                          {(() => {
-                            const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
-                            return `${totalQty} ${totalQty === 1 ? 'item' : 'items'}`;
-                          })()}{' '}
-                          · {cardPhase.checkedCount}/{cardPhase.totalCount} prepped ·{' '}
-                          {order.elapsedMinutes}m ago
+                                  ? 'text-primary'
+                                  : 'text-amber-400'
+                            }
+                          >
+                            {isPrepared
+                              ? 'Prepared'
+                              : order.status === 'preparing'
+                                ? 'Preparing'
+                                : 'Pending'}
+                          </motion.span>
+                        </AnimatePresence>
+                        <span aria-hidden="true" className="text-on-surface-variant">·</span>
+                        <span
+                          className={
+                            order.paymentMode === 'cash' ||
+                            order.paymentChannelLabel === 'Pay on Counter'
+                              ? 'text-amber-400'
+                              : 'text-emerald-400'
+                          }
+                        >
+                          {order.paymentMode === 'cash' ||
+                          order.paymentChannelLabel === 'Pay on Counter'
+                            ? `Pay on Counter (₹${order.total})`
+                            : 'Paid online'}
                         </span>
                       </div>
-
-                      <KotElapsedBadge baseMinutes={order.elapsedMinutes} orderId={order.id} />
                     </div>
+                    <div className="mx-4 border-t border-outline-variant/70" />
 
                     {/* Immediate Visual Feedback Banner when Order Transitions to Prepared */}
                     <AnimatePresence>
@@ -497,10 +539,43 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
                     </AnimatePresence>
 
                     {/* Items Checklist with Entrance & Exit Animations */}
-                    <div className="p-3.5 space-y-2">
+                    <div className="px-4 py-2 divide-y divide-outline-variant/30">
                       <AnimatePresence initial={true}>
                         {order.items.map((item, itemIdx) => {
                           const checked = Boolean(item.checked);
+                          const isCancelled = item.status === 'cancelled';
+
+                          if (isCancelled) {
+                            return (
+                              <div
+                                key={`${item.menuItemId}-cancelled-${itemIdx}`}
+                                className="w-full text-left flex items-start justify-between p-2.5 rounded-lg bg-error-container/20 border border-error/30 opacity-80 transition-all"
+                              >
+                                <div className="flex items-start gap-2.5 min-w-0">
+                                  <span className="w-5 h-5 rounded mt-0.5 flex items-center justify-center shrink-0 bg-error/20 text-error">
+                                    <span className="material-symbols-outlined text-[15px]">block</span>
+                                  </span>
+                                  <div className="flex flex-col min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="text-sm font-semibold line-through text-error">
+                                        {item.quantity} × {item.name}
+                                      </span>
+                                      <span className="px-1.5 py-0.2 rounded text-[10px] font-black uppercase bg-error/20 text-error border border-error/30">
+                                        Cancelled · ₹{item.refundAmount || item.price * item.quantity} Refunded
+                                      </span>
+                                    </div>
+                                    <span className="text-[11px] text-error/80 mt-0.5">
+                                      Reason: {item.cancelledReason || 'Cancelled in kitchen'}
+                                    </span>
+                                  </div>
+                                </div>
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-error/15 text-error font-semibold shrink-0">
+                                  Refunded
+                                </span>
+                              </div>
+                            );
+                          }
+
                           return (
                             <motion.button
                               key={item.menuItemId}
@@ -508,6 +583,7 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
                               type="button"
                               data-testid={`kot-item-${order.id}-${item.menuItemId}`}
                               data-item-checked={checked ? 'true' : 'false'}
+                              aria-pressed={checked}
                               onClick={() => onToggleKotItem(order.id, item.menuItemId)}
                               initial={{ opacity: 0, x: -12, scale: 0.98 }}
                               animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -526,56 +602,56 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
                                 ease: [0.22, 1, 0.36, 1],
                               }}
                               whileTap={{ scale: 0.985 }}
-                              className={`w-full text-left flex items-start justify-between p-2.5 rounded-lg transition-all duration-200 cursor-pointer ${
-                                checked
-                                  ? 'bg-surface-container-lowest/90 opacity-75 ring-1 ring-tertiary/30'
-                                  : isPrepared
-                                    ? 'bg-surface-container/80 hover:bg-surface-container-high'
-                                    : 'bg-surface-container hover:bg-surface-container-high'
+                              className={`w-full text-left flex items-start justify-between gap-3 py-2 rounded-lg transition-colors duration-200 cursor-pointer hover:bg-surface-container-high ${
+                                checked ? 'opacity-65' : ''
                               }`}
                             >
-                              <div className="flex items-start gap-2.5 min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <span
-                                  className={`w-5 h-5 rounded mt-0.5 flex items-center justify-center shrink-0 transition-colors duration-200 ${
+                                  className={`block text-base sm:text-lg font-bold leading-snug transition-colors duration-200 ${
                                     checked
-                                      ? 'bg-tertiary-container text-on-tertiary-container'
-                                      : 'bg-surface-container-high text-primary-container'
+                                      ? 'line-through text-on-surface-variant'
+                                      : 'text-on-surface'
                                   }`}
                                 >
-                                  <AnimatePresence mode="wait" initial={false}>
-                                    {checked && (
-                                      <motion.span
-                                        key="checked"
-                                        initial={{ scale: 0.4, opacity: 0 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={{ scale: 0.4, opacity: 0 }}
-                                        transition={{ type: 'spring', stiffness: 450, damping: 24 }}
-                                        className="material-symbols-outlined text-[15px] font-bold"
-                                      >
-                                        check
-                                      </motion.span>
-                                    )}
-                                  </AnimatePresence>
+                                  {checked && (
+                                    <span className="material-symbols-outlined text-[16px] text-emerald-300 align-middle mr-1">
+                                      check_circle
+                                    </span>
+                                  )}
+                                  {item.quantity} × {item.name}
                                 </span>
-                                <div className="flex flex-col min-w-0">
+                                {item.note && (
                                   <span
-                                    className={`text-sm font-semibold transition-colors duration-200 ${
-                                      checked
-                                        ? 'line-through text-on-surface-variant'
-                                        : 'text-on-surface'
+                                    className={`block text-sm mt-0.5 ${
+                                      checked ? 'text-on-surface-variant' : 'text-emerald-300'
                                     }`}
                                   >
-                                    {item.quantity} × {item.name}
+                                    {item.note.replace(/,\s*/g, ' · ')}
                                   </span>
-                                  <span className="text-xs text-secondary flex items-center gap-1 mt-0.5">
-                                    <span className="material-symbols-outlined text-[13px]">tune</span>
-                                    {item.note}
-                                  </span>
-                                </div>
+                                )}
                               </div>
-                              <span className="text-[11px] px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant font-medium shrink-0">
-                                {item.station}
-                              </span>
+                              <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                                <span className="text-sm text-on-surface-variant font-medium pt-0.5">
+                                  {item.station}
+                                </span>
+                                {onCancelKotItem && !isServed && (
+                                  <span
+                                    role="button"
+                                    title="Cancel this item and initiate refund"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCancelTarget({ order, item });
+                                      setCancelQty(item.quantity);
+                                      setCancelReason('Out of Stock / Ingredient Unavailable');
+                                      setCancelCustomReason('');
+                                    }}
+                                    className="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/15 transition-all cursor-pointer"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">cancel</span>
+                                  </span>
+                                )}
+                              </div>
                             </motion.button>
                           );
                         })}
@@ -589,13 +665,7 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
                           type="button"
                           disabled={isBusy}
                           onClick={() => void handleAdvance(order.id)}
-                          className={`flex-1 h-11 rounded-full text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] cursor-pointer disabled:opacity-50 text-white shadow-md ${
-                            order.status === 'ready'
-                              ? 'bg-blue-600 hover:bg-blue-500 shadow-[0_4px_14px_rgba(37,99,235,0.3)]'
-                              : order.status === 'preparing'
-                                ? 'bg-emerald-600 hover:bg-emerald-500 shadow-[0_4px_14px_rgba(16,185,129,0.3)]'
-                                : 'bg-[#FF6422] hover:bg-[#E55518] shadow-[0_4px_14px_rgba(255,100,34,0.35)]'
-                          }`}
+                          className="flex-1 min-h-12 rounded-xl font-sans text-base sm:text-lg font-bold flex items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] cursor-pointer disabled:opacity-50 text-white bg-[#FF6422] hover:bg-[#E55518] shadow-[0_4px_14px_rgba(255,100,34,0.35)]"
                         >
                           <span className="material-symbols-outlined text-[19px]">
                             {isBusy ? 'progress_activity' : statusMeta.kdsActionIcon}
@@ -610,27 +680,6 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
             </AnimatePresence>
           </div>
         )}
-
-        {/* Chef Station Quick Telemetry Bar */}
-        <aside className="w-full bg-surface-container-lowest rounded-xl p-4 flex flex-col gap-2 shadow-md">
-          <div className="flex items-center justify-between text-on-surface-variant text-xs">
-            <span className="flex items-center gap-1 text-primary font-medium">
-              <span className="material-symbols-outlined text-[16px]">speed</span>
-              Avg Cook Pace
-            </span>
-            <span className="text-on-surface font-semibold tabular-nums">06m 12s</span>
-          </div>
-          <div className="w-full h-1.5 rounded-full bg-surface-container-highest overflow-hidden">
-            <div className="h-full bg-primary-container rounded-full w-[68%]" />
-          </div>
-          <div className="flex items-center justify-between pt-0.5 text-xs text-on-surface-variant">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-tertiary" />
-              Station 1 (Hot Kitchen + Barista)
-            </span>
-            <span className="text-secondary text-[11px]">Active Sync: Live</span>
-          </div>
-        </aside>
 
         {/* Kitchen Ingredient Low-Stock Alert & Quick Reorder Dialog */}
         <Dialog open={stockModalOpen} onOpenChange={setStockModalOpen}>
@@ -749,6 +798,187 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Item Cancel & Refund Dialog */}
+        <Dialog open={Boolean(cancelTarget)} onOpenChange={(open) => !open && setCancelTarget(null)}>
+          <DialogContent className="max-w-md bg-surface-container dark:bg-slate-900/95 backdrop-blur-2xl border border-outline-variant/30 text-on-surface p-5 rounded-2xl shadow-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold text-on-surface flex items-center gap-2">
+                <span className="material-symbols-outlined text-red-500 text-[20px]">
+                  remove_shopping_cart
+                </span>
+                <span>Cancel Item &amp; Issue Refund</span>
+              </DialogTitle>
+              <DialogDescription className="text-xs text-on-surface-variant">
+                Order #{cancelTarget?.order.kotNumber || cancelTarget?.order.id} ·{' '}
+                {cancelTarget?.order.tableNumber ? `Table ${cancelTarget.order.tableNumber.replace('T', '')}` : 'Counter'} ·{' '}
+                <span className="capitalize">{cancelTarget?.order.serviceMode}</span>
+              </DialogDescription>
+            </DialogHeader>
+
+            {cancelTarget && (
+              <div className="space-y-4 pt-2">
+                {/* Item Summary Card */}
+                <div className="p-3.5 rounded-xl bg-surface-container-high/60 border border-outline-variant/20 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
+                      <span className="material-symbols-outlined text-[20px]">restaurant</span>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-on-surface">{cancelTarget.item.name}</h4>
+                      <p className="text-xs text-on-surface-variant">
+                        ₹{cancelTarget.item.price} each · Station: {cancelTarget.item.station}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-base font-black text-red-400 tabular-nums">
+                      ₹{cancelTarget.item.price * cancelQty}
+                    </span>
+                    <span className="block text-[10px] text-on-surface-variant font-medium">
+                      Refund Amount
+                    </span>
+                  </div>
+                </div>
+
+                {/* Quantity to Cancel (if quantity > 1) */}
+                {cancelTarget.item.quantity > 1 && (
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-surface-container border border-outline-variant/15 text-xs">
+                    <span className="font-semibold text-on-surface">Quantity to Cancel:</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={cancelQty <= 1}
+                        onClick={() => setCancelQty((q) => Math.max(1, q - 1))}
+                        className="w-7 h-7 rounded-lg bg-surface-container-high flex items-center justify-center font-bold text-on-surface disabled:opacity-40 cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <span className="w-6 text-center font-bold text-on-surface tabular-nums">
+                        {cancelQty}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={cancelQty >= cancelTarget.item.quantity}
+                        onClick={() => setCancelQty((q) => Math.min(cancelTarget.item.quantity, q + 1))}
+                        className="w-7 h-7 rounded-lg bg-surface-container-high flex items-center justify-center font-bold text-on-surface disabled:opacity-40 cursor-pointer"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Cancellation Reason Dropdown */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-on-surface-variant">
+                    Cancellation Reason:
+                  </label>
+                  <select
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    className="w-full bg-surface-container-high px-3 py-2 rounded-xl text-xs font-medium text-on-surface border border-outline-variant/20 focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="Out of Stock / Ingredient Unavailable">
+                      Out of Stock / Ingredient Unavailable
+                    </option>
+                    <option value="Burnt / Accidental Spoilage in Kitchen">
+                      Burnt / Accidental Spoilage in Kitchen
+                    </option>
+                    <option value="Customer Cancellation Request">
+                      Customer Cancellation Request
+                    </option>
+                    <option value="Kitchen Station Delay">Kitchen Station Delay</option>
+                    <option value="Other">Other (Custom note)</option>
+                  </select>
+                </div>
+
+                {cancelReason === 'Other' && (
+                  <input
+                    type="text"
+                    value={cancelCustomReason}
+                    onChange={(e) => setCancelCustomReason(e.target.value)}
+                    placeholder="Type custom cancellation reason..."
+                    className="w-full bg-surface-container-high px-3 py-2 rounded-xl text-xs text-on-surface border border-outline-variant/20 focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                )}
+
+                {/* Payment & Refund Explanation */}
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] leading-relaxed flex items-start gap-2">
+                  <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5">info</span>
+                  <div>
+                    {cancelTarget.order.paymentStatus === 'paid' ? (
+                      <span>
+                        This order was <strong>Paid Online</strong>. Cancelling will issue an immediate refund of{' '}
+                        <strong>₹{cancelTarget.item.price * cancelQty}</strong> and restore recipe ingredients to inventory.
+                      </span>
+                    ) : (
+                      <span>
+                        This order is <strong>Pay on Counter</strong>. Cancelling will deduct{' '}
+                        <strong>₹{cancelTarget.item.price * cancelQty}</strong> from the order bill and restore recipe ingredients to inventory.
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Option to also 86 the item */}
+                {onToggleMenuAvailability && (
+                  <label className="flex items-center gap-2.5 cursor-pointer p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-semibold select-none hover:bg-rose-500/15 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={alsoMark86}
+                      onChange={(e) => setAlsoMark86(e.target.checked)}
+                      className="rounded text-rose-500 focus:ring-rose-400 w-4 h-4 cursor-pointer"
+                    />
+                    <span>Also tag <strong>{cancelTarget.item.name}</strong> as <strong>Out of Stock (86)</strong> for future orders</span>
+                  </label>
+                )}
+
+                {/* Modal Action Buttons */}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={isCancelling}
+                    onClick={() => setCancelTarget(null)}
+                    className="flex-1 py-2.5 rounded-xl bg-surface-container-high text-xs font-bold text-on-surface hover:bg-surface-bright transition-colors cursor-pointer"
+                  >
+                    Keep Item
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isCancelling}
+                    onClick={handleConfirmCancelItem}
+                    className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-xs font-bold text-white transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    {isCancelling ? (
+                      <>
+                        <span className="material-symbols-outlined text-[16px] animate-spin">
+                          progress_activity
+                        </span>
+                        <span>Processing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                        <span>Confirm Cancel &amp; Refund</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+        {/* Menu Item Stock Control (86 / In Stock) Dialog */}
+        {onToggleMenuAvailability && (
+          <MenuItemStockControlModal
+            open={itemStockModalOpen}
+            onOpenChange={setItemStockModalOpen}
+            menuItems={menuItems}
+            onToggleAvailability={onToggleMenuAvailability}
+            roleLabel="Kitchen KDS"
+          />
+        )}
       </div>
     </MotionConfig>
   );

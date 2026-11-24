@@ -50,7 +50,9 @@ export async function buildOrdersExcelBuffer(orders: CafeOrder[]): Promise<Uint8
       channel: order.serviceMode.toUpperCase(),
       location:
         order.serviceMode === 'dine-in'
-          ? `Table ${order.tableNumber || 'T1'}`
+          ? order.tableNumber
+            ? `Table ${order.tableNumber}`
+            : 'Dine-In'
           : order.deliveryPartner || 'Takeaway',
       items: order.items.map((i) => `${i.quantity}x ${i.name}`).join('; '),
       status: order.status.toUpperCase(),

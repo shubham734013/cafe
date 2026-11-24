@@ -14,6 +14,7 @@ interface KitchenPosOrdersScreenProps {
   orders: CafeOrder[];
   onAdvanceOrderStatus?: (orderId: string) => void | Promise<void>;
   onToggleKotItem?: (orderId: string, menuItemId: string) => void;
+  onCancelKotItem?: (orderId: string, menuItemId: string, reason?: string, quantity?: number) => void | Promise<unknown>;
   onNotify?: (msg: string) => void;
 }
 

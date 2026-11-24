@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { cashfreeCircuitBreaker, withRetry } from './resilience';
 import {
   UpiGatewayClient,
   UpiGatewayOrder,
@@ -20,6 +21,15 @@ interface MockCashfreeOrder {
   status: 'ACTIVE' | 'PAID' | 'EXPIRED';
   paymentSessionId: string;
   utr?: string;
+  customerPhone?: string;
+}
+
+function getLocalMockBaseUrl(): string {
+  if (process.env.APP_PUBLIC_URL?.trim()) {
+    return process.env.APP_PUBLIC_URL.trim().replace(/\/+$/, '');
+  }
+  const port = process.env.PORT || '3000';
+  return `http://localhost:${port}`;
 }
 
 export class CashfreeGateway implements UpiGatewayClient {
@@ -94,6 +104,7 @@ export class CashfreeGateway implements UpiGatewayClient {
         amount: parseFloat(amount),
         status: 'ACTIVE',
         paymentSessionId,
+        customerPhone: input.customerPhone,
       });
 
       return {
@@ -101,19 +112,24 @@ export class CashfreeGateway implements UpiGatewayClient {
         clientOrderId: input.clientOrderId,
         amountPaise: input.amountPaise,
         status: 'pending',
-        paymentUrl: `http://localhost:3002/api/cashfree-mock/checkout?orderId=${encodeURIComponent(input.clientOrderId)}&session=${paymentSessionId}`,
+        paymentUrl: `${getLocalMockBaseUrl()}/api/cashfree-mock/checkout?orderId=${encodeURIComponent(input.clientOrderId)}&session=${paymentSessionId}`,
       };
     }
 
     const publicUrl = process.env.APP_PUBLIC_URL?.trim();
     const isHttps = publicUrl?.startsWith('https://');
+    const customerId = `cafe_${crypto
+      .createHash('sha256')
+      .update(input.clientOrderId)
+      .digest('hex')
+      .slice(0, 32)}`;
 
     const payload: Record<string, unknown> = {
       order_id: input.clientOrderId,
       order_amount: parseFloat(amount),
       order_currency: 'INR',
       customer_details: {
-        customer_id: `cust_${input.clientOrderId.toLowerCase().replace(/[^a-z0-9_-]/g, '')}`,
+        customer_id: customerId,
         customer_phone: input.customerPhone || '9999999999',
         customer_name: input.customerName || 'Cafe Customer',
       },
@@ -159,8 +175,9 @@ export class CashfreeGateway implements UpiGatewayClient {
         clientOrderId,
         amountPaise: Math.round(mock.amount * 100),
         status: mock.status === 'PAID' ? 'paid' : 'pending',
-        paymentUrl: `http://localhost:3002/api/cashfree-mock/checkout?orderId=${encodeURIComponent(clientOrderId)}&session=${mock.paymentSessionId}`,
+        paymentUrl: `${getLocalMockBaseUrl()}/api/cashfree-mock/checkout?orderId=${encodeURIComponent(clientOrderId)}&session=${mock.paymentSessionId}`,
         ...(mock.utr ? { utr: mock.utr } : {}),
+        ...(mock.customerPhone ? { customerPhone: mock.customerPhone } : {}),
       };
     }
 
@@ -176,6 +193,16 @@ export class CashfreeGateway implements UpiGatewayClient {
       const orderStatus = String(data.order_status || 'ACTIVE');
 
       let utr: string | undefined;
+      let customerPhone: string | undefined;
+
+      const customerDetails = (data.customer_details || {}) as Record<string, unknown>;
+      if (customerDetails.customer_phone) {
+        const raw = String(customerDetails.customer_phone).replace(/\D/g, '').slice(-10);
+        if (raw.length === 10 && raw !== '9999999999') {
+          customerPhone = raw;
+        }
+      }
+
       try {
         const paymentsRes = await this.request(`/orders/${encodeURIComponent(clientOrderId)}/payments`, {
           method: 'GET',
@@ -184,6 +211,15 @@ export class CashfreeGateway implements UpiGatewayClient {
           const successPayment = paymentsRes.find((p) => p.payment_status === 'SUCCESS') || paymentsRes[0];
           if (successPayment?.bank_reference) {
             utr = String(successPayment.bank_reference);
+          }
+          const upiVpa = (successPayment?.payment_method as Record<string, unknown> | undefined)?.upi as
+            | { upi_id?: string }
+            | undefined;
+          if (!customerPhone && upiVpa?.upi_id) {
+            const vpaDigits = String(upiVpa.upi_id).split('@')[0].replace(/\D/g, '').slice(-10);
+            if (vpaDigits.length === 10) {
+              customerPhone = vpaDigits;
+            }
           }
         }
       } catch {
@@ -199,6 +235,7 @@ export class CashfreeGateway implements UpiGatewayClient {
         status: this.mapCashfreeStatus(orderStatus),
         paymentUrl,
         ...(utr ? { utr } : {}),
+        ...(customerPhone ? { customerPhone } : {}),
       };
     } catch (error) {
       if (error instanceof UpiGatewayRequestError && error.statusCode === 404) {
@@ -208,11 +245,14 @@ export class CashfreeGateway implements UpiGatewayClient {
     }
   }
 
-  public simulateMockPayment(clientOrderId: string, utr?: string): boolean {
+  public simulateMockPayment(clientOrderId: string, utr?: string, customerPhone?: string): boolean {
     const mock = this.mockOrders.get(clientOrderId);
     if (!mock) return false;
     mock.status = 'PAID';
     mock.utr = utr || `CF${Date.now()}`;
+    if (customerPhone) {
+      mock.customerPhone = customerPhone;
+    }
     return true;
   }
 
@@ -256,19 +296,25 @@ export class CashfreeGateway implements UpiGatewayClient {
 
     let response: Response;
     try {
-      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-        method: options.method,
-        headers: {
-          'x-client-id': this.appId,
-          'x-client-secret': this.secretKey,
-          'x-api-version': this.apiVersion,
-          'User-Agent': 'Cashfree/1.0 (Node.js; CafeOS)',
-          Accept: 'application/json',
-          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-        },
-        ...(options.body ? { body: options.body } : {}),
-        signal: AbortSignal.timeout(10_000),
-      });
+      response = await cashfreeCircuitBreaker.execute(() =>
+        withRetry(
+          () =>
+            this.fetchImpl(`${this.baseUrl}${path}`, {
+              method: options.method,
+              headers: {
+                'x-client-id': this.appId,
+                'x-client-secret': this.secretKey,
+                'x-api-version': this.apiVersion,
+                'User-Agent': 'Cashfree/1.0 (Node.js; CafeOS)',
+                Accept: 'application/json',
+                ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+              },
+              ...(options.body ? { body: options.body } : {}),
+              signal: AbortSignal.timeout(10_000),
+            }),
+          { maxRetries: 2, initialDelayMs: 250 }
+        )
+      );
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Network request failed.';
       throw new UpiGatewayRequestError(`Could not reach Cashfree: ${detail}`);

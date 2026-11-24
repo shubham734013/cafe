@@ -6,12 +6,8 @@ const BASE_ENV = {
   PATH: process.env.PATH ?? '',
   NODE_ENV: 'production',
   CAFE_AUTH_SECRET: 'test-secret-with-more-than-thirty-two-characters',
-  CAFE_SUPER_ADMIN_PIN: '9876',
-  CAFE_OWNER_PIN: '8765',
-  CAFE_MANAGER_PIN: '7654',
-  CAFE_CASHIER_PIN: '6543',
-  CAFE_BARISTA_PIN: '5432',
-  CAFE_SERVER_PIN: '4321',
+  CAFE_ADMIN_PIN: '8765',
+  CAFE_KITCHEN_PIN: '5432',
 };
 
 function runAuthConfiguration(env: NodeJS.ProcessEnv) {
@@ -28,17 +24,17 @@ function runAuthConfiguration(env: NodeJS.ProcessEnv) {
   );
 }
 
-test('production auth requires every role PIN', () => {
-  const { CAFE_MANAGER_PIN: _managerPin, ...env } = BASE_ENV;
+test('production auth requires admin and kitchen PINs', () => {
+  const { CAFE_KITCHEN_PIN: _kitchenPin, ...env } = BASE_ENV;
   const result = runAuthConfiguration(env);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /CAFE_MANAGER_PIN/);
+  assert.match(result.stderr, /CAFE_KITCHEN_PIN/);
 });
 
 test('production role PINs must be unique', () => {
   const result = runAuthConfiguration({
     ...BASE_ENV,
-    CAFE_MANAGER_PIN: BASE_ENV.CAFE_OWNER_PIN,
+    CAFE_KITCHEN_PIN: BASE_ENV.CAFE_ADMIN_PIN,
   });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /must be unique/);

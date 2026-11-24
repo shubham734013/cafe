@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+    <defs>
+      <radialGradient id="snBg" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#FFF8EE"/>
+        <stop offset="100%" stop-color="#FAD4B2"/>
+      </radialGradient>
+    </defs>
+    <circle cx="100" cy="100" r="92" fill="url(#snBg)"/>
+    <rect x="42" y="45" width="116" height="114" rx="18" fill="#D4A373"/>
+    <rect x="48" y="51" width="104" height="102" rx="14" fill="#FFD166"/>
+    <rect x="52" y="55" width="96" height="94" rx="10" fill="#FFF2B2"/>
+    <!-- Eyes -->
+    <circle cx="78" cy="76" r="7.5" fill="#2B2D42"/>
+    <circle cx="122" cy="76" r="7.5" fill="#2B2D42"/>
+    <path d="M 82 94 Q 100 108 118 94" stroke="#D90429" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <!-- Name Badge underneath smile -->
+    <rect x="62" y="112" width="76" height="26" rx="6" fill="#C67C4E"/>
+    <text x="100" y="129" font-size="11" font-weight="900" fill="#FFF" text-anchor="middle" font-family="sans-serif">SPECIAL</text>
+  </svg>

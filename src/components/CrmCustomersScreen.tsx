@@ -11,12 +11,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { addCustomerSchema } from '../shared/schemas';
-import { CustomerProfile, CustomerSegment } from '../types/cafe';
+import { CafeOrder, CustomerProfile, CustomerSegment } from '../types/cafe';
 import { filterCustomers, formatINR } from '../utils/cafeLogic';
 import { CafeDataTable } from './CafeDataTable';
 
 interface CrmCustomersScreenProps {
   customers: CustomerProfile[];
+  orders: CafeOrder[];
   onAddCustomer: (customer: Omit<CustomerProfile, 'id'>) => void;
   onExportCsv: () => void;
   onExportExcel?: () => void;
@@ -30,6 +31,7 @@ type AddCustomerValues = z.input<typeof addCustomerSchema>;
 
 export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
   customers,
+  orders,
   onAddCustomer,
   onExportCsv,
   onExportExcel,
@@ -41,6 +43,33 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerProfile | null>(null);
+
+  const handleDeleteCustomer = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete customer "${name}" from CRM?`)) return;
+    try {
+      const res = await fetch(`/api/admin/customers/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error('Failed to delete customer');
+      setSelectedCustomer(null);
+      onNotify(`Deleted customer "${name}" from CRM.`);
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Could not delete customer');
+    }
+  };
+
+  const handleClearAllCustomers = async () => {
+    if (!window.confirm('Are you sure you want to delete ALL customers from CRM for clean testing? This cannot be undone.')) return;
+    try {
+      const res = await fetch('/api/admin/customers', { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to clear customers');
+      setSelectedCustomer(null);
+      onNotify('All customers cleared from CRM. Ready for clean testing!');
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Could not clear customers');
+    }
+  };
 
   const segmentCounts = useMemo(() => {
     const counts = { all: customers.length, vip: 0, loyal: 0, regular: 0, new: 0, risk: 0 };
@@ -81,6 +110,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
     resolver: zodResolver(addCustomerSchema),
     defaultValues: {
       name: '',
+      email: '',
       phone: '',
       segment: 'regular',
       favorites: 'Cold Coffee',
@@ -107,9 +137,17 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
         cell: ({ row }) => (
           <div>
             <p className="font-bold text-on-surface">{row.original.name}</p>
-            <p className="text-[11px] text-on-surface-variant tabular-nums">
-              +91 {row.original.phone}
-            </p>
+            {row.original.phone ? (
+              <p className="text-[11px] text-primary font-semibold tabular-nums">
+                +91 {row.original.phone}
+              </p>
+            ) : row.original.email ? (
+              <p className="text-[11px] text-on-surface-variant truncate max-w-[200px]">
+                {row.original.email}
+              </p>
+            ) : (
+              <p className="text-[11px] text-outline">Registered Patron</p>
+            )}
           </div>
         ),
       },
@@ -207,13 +245,10 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
         <div className="flex flex-col min-w-0">
           <div className="flex items-center gap-1.5">
             <h1 className="text-xl font-bold text-on-surface tracking-tight truncate">
-              Customers (CRM)
+              Customer Directory
             </h1>
             <span className="w-1.5 h-1.5 rounded-full bg-tertiary shrink-0" />
           </div>
-          <p className="text-xs text-on-surface-variant truncate">
-            {crmKpis.total} Total Profiles • {crmKpis.retentionPct}% Returning
-          </p>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
@@ -267,7 +302,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                 setQuery(e.target.value);
                 setVisibleLimit(PAGE_SIZE);
               }}
-              placeholder="Search by name or phone..."
+              placeholder="Search customers..."
               className="w-full bg-transparent border-0 outline-none text-on-surface placeholder:text-outline text-sm"
             />
             {query.length > 0 && (
@@ -287,7 +322,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
           <button
             type="button"
             aria-label="Sort by spend"
-            onClick={() => onNotify('Showing high-retention patron profiles first')}
+            onClick={() => onNotify('Showing top spending customers first')}
             className="w-10 h-10 flex items-center justify-center rounded-lg bg-surface-container-high text-on-surface-variant hover:text-primary shrink-0 transition-colors cursor-pointer"
           >
             <span className="material-symbols-outlined text-[20px]">tune</span>
@@ -339,7 +374,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
 
           <div className="flex flex-col min-w-0 p-3 rounded-lg bg-surface-container-low shadow-sm">
             <span className="text-[10px] text-outline uppercase tracking-wider font-semibold">
-              Avg LTV
+              Avg Spend
             </span>
             <div className="flex items-baseline mt-1">
               <span className="text-lg sm:text-xl text-on-surface font-bold tabular-nums truncate">
@@ -361,18 +396,18 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                 verified
               </span>
             </div>
-            <span className="text-[11px] text-on-surface-variant truncate">Repeat patrons</span>
+            <span className="text-[11px] text-on-surface-variant truncate">Repeat customers</span>
           </div>
         </div>
 
         <div className="lg:col-span-4 flex items-center gap-2 p-2.5 rounded-xl bg-surface-container-lowest shadow-inner">
           <button
             type="button"
-            onClick={() => onNotify(`Promo broadcast queued for ${visibleCustomers.length} patrons`)}
+            onClick={() => onNotify(`Promo message queued for ${visibleCustomers.length} customers`)}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface text-xs font-semibold transition-colors cursor-pointer"
           >
             <span className="material-symbols-outlined text-[16px] text-primary">campaign</span>
-            <span className="truncate">Broadcast</span>
+            <span className="truncate">Send Offer</span>
           </button>
           <button
             type="button"
@@ -381,6 +416,15 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
           >
             <span className="material-symbols-outlined text-[16px]">table_view</span>
             <span>Export Excel</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleClearAllCustomers()}
+            className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 text-xs font-semibold transition-colors shrink-0 cursor-pointer border border-rose-500/20"
+            title="Clear all customers to test fresh"
+          >
+            <span className="material-symbols-outlined text-[16px]">delete_sweep</span>
+            <span>Clear CRM</span>
           </button>
         </div>
       </div>
@@ -411,29 +455,49 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
               const isRegular = customer.segment === 'regular';
 
               return (
-                <div
+                <article
                   key={customer.id}
-                  className="relative overflow-hidden flex flex-col justify-between p-3.5 rounded-xl bg-surface-container-low hover:bg-surface-container shadow-md transition-all space-y-2.5"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`View details for ${customer.name}`}
+                  onClick={() => setSelectedCustomer(customer)}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setSelectedCustomer(customer);
+                    }
+                  }}
+                  className="relative overflow-hidden flex flex-col justify-between p-3 sm:p-5 rounded-2xl sm:rounded-3xl liquid-glass-card shadow-2xl transition-all space-y-3 sm:space-y-4 border border-white/[0.08] cursor-pointer"
                 >
                   {isVip && (
-                    <div className="absolute -right-8 -top-8 w-24 h-24 bg-primary/10 rounded-full blur-xl pointer-events-none" />
+                    <div className="absolute -right-8 -top-8 w-24 h-24 bg-primary/20 rounded-full blur-xl pointer-events-none" />
                   )}
 
-                  <div className="flex flex-wrap items-start justify-between gap-2 relative">
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  {/* Header Row: Avatar + Name/Phone + Action Buttons */}
+                  <div className="flex items-center justify-between gap-1.5 sm:gap-2.5 relative">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                       <div
-                        className={`relative w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
+                        className={`relative w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-sm font-black shrink-0 shadow-md overflow-hidden ${
                           isVip
-                            ? 'bg-gradient-to-tr from-primary-container to-primary text-on-primary shadow-md'
+                            ? 'bg-gradient-to-tr from-amber-500/30 to-amber-400/10 text-amber-300 border border-amber-500/40'
                             : isLoyal
-                              ? 'bg-secondary-container/20 text-secondary'
-                              : 'bg-surface-container-high text-on-surface'
+                              ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                              : 'bg-surface-container-high/90 text-primary border border-white/[0.08]'
                         }`}
                       >
-                        {customer.initials}
+                        {customer.avatarUrl ? (
+                          <img
+                            src={customer.avatarUrl}
+                            alt={customer.name}
+                            className="w-full h-full object-cover rounded-full"
+                          />
+                        ) : (
+                          customer.initials
+                        )}
                         {isVip && (
-                          <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-background flex items-center justify-center">
-                            <span className="material-symbols-outlined text-[11px] text-primary icon-filled">
+                          <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-background flex items-center justify-center border border-amber-500/40">
+                            <span className="material-symbols-outlined text-[11px] text-amber-400 icon-filled">
                               star
                             </span>
                           </span>
@@ -441,118 +505,127 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                       </div>
 
                       <div className="flex flex-col min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm text-on-surface font-bold truncate">
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                          <span className="min-w-0 max-w-full text-sm sm:text-base text-on-surface font-extrabold truncate tracking-tight">
                             {customer.name}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase flex items-center gap-0.5 shrink-0 ${
+                            className={`px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black tracking-wider uppercase shrink-0 ${
                               isVip
-                                ? 'bg-primary/20 text-primary'
+                                ? 'bg-secondary-container text-on-secondary-container border border-secondary/30'
                                 : isLoyal
-                                  ? 'bg-secondary-container/30 text-primary'
+                                  ? 'bg-primary/10 text-primary border border-primary/20'
                                   : isRegular
-                                    ? 'bg-tertiary-container/30 text-tertiary'
-                                    : 'bg-surface-container-high text-on-surface-variant'
+                                    ? 'bg-surface-container-high text-on-surface-variant border border-outline-variant'
+                                    : 'bg-secondary/10 text-secondary border border-secondary/20'
                             }`}
                           >
-                            {isVip && (
-                              <span className="material-symbols-outlined text-[11px] icon-filled">
-                                workspace_premium
-                              </span>
-                            )}
                             {customer.segment}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1 text-on-surface-variant text-xs">
-                          <span className="material-symbols-outlined text-[13px] text-outline">
-                            call
-                          </span>
-                          <span className="tabular-nums">+91 {customer.phone}</span>
-                        </div>
+                        {customer.phone ? (
+                          <div className="flex min-w-0 items-center gap-1.5 text-primary text-xs font-semibold tabular-nums mt-1">
+                            <span className="material-symbols-outlined text-[14px] shrink-0">
+                              call
+                            </span>
+                            <span className="min-w-0 truncate">+91 {customer.phone}</span>
+                          </div>
+                        ) : customer.email ? (
+                          <div className="flex min-w-0 items-center gap-1.5 text-on-surface-variant/80 text-xs truncate mt-1">
+                            <span className="material-symbols-outlined text-[14px] shrink-0 text-primary">
+                              mail
+                            </span>
+                            <span className="min-w-0 truncate font-medium">{customer.email}</span>
+                          </div>
+                        ) : (
+                          <div className="flex min-w-0 items-center gap-1.5 text-on-surface-variant/70 text-xs truncate mt-1">
+                            <span className="material-symbols-outlined text-[14px] shrink-0 text-secondary">
+                              verified
+                            </span>
+                            <span className="min-w-0 truncate">Verified Cafe Patron</span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
+                    {/* Action Icon Buttons */}
+                    <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                       <button
                         type="button"
                         aria-label={`Export DPDP PII for ${customer.name}`}
-                        onClick={() =>
+                        onClick={(event) => {
+                          event.stopPropagation();
                           onExportCustomerPii
                             ? onExportCustomerPii(customer)
-                            : onNotify(`Exported DPDP JSON for ${customer.name}`)
-                        }
-                        className="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant hover:text-primary active:scale-95 transition-transform cursor-pointer"
+                            : onNotify(`Exported DPDP JSON for ${customer.name}`);
+                        }}
+                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-on-surface-variant hover:text-primary active:scale-95 transition-all cursor-pointer shadow-sm hover:border-primary/40"
+                        title="Download DPDP Record"
                       >
-                        <span className="material-symbols-outlined text-[16px]">download</span>
+                        <span className="material-symbols-outlined text-[18px]">download</span>
                       </button>
-                      <button
-                        type="button"
-                        aria-label={`Call ${customer.name}`}
-                        onClick={() => onNotify(`Dialing ${customer.name} (+91 ${customer.phone})`)}
-                        className="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant hover:text-primary active:scale-95 transition-transform cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[17px]">phone</span>
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`WhatsApp ${customer.name}`}
-                        onClick={() =>
-                          onNotify(`Opened WhatsApp greeting for ${customer.name}`)
-                        }
-                        className="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-tertiary hover:bg-surface-bright active:scale-95 transition-transform cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[17px]">chat</span>
-                      </button>
+                      {customer.email ? (
+                        <a
+                          href={`mailto:${customer.email}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-on-surface-variant hover:text-primary active:scale-95 transition-all cursor-pointer shadow-sm hover:border-white/20"
+                          title={`Email ${customer.name}`}
+                        >
+                          <span className="material-symbols-outlined text-[18px] sm:text-[20px] text-primary">
+                            mail
+                          </span>
+                        </a>
+                      ) : null}
                     </div>
                   </div>
 
-                {/* Stats Grid */}
-                <div className="grid grid-cols-3 gap-1.5 py-2 px-2.5 rounded-lg bg-surface-container-lowest text-center">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-outline">Visits</span>
-                    <span className="text-xs text-on-surface font-semibold tabular-nums">
-                      {customer.visits} Visits
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-outline">Total Spent</span>
-                    <span className="text-xs text-primary font-semibold tabular-nums">
-                      {formatINR(customer.totalSpent)}
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-outline">Avg Ticket</span>
-                    <span className="text-xs text-on-surface font-semibold tabular-nums">
-                      {formatINR(customer.avgTicket)}
-                    </span>
-                  </div>
-                </div>
-
-                {customer.note && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-container-high/60 text-secondary">
-                    <span className="material-symbols-outlined text-[14px] shrink-0">
-                      restaurant
-                    </span>
-                    <span className="text-[11px] truncate">{customer.note}</span>
-                  </div>
-                )}
-
-                  <div className="flex items-center justify-between gap-2 pt-0.5">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="material-symbols-outlined text-[15px] text-primary shrink-0">
-                        favorite
+                  {/* Middle Metrics Inset Card */}
+                  <div className="grid grid-cols-3 gap-1 sm:gap-2 py-2.5 sm:py-3 px-2.5 sm:px-4 rounded-2xl bg-black/40 backdrop-blur-md border border-white/[0.05] text-center items-center shadow-inner">
+                    <div className="min-w-0 flex flex-col">
+                      <span className="text-[10px] sm:text-[11px] text-on-surface-variant/70 font-semibold mb-0.5 truncate">Visits</span>
+                      <span className="text-xs sm:text-sm md:text-base text-on-surface font-black tabular-nums tracking-tight truncate">
+                        {customer.visits}
                       </span>
-                      <span className="text-xs text-on-surface-variant truncate">
+                    </div>
+                    <div className="min-w-0 flex flex-col">
+                      <span className="text-[10px] sm:text-[11px] text-on-surface-variant/70 font-semibold mb-0.5 truncate">Total Spent</span>
+                      <span className="text-xs sm:text-sm md:text-base text-secondary font-black tabular-nums tracking-tight truncate">
+                        {formatINR(customer.totalSpent)}
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex flex-col">
+                      <span className="text-[10px] sm:text-[11px] text-on-surface-variant/70 font-semibold mb-0.5 truncate">Avg Ticket</span>
+                      <span className="text-xs sm:text-sm md:text-base text-on-surface font-black tabular-nums tracking-tight truncate">
+                        {formatINR(customer.avgTicket)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {customer.note && (
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-container-high/60 text-secondary text-xs">
+                      <span className="material-symbols-outlined text-[14px] shrink-0">
+                        restaurant
+                      </span>
+                      <span className="text-[11px] truncate font-medium">{customer.note}</span>
+                    </div>
+                  )}
+
+                  {/* Footer Row: Heart + Favorites & Clock + Last Visit */}
+                  <div className="flex items-center justify-between gap-2 sm:gap-3 text-xs sm:text-sm pt-0.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="material-symbols-outlined text-[18px] text-primary shrink-0">
+                        favorite_border
+                      </span>
+                      <span className="text-xs text-on-surface-variant/80 font-medium truncate">
                         {customer.favorites}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1 text-outline text-[11px] shrink-0">
-                      <span className="material-symbols-outlined text-[12px]">schedule</span>
-                      <span>{customer.lastVisit}</span>
+                    <div className="flex max-w-[42%] items-center gap-1 text-on-surface-variant/70 text-xs shrink-0 font-medium">
+                      <span className="material-symbols-outlined text-[15px]">schedule</span>
+                      <span className="truncate">{customer.lastVisit}</span>
                     </div>
                   </div>
-                </div>
+                </article>
               );
             })}
           </div>
@@ -570,6 +643,178 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
         </div>
       )}
 
+      {/* Customer Details Dialog */}
+      <Dialog
+        open={selectedCustomer !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedCustomer(null);
+        }}
+      >
+        <DialogContent className="bg-surface-container border border-outline-variant/30 text-on-surface sm:max-w-lg rounded-2xl p-5 min-h-0 max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-y-contain">
+          {selectedCustomer && (
+            <>
+              <DialogHeader>
+                <div className="flex items-center gap-3 pr-8">
+                  <div className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-black shrink-0 overflow-hidden bg-surface-container-high text-primary border border-outline-variant">
+                    {selectedCustomer.avatarUrl ? (
+                      <img
+                        src={selectedCustomer.avatarUrl}
+                        alt={selectedCustomer.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      selectedCustomer.initials
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <DialogTitle className="text-lg font-bold text-on-surface truncate">
+                      {selectedCustomer.name}
+                    </DialogTitle>
+                    <DialogDescription className="text-xs text-on-surface-variant capitalize">
+                      {selectedCustomer.segment} customer
+                    </DialogDescription>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-surface-container-low p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-outline font-semibold">Email</p>
+                    <p className="mt-1 text-sm text-on-surface break-words">
+                      {selectedCustomer.email || 'Not provided'}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-surface-container-low p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-outline font-semibold">Mobile Number</p>
+                    <p className="mt-1 text-sm font-semibold text-primary tabular-nums">
+                      {selectedCustomer.phone ? `+91 ${selectedCustomer.phone}` : 'Not provided by Google'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl bg-surface-container-low p-3 text-center">
+                    <p className="text-[10px] text-outline font-semibold">Visits</p>
+                    <p className="mt-1 text-base font-black text-on-surface">{selectedCustomer.visits}</p>
+                  </div>
+                  <div className="rounded-xl bg-surface-container-low p-3 text-center">
+                    <p className="text-[10px] text-outline font-semibold">Total Spent</p>
+                    <p className="mt-1 text-base font-black text-secondary">
+                      {formatINR(selectedCustomer.totalSpent)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-surface-container-low p-3 text-center">
+                    <p className="text-[10px] text-outline font-semibold">Avg Ticket</p>
+                    <p className="mt-1 text-base font-black text-on-surface">
+                      {formatINR(selectedCustomer.avgTicket)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-outline-variant/50 p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-outline font-semibold">Favorites</p>
+                    <p className="mt-1 text-sm text-on-surface">{selectedCustomer.favorites}</p>
+                  </div>
+                  <div className="rounded-xl border border-outline-variant/50 p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-outline font-semibold">Last Visit</p>
+                    <p className="mt-1 text-sm text-on-surface">{selectedCustomer.lastVisit}</p>
+                  </div>
+                  <div className="rounded-xl border border-outline-variant/50 p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-outline font-semibold">Loyalty Points</p>
+                    <p className="mt-1 text-sm font-bold text-primary">
+                      {selectedCustomer.loyaltyPoints ?? 0}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-outline-variant/50 p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-outline font-semibold">Account Status</p>
+                    <p className="mt-1 text-sm font-bold text-on-surface capitalize">
+                      {selectedCustomer.segment}
+                    </p>
+                  </div>
+                </div>
+
+                {selectedCustomer.provider === 'google' && (
+                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[18px] text-primary">verified</span>
+                      <p className="text-sm font-bold text-on-surface">Google Account Details</p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <p className="text-[10px] text-outline uppercase tracking-wider">Sign-in Provider</p>
+                        <p className="mt-0.5 text-on-surface font-semibold">Google</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-outline uppercase tracking-wider">Email Status</p>
+                        <p className="mt-0.5 text-on-surface font-semibold">
+                          {selectedCustomer.emailVerified ? 'Google verified' : 'Not verified'}
+                        </p>
+                      </div>
+                      {selectedCustomer.createdAt && (
+                        <div>
+                          <p className="text-[10px] text-outline uppercase tracking-wider">Account Synced</p>
+                          <p className="mt-0.5 text-on-surface font-semibold">
+                            {new Date(selectedCustomer.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      )}
+                      {selectedCustomer.googleSubjectId && (
+                        <div className="sm:col-span-2">
+                          <p className="text-[10px] text-outline uppercase tracking-wider">Google Account ID</p>
+                          <p className="mt-0.5 text-on-surface font-mono text-[11px] break-all">
+                            {selectedCustomer.googleSubjectId}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {selectedCustomer.note && (
+                  <div className="rounded-xl bg-surface-container-high/60 p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-outline font-semibold">Notes</p>
+                    <p className="mt-1 text-sm text-on-surface-variant">{selectedCustomer.note}</p>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onExportCustomerPii) onExportCustomerPii(selectedCustomer);
+                      else onNotify(`Exported DPDP JSON for ${selectedCustomer.name}`);
+                    }}
+                    className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-surface-container-high text-primary text-xs font-bold cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">download</span>
+                    Export PII
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteCustomer(selectedCustomer.id, selectedCustomer.name)}
+                    className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-600 hover:bg-rose-500/20 text-xs font-bold cursor-pointer transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                    Delete Customer
+                  </button>
+                  {selectedCustomer.email ? (
+                    <a
+                      href={`mailto:${selectedCustomer.email}`}
+                      className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-primary text-on-primary text-xs font-bold cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">mail</span>
+                      Email
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Add Customer Dialog */}
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
         <DialogContent className="bg-surface-container border border-outline-variant/30 text-on-surface sm:max-w-md rounded-2xl p-5">
@@ -578,7 +823,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
               Add Customer Profile
             </DialogTitle>
             <DialogDescription className="text-xs text-on-surface-variant">
-              Store patron preferences with DPDP-compliant consent tracking.
+              Save customer preferences and contact details.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveCustomer} className="space-y-4">
@@ -590,7 +835,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                 <input
                   type="text"
                   {...form.register('name')}
-                  placeholder="e.g. Ananya Gupta"
+                  placeholder="Full name"
                   className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 {form.formState.errors.name && (
@@ -602,17 +847,17 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-xs font-semibold text-on-surface-variant mb-1">
-                    Mobile Number
+                    Email Address (Optional)
                   </label>
                   <input
-                    type="tel"
-                    {...form.register('phone')}
-                    placeholder="9876543219"
+                    type="email"
+                    {...form.register('email')}
+                    placeholder="name@example.com"
                     className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                   />
-                  {form.formState.errors.phone && (
+                  {form.formState.errors.email && (
                     <p className="text-[11px] text-error mt-1">
-                      {form.formState.errors.phone.message}
+                      {form.formState.errors.email.message}
                     </p>
                   )}
                 </div>
@@ -652,7 +897,7 @@ export const CrmCustomersScreen: React.FC<CrmCustomersScreenProps> = ({
                   {...form.register('dpdpConsent')}
                   className="rounded accent-primary"
                 />
-                <span>Patron consented to DPDP profile &amp; loyalty storage</span>
+                <span>Customer agreed to receive SMS/WhatsApp offers</span>
               </label>
             </div>
             <div className="flex gap-2">

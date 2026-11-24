@@ -3,13 +3,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Pool } from 'pg';
 
-const connectionString =
-  process.env.DATABASE_URL ||
-  process.env.POSTGRES_URL ||
-  'postgresql://postgres:postgres@localhost:5432/cafeos';
+const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+
+function createPool(): Pool {
+  if (!connectionString) {
+    throw new Error('Set DATABASE_URL or POSTGRES_URL to use the optional PostgreSQL tools.');
+  }
+  return new Pool({ connectionString });
+}
 
 export async function runMigrations(customPool?: Pool) {
-  const pool = customPool || new Pool({ connectionString });
+  const pool = customPool || createPool();
   const client = await pool.connect();
 
   try {
@@ -75,7 +79,7 @@ export async function runMigrations(customPool?: Pool) {
 }
 
 export async function rollbackMigrations(customPool?: Pool) {
-  const pool = customPool || new Pool({ connectionString });
+  const pool = customPool || createPool();
   const client = await pool.connect();
 
   try {

@@ -87,9 +87,6 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
       <header className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-on-surface">Order Management</h1>
-          <p className="text-xs text-on-surface-variant">
-            Track order progress and kitchen status.
-          </p>
         </div>
         <div className="flex gap-2">
           {onRefresh && (
@@ -134,7 +131,7 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
             setSearchQuery(event.target.value);
             setVisibleLimit(PAGE_SIZE);
           }}
-          placeholder="Search order ID or items"
+          placeholder="Search orders..."
           aria-label="Search orders"
           className="rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface"
         />
@@ -185,89 +182,183 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {visibleOrders.slice(0, visibleLimit).map((order) => (
-            <article key={order.id} className="flex flex-col gap-3 rounded-xl bg-surface-container p-4 shadow-sm">
-              <button
-                type="button"
-                onClick={() => setSelectedOrder(order)}
-                className="flex items-start justify-between gap-3 text-left"
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {visibleOrders.slice(0, visibleLimit).map((order) => {
+            const isDineIn = order.serviceMode === 'dine-in';
+            const isDelivery = order.serviceMode === 'delivery';
+            const totalItemsCount = order.items.reduce((s, i) => s + i.quantity, 0);
+
+            return (
+              <article
+                key={order.id}
+                className="relative overflow-hidden flex flex-col justify-between p-4 sm:p-5 rounded-3xl liquid-glass-card shadow-2xl transition-all space-y-4 border border-white/[0.08]"
               >
-                <span>
-                  <span className="block font-bold text-on-surface">#{order.id}</span>
-                  <span className="text-xs text-on-surface-variant">
-                    {order.serviceMode === 'dine-in'
-                      ? `Dine-In · ${order.tableNumber ?? 'T3'}`
-                      : order.serviceMode === 'delivery'
-                        ? `Delivery · ${order.deliveryPartner ?? 'Direct'}`
-                        : 'Takeaway'}
-                    {' · '}{order.createdAtLabel}
-                  </span>
-                </span>
-                <span className="text-right">
-                  <span className="block font-bold text-primary">{formatINR(order.total)}</span>
-                  <div className="flex items-center justify-end gap-1.5 mt-0.5">
-                    {order.paymentStatus === 'refunded' ? (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/25 text-amber-300 border border-amber-500/40">
-                        REFUNDED
+                {/* Header Row: Avatar + Order & Channel + Action Buttons */}
+                <div className="flex items-center justify-between gap-2.5 relative">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div
+                      className={`relative w-12 h-12 rounded-full flex items-center justify-center text-sm font-black shrink-0 shadow-md ${
+                        order.paymentStatus === 'paid'
+                          ? 'bg-gradient-to-tr from-emerald-500/30 to-emerald-400/10 text-emerald-300 border border-emerald-500/40'
+                          : order.paymentStatus === 'refunded'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            : 'bg-surface-container-high/90 text-primary border border-white/[0.08]'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[20px]">
+                        {isDineIn ? 'restaurant' : isDelivery ? 'delivery_dining' : 'takeout_dining'}
                       </span>
-                    ) : order.paymentStatus === 'paid' ? (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400">PAID</span>
-                    ) : order.paymentMode === 'cash' || order.paymentChannelLabel === 'Pay on Counter' ? (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400">COUNTER</span>
-                    ) : (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-400">UPI PENDING</span>
+                    </div>
+
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm sm:text-base text-on-surface font-extrabold truncate tracking-tight">
+                          #{order.id}
+                        </span>
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase shrink-0 ${
+                            order.paymentStatus === 'refunded'
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : order.paymentStatus === 'paid'
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : order.paymentMode === 'cash' || order.paymentChannelLabel === 'Pay on Counter'
+                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                  : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                          }`}
+                        >
+                          {order.paymentStatus === 'refunded'
+                            ? 'REFUNDED'
+                            : order.paymentStatus === 'paid'
+                              ? 'PAID'
+                              : order.paymentMode === 'cash' || order.paymentChannelLabel === 'Pay on Counter'
+                                ? 'COUNTER'
+                                : 'UPI PENDING'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-on-surface-variant/80 text-xs sm:text-sm mt-0.5">
+                        <span className="material-symbols-outlined text-[15px] shrink-0">
+                          {isDineIn ? 'table_restaurant' : isDelivery ? 'local_shipping' : 'shopping_bag'}
+                        </span>
+                        <span className="tabular-nums font-medium tracking-wide">
+                          {isDineIn
+                            ? order.tableNumber
+                              ? `Dine-In · ${order.tableNumber}`
+                              : 'Dine-In'
+                            : isDelivery
+                              ? `Delivery · ${order.deliveryPartner ?? 'Direct'}`
+                              : 'Takeaway'}
+                        </span>
+                      </div>
+                      {isDelivery && order.deliveryAddress && (
+                        <p className="mt-1 flex items-start gap-1.5 text-xs text-on-surface-variant">
+                          <span className="material-symbols-outlined mt-px text-[14px]">location_on</span>
+                          <span className="line-clamp-2">{order.deliveryAddress}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Action Icon Buttons */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {order.paymentStatus !== 'paid' && onPayCounterOrder && (
+                      <button
+                        type="button"
+                        aria-label={`Mark order ${order.id} paid`}
+                        onClick={async () => {
+                          await onPayCounterOrder(order.id);
+                          onNotify(`Order #${order.id} marked as PAID`);
+                        }}
+                        className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/25 active:scale-95 transition-all cursor-pointer shadow-sm"
+                        title="Mark Paid"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">payments</span>
+                      </button>
                     )}
-                    <span className="text-xs text-on-surface-variant">
+                    {order.status !== 'served' && (
+                      <button
+                        type="button"
+                        aria-label={`Advance order ${order.id}`}
+                        onClick={() => onAdvanceOrderStatus(order.id)}
+                        className="w-10 h-10 rounded-2xl bg-primary/20 border border-primary/40 flex items-center justify-center text-primary hover:bg-primary/30 active:scale-95 transition-all cursor-pointer shadow-sm"
+                        title="Advance Status"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">fast_forward</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      aria-label={`View order ${order.id} details`}
+                      onClick={() => {
+                        setSelectedOrder(order);
+                        onNotify(`Order #${order.id} details opened`);
+                      }}
+                      className="w-10 h-10 rounded-2xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-on-surface-variant hover:text-primary active:scale-95 transition-all cursor-pointer shadow-sm hover:border-primary/40"
+                      title="View Order Details"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">visibility</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Middle Metrics Inset Card */}
+                <div className="grid grid-cols-3 gap-2 py-3 px-4 rounded-2xl bg-black/40 backdrop-blur-md border border-white/[0.05] text-center items-center shadow-inner">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Items</span>
+                    <span className="text-xs sm:text-sm md:text-base text-on-surface font-black tabular-nums tracking-tight">
+                      {totalItemsCount} Items
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Total Amount</span>
+                    <span className="text-xs sm:text-sm md:text-base text-secondary font-black tabular-nums tracking-tight">
+                      {formatINR(order.total)}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Status</span>
+                    <span className="text-xs sm:text-sm md:text-base text-on-surface font-black tabular-nums tracking-tight uppercase">
                       {ORDER_STATUS_META[order.status].kotBadgeLabel}
                     </span>
                   </div>
-                </span>
-              </button>
-              <div className="flex flex-col gap-1 border-t border-outline-variant/30 pt-2 text-xs text-on-surface-variant">
-                {order.items.map((item) => (
-                  <div key={item.menuItemId} className="flex justify-between gap-2">
-                    <span>{item.quantity} × {item.name}</span>
-                    <span>{formatINR(item.price * item.quantity)}</span>
+                </div>
+
+                {/* Items Inset Sub-Card */}
+                <div className="rounded-2xl liquid-glass-subcard p-3 space-y-1.5 text-xs text-on-surface-variant border border-white/[0.04]">
+                  {order.items.slice(0, 3).map((item) => (
+                    <div key={item.menuItemId} className="flex justify-between gap-2 py-0.5">
+                      <span className="truncate text-on-surface font-medium">
+                        <span className="text-primary font-bold">{item.quantity}×</span> {item.name}
+                      </span>
+                      <span className="tabular-nums font-semibold text-on-surface shrink-0">
+                        {formatINR(item.price * item.quantity)}
+                      </span>
+                    </div>
+                  ))}
+                  {order.items.length > 3 && (
+                    <div className="pt-1 text-[11px] text-on-surface-variant/70 italic text-center">
+                      +{order.items.length - 3} more items...
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer Row: Channel & Schedule */}
+                <div className="flex items-center justify-between gap-3 text-xs sm:text-sm pt-0.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="material-symbols-outlined text-[18px] text-primary shrink-0">
+                      payment
+                    </span>
+                    <span className="text-xs text-on-surface-variant/80 font-medium truncate">
+                      {order.paymentChannelLabel || (order.paymentMode === 'cash' ? 'Cash on Counter' : 'Online Gateway')}
+                    </span>
                   </div>
-                ))}
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedOrder(order);
-                    onNotify(`Order #${order.id} details opened`);
-                  }}
-                  className="rounded-lg bg-surface-container-high px-3 py-2 text-xs font-semibold text-on-surface"
-                >
-                  Details
-                </button>
-                {order.paymentStatus !== 'paid' && onPayCounterOrder && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await onPayCounterOrder(order.id);
-                      onNotify(`Order #${order.id} marked as PAID`);
-                    }}
-                    className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-2 text-xs font-bold text-white flex items-center gap-1 shadow-sm cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">payments</span>
-                    <span>Mark Paid</span>
-                  </button>
-                )}
-                {order.status !== 'served' && (
-                  <button
-                    type="button"
-                    onClick={() => onAdvanceOrderStatus(order.id)}
-                    className="rounded-lg bg-primary px-3 py-2 text-xs font-bold text-on-primary"
-                  >
-                    Advance Order
-                  </button>
-                )}
-              </div>
-            </article>
-          ))}
+                  <div className="flex items-center gap-1 text-on-surface-variant/70 text-xs shrink-0 font-medium">
+                    <span className="material-symbols-outlined text-[15px]">schedule</span>
+                    <span>{order.createdAtLabel}</span>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
           {visibleLimit < visibleOrders.length && (
             <button
               type="button"
@@ -381,7 +472,7 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
               </h3>
             </div>
             <p className="text-xs text-on-surface-variant">
-              Confirm refunding <strong className="text-on-surface">{formatINR(refundTargetOrder.total)}</strong> for KOT #{refundTargetOrder.kotNumber}. This will update the order status to REFUNDED, log an audit event, and release any active kitchen ticket.
+              Confirm refund of <strong className="text-on-surface">{formatINR(refundTargetOrder.total)}</strong> for Order #{refundTargetOrder.kotNumber}. This will mark the order as Refunded and cancel kitchen preparation.
             </p>
 
             <div className="flex flex-col gap-1.5 pt-1">
@@ -412,7 +503,7 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
                 type="text"
                 value={refundReason}
                 onChange={(e) => setRefundReason(e.target.value)}
-                placeholder="Or type custom refund reason..."
+                placeholder="Custom reason..."
                 className="mt-1 w-full bg-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-amber-400"
               />
             </div>

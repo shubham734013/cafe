@@ -4,14 +4,7 @@ import path from 'node:path';
 import { BSON, MongoClient, type Collection, type Db } from 'mongodb';
 import {
   INITIAL_CAFE_SETTINGS,
-  INITIAL_CAMPAIGNS,
-  INITIAL_CUSTOMERS,
-  INITIAL_INVENTORY,
-  INITIAL_LOYALTY_RULES,
-  INITIAL_ORDERS,
-  INITIAL_POINT_LEDGER,
-  INITIAL_STAFF_ROSTER,
-  INITIAL_TABLES,
+  INITIAL_RECIPES,
   MENU_ITEMS,
 } from '../data/cafeSeedData';
 import type {
@@ -19,20 +12,31 @@ import type {
   CafeOrder,
   CafeSettings,
   CafeTable,
+  CartItem,
+  CustomerSegment,
   CustomerProfile,
+  CustomerReview,
   InventoryIngredient,
+  InventoryBatch,
   LoyaltyRule,
   MenuItem,
   OrderStatus,
+  PaymentMode,
   PointLedgerEntry,
   PromoCampaign,
   StaffMember,
+  StockCount,
+  StockCountLine,
+  StockMovement,
+  PurchaseOrder,
+  PurchaseOrderLine,
 } from '../types/cafe';
 import {
   calculateCartTotals,
   computeInventoryStatus,
-  restockIngredientItem,
+  convertRecipeAmountToInventoryUnit,
 } from '../utils/cafeLogic';
+import { getItemVariants } from '../utils/menuVariants';
 import {
   InvalidDomainTransitionError,
   assertCanCheckInTable,
@@ -46,6 +50,8 @@ import type {
   addCustomerSchema,
   addIngredientSchema,
   addLoyaltyRuleSchema,
+  addMenuItemSchema,
+  updateMenuItemSchema,
   addStaffSchema,
   addTableSchema,
   cafeSettingsSchema,
@@ -53,6 +59,12 @@ import type {
   createCampaignSchema,
   createOrderSchema,
   reserveTableSchema,
+  stockReceiptSchema,
+  stockWasteSchema,
+  stockTransferSchema,
+  stockCountSchema,
+  purchaseOrderSchema,
+  receivePurchaseOrderSchema,
 } from '../shared/schemas';
 import {
   type CustomerSessionPayload,
@@ -72,14 +84,24 @@ export interface CafeBootstrapState {
   staffRoster: StaffMember[];
   cafeSettings: CafeSettings;
   menuItems: MenuItem[];
+  customerReviews: CustomerReview[];
   rewardPoints: number;
   activityLog?: CafeActivityLogItem[];
+  customerHasMatchedProfile?: boolean;
+  firstOrderEligible?: boolean;
+  stockMovements: StockMovement[];
+  inventoryBatches: InventoryBatch[];
+  purchaseOrders: PurchaseOrder[];
+  stockCounts: StockCount[];
   updatedAt: string;
 }
 
 interface PersistedEnvelope extends Omit<CafeBootstrapState, 'payments'> {
   nextOrderSeq: number;
   idempotencyOrderIds: Record<string, string>;
+  recipes?: Record<string, Array<{ ingredientId: string; amount: number }>>;
+  stockDeductedOrderIds?: string[];
+  processedPaymentEvents?: string[];
 }
 
 const MONGO_STATE_ID = 'seth-sawariya-main';
@@ -140,6 +162,13 @@ function deriveMaxOrderSeq(orders: CafeOrder[]): number {
   return maxSeq;
 }
 
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+}
+
 function stripLegacyGatewayFields(order: CafeOrder): CafeOrder {
   const {
     paymentId: _paymentId,
@@ -175,7 +204,9 @@ export class CafeStore {
   // O(1) secondary lookup indexes
   private menuById = new Map<string, MenuItem>();
   private ordersById = new Map<string, CafeOrder>();
+  private ordersByGatewayClientOrderId = new Map<string, CafeOrder>();
   private stockDeductedOrderIds = new Set<string>();
+  private processedPaymentEvents = new Set<string>();
   private tablesById = new Map<string, CafeTable>();
   private customersById = new Map<string, CustomerProfile>();
 
@@ -195,7 +226,15 @@ export class CafeStore {
     if (!uri.trim()) throw new Error('MONGODB_URI must be configured before starting CafeOS.');
     if (this.mongoClient) throw new Error('CafeStore is already connected to MongoDB.');
 
-    const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
+    const maxPoolSize = Number(process.env.MONGODB_MAX_POOL_SIZE || 20);
+    const minPoolSize = Number(process.env.MONGODB_MIN_POOL_SIZE || 5);
+    const client = new MongoClient(uri, {
+      serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 5000,
+      maxPoolSize,
+      minPoolSize,
+      maxIdleTimeMS: 30000,
+    });
     try {
       await client.connect();
       const database: Db = client.db(databaseName);
@@ -277,6 +316,22 @@ export class CafeStore {
         console.info(
           `[CafeStore] Loaded normalized cafe state from MongoDB database "${databaseName}".`
         );
+        const hasActualMenu = this.state.menuItems.some((m) => m.id === 'aloo-tikki-burger');
+        if (!hasActualMenu) {
+          console.info(
+            `[CafeStore] Upgrading demo menu to actual printed menu in "${databaseName}"...`
+          );
+          this.state.menuItems = clone(MENU_ITEMS);
+          this.state.cafeSettings = { ...this.state.cafeSettings, ...INITIAL_CAFE_SETTINGS };
+          this.rebuildIndexes();
+          const upgradeRevision = crypto.randomUUID();
+          await this.writeNormalizedSnapshot(database, this.state, upgradeRevision);
+          await metadataCollection.updateOne(
+            { _id: MONGO_STATE_ID },
+            { $set: { activeRevision: upgradeRevision } }
+          );
+          this.mongoRevision = upgradeRevision;
+        }
       } else {
         const legacyState = await stateCollection.findOne({ _id: MONGO_STATE_ID });
         if (legacyState) {
@@ -333,36 +388,51 @@ export class CafeStore {
   public async closeMongo(): Promise<void> {
     if (!this.mongoClient) return;
     const client = this.mongoClient;
+    let shutdownError: unknown;
     try {
       await this.flushToPersistence();
-    } finally {
-      if (this.pendingWriteTimer) {
-        clearTimeout(this.pendingWriteTimer);
-        this.pendingWriteTimer = null;
-      }
-      if (this.mongoLeaseTimer) {
-        clearInterval(this.mongoLeaseTimer);
-        this.mongoLeaseTimer = null;
-      }
-      try {
-        if (this.mongoLeaseCollection && this.mongoLeaseOwner) {
-          await this.mongoLeaseCollection.deleteOne({
-            _id: MONGO_LEASE_ID,
-            ownerId: this.mongoLeaseOwner,
-          });
-        }
-      } finally {
-        await client.close();
-        this.mongoClient = null;
-        this.mongoDatabase = null;
-        this.mongoStateCollection = null;
-        this.mongoMetadataCollection = null;
-        this.mongoAuditCollection = null;
-        this.mongoRevision = null;
-        this.mongoLeaseCollection = null;
-        this.mongoLeaseOwner = null;
-      }
+    } catch (error) {
+      shutdownError = error;
     }
+    if (this.pendingWriteTimer) {
+      clearTimeout(this.pendingWriteTimer);
+      this.pendingWriteTimer = null;
+    }
+    if (this.mongoLeaseTimer) {
+      clearInterval(this.mongoLeaseTimer);
+      this.mongoLeaseTimer = null;
+    }
+    try {
+      if (this.mongoLeaseCollection && this.mongoLeaseOwner) {
+        await this.mongoLeaseCollection.deleteOne({
+          _id: MONGO_LEASE_ID,
+          ownerId: this.mongoLeaseOwner,
+        });
+      }
+    } catch (error) {
+      shutdownError ??= error;
+    }
+    try {
+      await client.close();
+    } catch (error) {
+      shutdownError ??= error;
+    } finally {
+      this.mongoClient = null;
+      this.mongoDatabase = null;
+      this.mongoStateCollection = null;
+      this.mongoMetadataCollection = null;
+      this.mongoAuditCollection = null;
+      this.mongoRevision = null;
+      this.mongoLeaseCollection = null;
+      this.mongoLeaseOwner = null;
+    }
+    if (shutdownError) {
+      throw new Error('MongoDB shutdown did not complete cleanly.', { cause: shutdownError });
+    }
+  }
+
+  public isMongoConnected(): boolean {
+    return this.mongoClient !== null;
   }
 
   private getLegacyRevisionCollections(database: Db): Collection<MongoRevisionDocument>[] {
@@ -435,6 +505,8 @@ export class CafeStore {
             rewardPoints: snapshot.rewardPoints,
             updatedAt: snapshot.updatedAt,
             nextOrderSeq: snapshot.nextOrderSeq,
+            recipes: snapshot.recipes || {},
+            customerReviews: snapshot.customerReviews.slice(0, 500),
           },
         },
       ],
@@ -479,12 +551,15 @@ export class CafeStore {
       rewardPoints: number;
       updatedAt: string;
       nextOrderSeq: number;
+      recipes?: Record<string, Array<{ ingredientId: string; amount: number }>>;
+      customerReviews?: CustomerReview[];
     }>(11);
     const settings = await readSingleton<CafeSettings>(10);
 
     const idempotencyEntries = await readRecords<{ key: string; orderId: string }>(9);
     return {
       ...state,
+      customerReviews: state.customerReviews ?? [],
       cafeSettings: settings,
       orders: await readRecords<CafeOrder>(0),
       tables: await readRecords<CafeTable>(1),
@@ -550,14 +625,30 @@ export class CafeStore {
         { $set: { expiresAt: new Date(Date.now() + MONGO_LEASE_DURATION_MS) } }
       );
       if (result.matchedCount !== 1) {
+        const reacquire = await this.mongoLeaseCollection.updateOne(
+          {
+            _id: MONGO_LEASE_ID,
+            expiresAt: { $lte: new Date() },
+          },
+          {
+            $set: {
+              ownerId: this.mongoLeaseOwner,
+              expiresAt: new Date(Date.now() + MONGO_LEASE_DURATION_MS),
+            },
+          }
+        );
+        if (reacquire.modifiedCount === 1) {
+          this.persistenceHealthy = true;
+          return;
+        }
         this.persistenceHealthy = false;
         console.error('[CafeStore] MongoDB writer lease was lost; API writes are disabled.');
         return;
       }
       this.persistenceHealthy = true;
-    } catch (error) {
+    } catch {
       this.persistenceHealthy = false;
-      console.error('[CafeStore] Could not renew MongoDB writer lease:', error);
+      console.warn('[CafeStore] MongoDB writer lease renewal failed; API writes are disabled.');
     }
   }
 
@@ -569,8 +660,8 @@ export class CafeStore {
     if (!this.mongoAuditCollection) return;
     try {
       await this.mongoAuditCollection.insertOne(event);
-    } catch (error) {
-      console.error('[CafeStore] Failed to record audit event:', error);
+    } catch {
+      console.error('[CafeStore] Failed to record an audit event.');
     }
   }
 
@@ -586,6 +677,7 @@ export class CafeStore {
   public getPersistenceInfo(): {
     healthy: boolean;
     storageModel: 'normalized-collections';
+    primaryDatabase: 'mongodb';
     stateBytes: number;
     maxDocumentBytes: number;
   } {
@@ -593,61 +685,38 @@ export class CafeStore {
     return {
       healthy: this.isPersistenceHealthy(),
       storageModel: 'normalized-collections',
+      primaryDatabase: 'mongodb',
       stateBytes,
       maxDocumentBytes: 16 * 1024 * 1024,
     };
   }
 
   private createSeedState(): PersistedEnvelope {
-    const orders = clone(INITIAL_ORDERS);
     return {
       outletId: 'seth-sawariya-main',
-      orders,
-      tables: clone(INITIAL_TABLES),
-      inventory: clone(INITIAL_INVENTORY),
-      customers: clone(INITIAL_CUSTOMERS),
-      loyaltyRules: clone(INITIAL_LOYALTY_RULES),
-      pointLedger: clone(INITIAL_POINT_LEDGER),
-      campaigns: clone(INITIAL_CAMPAIGNS),
-      staffRoster: clone(INITIAL_STAFF_ROSTER),
+      orders: [],
+      tables: [],
+      inventory: [],
+      stockMovements: [],
+      inventoryBatches: [],
+      purchaseOrders: [],
+      stockCounts: [],
+      customers: [],
+      loyaltyRules: [],
+      pointLedger: [],
+      campaigns: [],
+      staffRoster: [],
       cafeSettings: clone(INITIAL_CAFE_SETTINGS),
       menuItems: clone(MENU_ITEMS),
-      rewardPoints: 340,
-      activityLog: [
-        {
-          id: 'act-init-1',
-          type: 'order_paid',
-          title: 'Order Settled Paid',
-          description: 'Order #SSCB421 settled at counter (₹377)',
-          actorName: 'Neha V.',
-          actorRole: 'server',
-          timestamp: '2:14 PM',
-          severity: 'success',
-        },
-        {
-          id: 'act-init-2',
-          type: 'table_updated',
-          title: 'Table Checked In',
-          description: 'Table T3 occupied by Aman Sharma (2 guests)',
-          actorName: 'Aman Sharma',
-          actorRole: 'customer',
-          timestamp: '1:45 PM',
-          severity: 'info',
-        },
-        {
-          id: 'act-init-3',
-          type: 'stock_updated',
-          title: 'Stock Restocked',
-          description: 'Restocked Arabica Coffee Beans (+5.0 kg)',
-          actorName: 'Seth Sawariya Manager',
-          actorRole: 'manager',
-          timestamp: '11:30 AM',
-          severity: 'info',
-        },
-      ],
+      customerReviews: [],
+      rewardPoints: 0,
+      activityLog: [],
       updatedAt: new Date().toISOString(),
-      nextOrderSeq: deriveMaxOrderSeq(orders),
+      nextOrderSeq: 0,
       idempotencyOrderIds: {},
+      recipes: clone(INITIAL_RECIPES),
+      stockDeductedOrderIds: [],
+      processedPaymentEvents: [],
     };
   }
 
@@ -658,9 +727,16 @@ export class CafeStore {
     }
 
     this.ordersById.clear();
+    this.ordersByGatewayClientOrderId.clear();
     for (const order of this.state.orders) {
       this.ordersById.set(order.id, order);
+      if (order.gatewayClientOrderId) {
+        this.ordersByGatewayClientOrderId.set(order.gatewayClientOrderId, order);
+      }
     }
+
+    this.stockDeductedOrderIds = new Set(this.state.stockDeductedOrderIds || []);
+    this.processedPaymentEvents = new Set(this.state.processedPaymentEvents || []);
 
     this.tablesById.clear();
     for (const table of this.state.tables) {
@@ -696,9 +772,12 @@ export class CafeStore {
 
   private mergePersistedState(parsed: Partial<PersistedEnvelope>): PersistedEnvelope {
     const base = this.createSeedState();
-    const orders = (Array.isArray(parsed.orders) ? parsed.orders : base.orders).map(
-      stripLegacyGatewayFields
-    );
+    const orders = (Array.isArray(parsed.orders) ? parsed.orders : base.orders).map((order) => {
+      const migratedOrder = stripLegacyGatewayFields(order);
+      return migratedOrder.rating && migratedOrder.loyaltyPointsAwarded === undefined
+        ? { ...migratedOrder, loyaltyPointsAwarded: 25 }
+        : migratedOrder;
+    });
     const {
       youpiPayments: _legacyPayments,
       youpiWebhookDeliveries: _legacyDeliveries,
@@ -709,11 +788,40 @@ export class CafeStore {
       youpiWebhookDeliveries?: unknown;
       youpiUtrClaims?: unknown;
     };
+    const persistedSettings = persisted.cafeSettings as
+      | (Partial<CafeSettings> & { managerPinRequired?: boolean })
+      | undefined;
+    const { managerPinRequired: _legacyManagerPinRequired, ...currentSettings } =
+      persistedSettings ?? {};
+    const staffRoster = (Array.isArray(parsed.staffRoster)
+      ? parsed.staffRoster
+      : base.staffRoster
+    ).map((member) => {
+      const isAdmin = /admin|owner|manager|cashier/i.test(member.role);
+      const role: StaffMember['role'] = isAdmin ? 'Admin' : 'Kitchen';
+      return {
+        ...member,
+        role,
+        roleIcon: role === 'Admin' ? 'shield_person' : 'skillet',
+      };
+    });
     return {
       ...base,
       ...persisted,
+      cafeSettings: {
+        ...base.cafeSettings,
+        ...currentSettings,
+        adminPinRequired:
+          persistedSettings?.adminPinRequired ??
+          persistedSettings?.managerPinRequired ??
+          base.cafeSettings.adminPinRequired,
+      },
       orders,
+      staffRoster,
       menuItems: base.menuItems,
+      customerReviews: Array.isArray(parsed.customerReviews)
+        ? parsed.customerReviews.slice(0, 500)
+        : base.customerReviews,
       activityLog: Array.isArray(parsed.activityLog) ? parsed.activityLog : base.activityLog,
       idempotencyOrderIds: parsed.idempotencyOrderIds ?? {},
       nextOrderSeq:
@@ -818,7 +926,7 @@ export class CafeStore {
           );
           const cleanupError = cleanupResults.find((result) => result.status === 'rejected');
           if (cleanupError?.status === 'rejected') {
-            console.error('[CafeStore] Old MongoDB snapshot cleanup failed:', cleanupError.reason);
+            console.error('[CafeStore] Old MongoDB snapshot cleanup failed.');
           }
         } else if (persistPath) {
           await fs.promises.mkdir(path.dirname(persistPath), { recursive: true });
@@ -830,7 +938,10 @@ export class CafeStore {
       } catch (err) {
         this.lastPersistError = err;
         this.writeDirty = true;
-        console.error('[CafeStore] Async persistence write failed:', err);
+        console.error(
+          '[CafeStore] Async persistence write failed:',
+          err instanceof Error ? err.name : 'unknown error'
+        );
       }
     })();
     this.writeInFlight = write;
@@ -883,12 +994,11 @@ export class CafeStore {
     const customerSession = actor.customerSession;
 
     if (staffSession) {
-      if (staffSession.role === 'barista' || (staffSession.role as string) === 'kitchen') {
+      if (staffSession.role === 'kitchen') {
         return clone({
           ...publicState,
           orders: publicState.orders.map((order) => ({
             ...order,
-            paymentStatus: undefined,
             paymentRef: undefined,
             preferredUpiApp: undefined,
             paymentChannelLabel: undefined,
@@ -922,8 +1032,8 @@ export class CafeStore {
         });
       }
 
-      const canSeeCustomers = hasStaffRole(staffSession, ['owner', 'manager', 'cashier']);
-      const canSeeStaffPhones = hasStaffRole(staffSession, ['owner', 'manager']);
+      const canSeeCustomers = hasStaffRole(staffSession, ['admin']);
+      const canSeeStaffPhones = hasStaffRole(staffSession, ['admin']);
       return clone({
         ...publicState,
         customers: canSeeCustomers ? publicState.customers : [],
@@ -936,7 +1046,12 @@ export class CafeStore {
     // Customer / guest view: strictly scope PII & foreign order data
     const allowedOrderIds = new Set(customerSession?.orderIds ?? []);
     const scopedOrders = publicState.orders.filter((o) => allowedOrderIds.has(o.id));
-    const publicMenuItems = publicState.menuItems.map((item) => ({ ...item, unitsSold: 0 }));
+    const publicMenuItems = publicState.menuItems
+      .filter((item) => !item.id.startsWith('test-') && !item.name.toLowerCase().includes('test'))
+      .map((item) => ({ ...item, unitsSold: 0 }));
+    const customerSegment = publicState.customers.find(
+      (customer) => customer.id === customerSession?.crmCustomerId
+    )?.segment;
     const sanitizedTables = publicState.tables.map((t) => ({
       ...t,
       activeOrderId: undefined,
@@ -953,7 +1068,13 @@ export class CafeStore {
       customers: [],
       loyaltyRules: [],
       campaigns: publicState.campaigns
-        .filter((campaign) => campaign.status === 'active')
+        .filter(
+          (campaign) =>
+            campaign.status === 'active' &&
+            (!campaign.targetSegment ||
+              campaign.targetSegment === 'all' ||
+              campaign.targetSegment === customerSegment)
+        )
         .map((campaign) => ({ ...campaign, usedLabel: '', revenueLabel: undefined })),
       staffRoster: [],
       pointLedger: publicState.pointLedger.filter(
@@ -963,22 +1084,29 @@ export class CafeStore {
       ),
       cafeSettings: {
         ...publicState.cafeSettings,
-        address: '',
-        phone: '',
-        email: '',
-        operatingHours: '',
+        address: publicState.cafeSettings.address || '',
+        phone: publicState.cafeSettings.phone || '',
+        email: publicState.cafeSettings.email || '',
+        operatingHours: publicState.cafeSettings.operatingHours || '10:00 AM – 11:00 PM',
         gstin: '',
         serviceChargePct: 0,
         qrOrderingEnabled: true,
-        managerPinRequired: false,
+        adminPinRequired: false,
         kotPrinterConnected: false,
         posPrinterConnected: false,
         upiVpa: '',
         upiPayeeName: publicState.cafeSettings.cafeName,
       },
       rewardPoints: scopedOrders.reduce(
-        (total, order) => total + (order.loyaltyPointsAwarded ?? 0),
+        (total, order) =>
+          total + (order.loyaltyPointsAwarded ?? 0) - (order.pointsRedeemed ?? 0),
         0
+      ),
+      customerHasMatchedProfile: Boolean(customerSegment),
+      firstOrderEligible: this.isFirstOrderEligible(
+        customerSession?.customerId,
+        customerSession?.crmCustomerId,
+        [...allowedOrderIds]
       ),
     });
   }
@@ -991,121 +1119,97 @@ export class CafeStore {
     screen: string,
     kitchenRoute = false
   ): CafeBootstrapState {
-    const fullState = this.getBootstrap(actor);
-    const routeState: CafeBootstrapState = {
-      ...fullState,
-      orders: [],
-      tables: [],
-      inventory: [],
-      customers: [],
-      loyaltyRules: [],
-      pointLedger: [],
-      campaigns: [],
-      staffRoster: [],
-      menuItems: [],
-    };
-
-    if (kitchenRoute) {
-      if (['kitchen-display-system', 'pos-orders', 'order-management', 'inventory-stock'].includes(screen)) {
-        routeState.orders = fullState.orders;
-        routeState.inventory = fullState.inventory;
-      }
-      if (['kitchen-tables', 'table-layout', 'order-management'].includes(screen)) {
-        routeState.tables = fullState.tables;
-        if (screen !== 'order-management') routeState.orders = fullState.orders;
-      }
-      if (screen === 'pos-terminal') {
-        routeState.orders = fullState.orders;
-        routeState.tables = fullState.tables;
-        routeState.menuItems = fullState.menuItems;
-        routeState.campaigns = fullState.campaigns;
-      }
-      return routeState;
+    // 1. Staff / Admin: full centralized operational state across all admin & POS routes
+    if (actor.staffSession) {
+      return this.getBootstrap(actor);
     }
 
-    switch (screen) {
-      case 'splash':
-        break;
-      case 'home':
-      case 'menu':
-      case 'cart':
-        routeState.tables = fullState.tables;
-        routeState.menuItems = fullState.menuItems;
-        routeState.campaigns = fullState.campaigns;
-        break;
-      case 'tracking':
-        routeState.orders = fullState.orders;
-        break;
-      case 'rewards':
-        routeState.orders = fullState.orders;
-        routeState.campaigns = fullState.campaigns;
-        break;
-      case 'profile':
-      case 'staff-home':
-        break;
-      case 'pos-terminal':
-        routeState.orders = fullState.orders;
-        routeState.tables = fullState.tables;
-        routeState.menuItems = fullState.menuItems;
-        routeState.campaigns = fullState.campaigns;
-        routeState.customers = fullState.customers;
-        break;
-      case 'pos-orders':
-      case 'kitchen-display-system':
-        routeState.orders = fullState.orders;
-        routeState.inventory = fullState.inventory;
-        break;
-      case 'admin-dashboard':
-        routeState.orders = fullState.orders;
-        routeState.tables = fullState.tables;
-        routeState.inventory = fullState.inventory;
-        routeState.activityLog = fullState.activityLog;
-        routeState.customers = fullState.customers;
-        break;
-      case 'order-management':
-        routeState.orders = fullState.orders;
-        break;
-      case 'reports-analytics':
-        routeState.orders = fullState.orders;
-        break;
-      case 'table-layout':
-      case 'kitchen-tables':
-        routeState.orders = fullState.orders;
-        routeState.tables = fullState.tables;
-        break;
-      case 'inventory-stock':
-        routeState.inventory = fullState.inventory;
-        break;
-      case 'crm-customers':
-        routeState.customers = fullState.customers;
-        routeState.orders = fullState.orders;
-        break;
-      case 'loyalty-rewards':
-        routeState.customers = fullState.customers;
-        routeState.loyaltyRules = fullState.loyaltyRules;
-        routeState.pointLedger = fullState.pointLedger;
-        break;
-      case 'offers-campaigns':
-        routeState.campaigns = fullState.campaigns;
-        break;
-      case 'staff-roles':
-        routeState.staffRoster = fullState.staffRoster;
-        break;
-      case 'settings-cafe-profile':
-        break;
-      default:
-        return fullState;
+    // 2. Kitchen Terminal: full kitchen operational state (all tickets, tables, stock, menu availability)
+    if (
+      kitchenRoute ||
+      ['kitchen-display-system', 'pos-orders', 'kitchen-tables'].includes(screen)
+    ) {
+      // In production, unauthenticated requests cannot access internal kitchen operational data
+      if (process.env.NODE_ENV === 'production' && !actor.staffSession) {
+        return this.getBootstrap(actor);
+      }
+      return this.getBootstrap({
+        staffSession: {
+          role: 'kitchen',
+          staffName: 'Kitchen Terminal',
+          issuedAt: Date.now(),
+          exp: Date.now() + 86400000,
+        },
+        customerSession: null,
+      });
     }
 
-    return routeState;
+    // 3. Guest Customer: scoped public state (menu, tables, campaigns, customer's own orders)
+    const customerState = this.getBootstrap(actor);
+    if (['splash', 'profile'].includes(screen)) {
+      return {
+        ...customerState,
+        orders: [],
+        customers: [],
+        menuItems: [],
+      };
+    }
+
+    return customerState;
   }
 
   public getOrders(): CafeOrder[] {
     return clone(this.state.orders);
   }
 
+  private getCustomerRewardPoints(customerId?: string): number {
+    if (!customerId) return 0;
+    return Math.max(
+      0,
+      this.state.orders
+        .filter((order) => order.customerId === customerId)
+        .reduce(
+          (total, order) =>
+            total + (order.loyaltyPointsAwarded ?? 0) - (order.pointsRedeemed ?? 0),
+          0
+        )
+    );
+  }
+
+  private isFirstOrderEligible(
+    customerId?: string,
+    crmCustomerId?: string,
+    customerOrderIds: readonly string[] = []
+  ): boolean {
+    if (!customerId || customerId.startsWith('guest_')) return false;
+
+    const hasPreviousOrder = this.state.orders.some(
+      (order) =>
+        order.customerId === customerId ||
+        (crmCustomerId && order.customerId === crmCustomerId) ||
+        customerOrderIds.includes(order.id)
+    );
+    return !hasPreviousOrder;
+  }
+
   public getInventory(): InventoryIngredient[] {
     return clone(this.state.inventory);
+  }
+
+  public getStockMovements(): StockMovement[] {
+    return clone(this.state.stockMovements || []);
+  }
+
+  public getInventoryBatches(): InventoryBatch[] {
+    return clone(this.state.inventoryBatches || []);
+  }
+
+  public getPurchaseOrders(): PurchaseOrder[] {
+    return clone(this.state.purchaseOrders || []);
+  }
+
+  public getStockCounts(): StockCount[] {
+    return clone(this.state.stockCounts || []);
   }
 
   public getOrder(orderId: string): CafeOrder | null {
@@ -1113,11 +1217,29 @@ export class CafeStore {
     return order ? clone(order) : null;
   }
 
+  public getOrderByGatewayClientOrderId(clientOrderId: string): CafeOrder | null {
+    const order = this.ordersByGatewayClientOrderId.get(clientOrderId);
+    return order ? clone(order) : null;
+  }
+
+  public getOrCreateGatewayClientOrderId(orderId: string): string | null {
+    const order = this.ordersById.get(orderId);
+    if (!order) return null;
+    if (order.gatewayClientOrderId) return order.gatewayClientOrderId;
+
+    const clientOrderId = `CAFEOS-${crypto.randomUUID()}`;
+    order.gatewayClientOrderId = clientOrderId;
+    this.ordersByGatewayClientOrderId.set(clientOrderId, order);
+    this.touch();
+    return clientOrderId;
+  }
+
   public attachGatewayPayment(
     orderId: string,
     gatewayOrderId: string,
     status: CafeOrder['paymentStatus'],
-    utr?: string
+    utr?: string,
+    customerPhone?: string
   ): CafeOrder | null {
     const order = this.ordersById.get(orderId);
     if (!order) return null;
@@ -1128,6 +1250,9 @@ export class CafeStore {
     order.paymentMode = 'upi';
     order.paymentStatus = status ?? 'pending';
     order.paymentChannelLabel = 'UPI Gateway';
+    if (customerPhone?.trim()) {
+      order.customerPhone = customerPhone.trim();
+    }
     if (status === 'paid') {
       order.paymentRef = utr ? `UPI UTR ${utr}` : 'Payment confirmed by UPI Gateway';
     } else if (status === 'expired' || status === 'failed' || status === 'manual_review') {
@@ -1137,6 +1262,24 @@ export class CafeStore {
           : `UPI payment ${status}`;
     }
 
+    this.touch();
+    return clone(order);
+  }
+
+  public markOrderPaidEmailSent(orderId: string, email?: string): CafeOrder | null {
+    const order = this.ordersById.get(orderId);
+    if (!order) return null;
+    order.paidEmailSentAt = new Date().toISOString();
+    if (email && !order.customerEmail) {
+      order.customerEmail = email;
+    }
+    const stateOrder = this.state.orders.find((o) => o.id === orderId);
+    if (stateOrder) {
+      stateOrder.paidEmailSentAt = order.paidEmailSentAt;
+      if (email && !stateOrder.customerEmail) {
+        stateOrder.customerEmail = email;
+      }
+    }
     this.touch();
     return clone(order);
   }
@@ -1165,7 +1308,25 @@ export class CafeStore {
     return clone(this.state.activityLog || []);
   }
 
-  public recordCustomerFeedback(feedback: CustomerFeedbackInput): void {
+  public recordCustomerFeedback(feedback: CustomerFeedbackInput): CustomerReview {
+    const review: CustomerReview = {
+      id: `review-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      customerName: feedback.customerName,
+      rating: feedback.rating,
+      comment: feedback.comment,
+      tags: feedback.tags,
+      dishName: feedback.dishName,
+      diningMode: feedback.diningMode,
+      isVerified: false,
+      dateLabel: new Date().toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      }),
+    };
+    this.state.customerReviews.unshift(review);
+    this.state.customerReviews = this.state.customerReviews.slice(0, 500);
+
     const details = [
       feedback.dishName ? `Item: ${feedback.dishName}` : '',
       feedback.diningMode ? `Service: ${feedback.diningMode}` : '',
@@ -1181,19 +1342,26 @@ export class CafeStore {
       actorRole: 'Customer',
       severity: feedback.rating <= 2 ? 'warning' : 'info',
     });
+    return clone(review);
   }
 
-  public markOrderPaidAtCounter(orderId: string, staffName?: string): CafeOrder | null {
+  public markOrderPaidAtCounter(
+    orderId: string,
+    staffName?: string,
+    paymentMode: PaymentMode = 'cash'
+  ): CafeOrder | null {
     const order = this.ordersById.get(orderId);
     if (!order) return null;
     order.paymentStatus = 'paid';
-    order.paymentRef = `Counter Settlement · Received by ${staffName || 'Staff'}`;
+    order.paymentMode = paymentMode;
+    const modeLabel = paymentMode === 'cash' ? 'Cash' : paymentMode === 'card' ? 'Card Swipe' : 'UPI';
+    order.paymentRef = `Counter Settlement (${modeLabel}) · Received by ${staffName || 'Staff'}`;
     this.recordActivity({
       type: 'order_paid',
       title: `Order #${order.id} Paid`,
-      description: `KOT ${order.kotNumber} settled at counter (₹${order.total})`,
+      description: `Order ${order.kotNumber} settled at counter via ${modeLabel} (₹${order.total})`,
       actorName: staffName || 'Staff',
-      actorRole: 'cashier',
+      actorRole: 'admin',
       severity: 'success',
       orderId: order.id,
       amount: order.total,
@@ -1221,14 +1389,68 @@ export class CafeStore {
       hour: '2-digit',
       minute: '2-digit',
     });
-    order.refundedBy = staffName || 'Manager';
+    order.refundedBy = staffName || 'Admin';
+
+    // Restock inventory burned for this order if it was deducted
+    if (this.stockDeductedOrderIds.has(order.id)) {
+      this.stockDeductedOrderIds.delete(order.id);
+      this.state.stockDeductedOrderIds = Array.from(this.stockDeductedOrderIds);
+      const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
+      order.items.forEach((item) => {
+        const burn = recipeCatalog[item.menuItemId];
+        if (burn) {
+          burn.forEach(({ ingredientId, amount }) => {
+            const ingIndex = this.state.inventory.findIndex((i) => i.id === ingredientId);
+            if (ingIndex !== -1) {
+              const ing = this.state.inventory[ingIndex];
+              const newQty = Math.round((ing.quantity + amount * item.quantity) * 100) / 100;
+              const status = newQty < ing.minThreshold ? 'Critical' : 'Good';
+              this.state.inventory[ingIndex] = {
+                ...ing,
+                quantity: newQty,
+                status: computeInventoryStatus(newQty, ing.minThreshold),
+                fillPct: Math.min(100, Math.round((newQty / ing.maxCapacity) * 100)),
+              };
+              this.recordStockMovement({
+                ingredientId: ing.id,
+                ingredientName: ing.name,
+                type: 'refund',
+                quantityDelta: amount * item.quantity,
+                beforeQuantity: ing.quantity,
+                afterQuantity: newQty,
+                unit: ing.unit,
+                unitCost: ing.unitCost,
+                referenceId: order.id,
+                note: `Stock restored for refunded order ${order.id}`,
+                actorName: staffName || 'Admin',
+              });
+            }
+          });
+        }
+      });
+    }
+
+    // Free table if this order was the active order
+    if (order.serviceMode === 'dine-in' && order.tableNumber) {
+      const table = this.tablesById.get(order.tableNumber);
+      if (table && table.activeOrderId === order.id) {
+        const updatedTable: CafeTable = {
+          ...table,
+          status: 'available',
+          activeOrderId: undefined,
+          elapsedLabel: '0m',
+        };
+        this.tablesById.set(updatedTable.id, updatedTable);
+        this.state.tables = this.state.tables.map((t) => (t.id === updatedTable.id ? updatedTable : t));
+      }
+    }
 
     this.recordActivity({
       type: 'order_refunded',
       title: `Order #${order.id} Refunded`,
       description: `₹${order.total} refunded · Reason: ${order.refundReason}`,
       actorName: staffName || 'Staff',
-      actorRole: staffRole || 'manager',
+      actorRole: staffRole || 'admin',
       severity: 'warning',
       orderId: order.id,
       amount: order.total,
@@ -1238,12 +1460,189 @@ export class CafeStore {
     return clone(order);
   }
 
-  public createOrder(input: z.infer<typeof createOrderSchema>): {
+  public cancelOrderItemAndRefund(
+    orderId: string,
+    menuItemId: string,
+    quantityToCancel?: number,
+    reason?: string,
+    staffName?: string,
+    staffRole?: string
+  ): { order: CafeOrder; refundAmount: number; cancelledItem: CartItem } | null {
+    const order = this.ordersById.get(orderId);
+    if (!order) return null;
+    if (order.paymentStatus === 'refunded' || order.paymentStatus === 'cancelled') {
+      throw new Error(`Order #${orderId} has already been ${order.paymentStatus}.`);
+    }
+
+    const itemIndex = order.items.findIndex(
+      (i) => i.menuItemId === menuItemId && i.status !== 'cancelled'
+    );
+    if (itemIndex === -1) {
+      throw new Error(`Item ${menuItemId} is not active in Order #${orderId}.`);
+    }
+
+    const item = order.items[itemIndex];
+    const qtyToCancel = Math.min(item.quantity, Math.max(1, quantityToCancel || item.quantity));
+    const isPaid = order.paymentStatus === 'paid';
+
+    // Calculate item refund amount
+    const itemRefundAmount = Math.round(item.price * qtyToCancel * 100) / 100;
+    const effectiveRefund = Math.min(order.total, itemRefundAmount);
+
+    const nowTime = new Date().toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const effectiveReason = reason?.trim() || 'Item cancelled in kitchen';
+    const effectiveStaffName = staffName || 'Kitchen Staff';
+
+    // Restore stock if inventory was already deducted for this order
+    if (this.stockDeductedOrderIds.has(order.id)) {
+      const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
+      const burn = recipeCatalog[item.menuItemId];
+      if (burn) {
+        burn.forEach(({ ingredientId, amount }) => {
+          const ingIndex = this.state.inventory.findIndex((i) => i.id === ingredientId);
+          if (ingIndex !== -1) {
+            const ing = this.state.inventory[ingIndex];
+            const restoreQty = Math.round(amount * qtyToCancel * 100) / 100;
+            const newQty = Math.round((ing.quantity + restoreQty) * 100) / 100;
+            this.state.inventory[ingIndex] = {
+              ...ing,
+              quantity: newQty,
+              status: computeInventoryStatus(newQty, ing.minThreshold),
+              fillPct: Math.min(100, Math.round((newQty / ing.maxCapacity) * 100)),
+            };
+            this.recordStockMovement({
+              ingredientId: ing.id,
+              ingredientName: ing.name,
+              type: 'refund',
+              quantityDelta: restoreQty,
+              beforeQuantity: ing.quantity,
+              afterQuantity: newQty,
+              unit: ing.unit,
+              unitCost: ing.unitCost,
+              referenceId: order.id,
+              note: `Stock restored for cancelled ${item.name} (${qtyToCancel}x) from Order #${order.id}`,
+              actorName: effectiveStaffName,
+            });
+          }
+        });
+      }
+    }
+
+    let returnedCancelledItem: CartItem;
+
+    if (qtyToCancel === item.quantity) {
+      item.status = 'cancelled';
+      item.cancelledQuantity = qtyToCancel;
+      item.cancelledReason = effectiveReason;
+      item.cancelledAt = nowTime;
+      item.cancelledBy = effectiveStaffName;
+      item.refundAmount = effectiveRefund;
+      item.checked = true;
+      returnedCancelledItem = { ...item };
+    } else {
+      item.quantity -= qtyToCancel;
+      returnedCancelledItem = {
+        ...item,
+        quantity: qtyToCancel,
+        status: 'cancelled',
+        cancelledQuantity: qtyToCancel,
+        cancelledReason: effectiveReason,
+        cancelledAt: nowTime,
+        cancelledBy: effectiveStaffName,
+        refundAmount: effectiveRefund,
+        checked: true,
+      };
+      order.items.splice(itemIndex + 1, 0, returnedCancelledItem);
+    }
+
+    if (isPaid) {
+      order.refundAmount = Math.round(((order.refundAmount || 0) + effectiveRefund) * 100) / 100;
+      order.refundReason = `Item refund: ${item.name} (${qtyToCancel}x) - ${effectiveReason}`;
+      order.refundedAt = nowTime;
+      order.refundedBy = effectiveStaffName;
+    } else {
+      const remainingActiveItems = order.items.filter((i) => i.status !== 'cancelled');
+      const newSubtotal = remainingActiveItems.reduce((acc, i) => acc + i.price * i.quantity, 0);
+      const newTax = Math.round(newSubtotal * 0.05 * 100) / 100;
+      order.subtotal = newSubtotal;
+      order.tax = newTax;
+      order.total = Math.max(0, newSubtotal + newTax - (order.discount || 0));
+    }
+
+    const activeItems = order.items.filter((i) => i.status !== 'cancelled');
+    if (activeItems.length === 0) {
+      order.paymentStatus = isPaid ? 'refunded' : 'cancelled';
+      order.status = 'served';
+      if (order.serviceMode === 'dine-in' && order.tableNumber) {
+        const table = this.tablesById.get(order.tableNumber);
+        if (table && table.activeOrderId === order.id) {
+          const updatedTable: CafeTable = {
+            ...table,
+            status: 'available',
+            activeOrderId: undefined,
+            elapsedLabel: '0m',
+          };
+          this.tablesById.set(updatedTable.id, updatedTable);
+          this.state.tables = this.state.tables.map((t) => (t.id === updatedTable.id ? updatedTable : t));
+        }
+      }
+    }
+
+    this.recordActivity({
+      type: 'order_refunded',
+      title: `Item Cancelled & Refunded: ${item.name}`,
+      description: `₹${effectiveRefund} ${isPaid ? 'refunded' : 'deducted'} for ${qtyToCancel}× ${item.name} (Order #${order.kotNumber || order.id}) · Reason: ${effectiveReason}`,
+      actorName: effectiveStaffName,
+      actorRole: staffRole || 'kitchen',
+      severity: 'warning',
+      orderId: order.id,
+      amount: effectiveRefund,
+    });
+
+    this.touch();
+    return { order: clone(order), refundAmount: effectiveRefund, cancelledItem: returnedCancelledItem };
+  }
+
+  public hasProcessedPaymentEvent(eventId: string): boolean {
+    return this.processedPaymentEvents.has(eventId);
+  }
+
+  public markPaymentProcessed(eventId: string): void {
+    this.processedPaymentEvents.add(eventId);
+    this.state.processedPaymentEvents = Array.from(this.processedPaymentEvents).slice(-1000);
+    this.touch();
+  }
+
+  public getRecipes(): Record<string, Array<{ ingredientId: string; amount: number }>> {
+    return clone(this.state.recipes || INITIAL_RECIPES);
+  }
+
+  public setRecipe(
+    menuItemId: string,
+    recipe: Array<{ ingredientId: string; amount: number }>
+  ): void {
+    if (!this.state.recipes) {
+      this.state.recipes = clone(INITIAL_RECIPES);
+    }
+    this.state.recipes[menuItemId] = clone(recipe);
+    this.touch();
+  }
+
+  public async createOrder(
+    input: z.infer<typeof createOrderSchema>,
+    customerSegment?: CustomerSegment,
+    crmCustomerId?: string,
+    customerOrderIds: readonly string[] = [],
+    allowFirstOrderOffer = true
+  ): Promise<{
     order: CafeOrder;
     duplicate: boolean;
     rewardPoints: number;
     tableUpdated?: CafeTable;
-  } {
+  }> {
     if (input.idempotencyKey && this.state.idempotencyOrderIds[input.idempotencyKey]) {
       const existingId = this.state.idempotencyOrderIds[input.idempotencyKey];
       const existing = this.ordersById.get(existingId);
@@ -1256,7 +1655,7 @@ export class CafeStore {
       }
     }
 
-    // Enforce server-authoritative catalog pricing, station, name & image
+    // Enforce server-authoritative catalog pricing, station, name & image, with size multiplier
     const canonicalItems = input.items.map((item) => {
       const catalogItem = this.menuById.get(item.menuItemId);
       if (!catalogItem) {
@@ -1279,23 +1678,76 @@ export class CafeStore {
           httpStatus: 400,
         });
       }
+      const selectedVariant = item.size
+        ? getItemVariants(catalogItem).find(
+            (variant) => variant.size.trim().toLowerCase() === item.size?.trim().toLowerCase()
+          )
+        : undefined;
+      const effectivePrice = selectedVariant?.price ?? catalogItem.price;
       return {
         ...item,
         name: catalogItem.name,
-        price: catalogItem.price,
+        price: effectivePrice,
+        size: item.size || 'Regular',
         station: catalogItem.station,
         imageUrl: catalogItem.imageUrl,
         checked: false,
       };
     });
 
+    // Verify sufficient recipe ingredients in inventory before creating order
+    const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
+    const requiredByIngredient: Record<string, number> = {};
+    for (const item of canonicalItems) {
+      const burn = recipeCatalog[item.menuItemId];
+      if (burn) {
+        for (const { ingredientId, amount } of burn) {
+          requiredByIngredient[ingredientId] =
+            (requiredByIngredient[ingredientId] || 0) + amount * item.quantity;
+        }
+      }
+    }
+    for (const [ingredientId, requiredQty] of Object.entries(requiredByIngredient)) {
+      const ing = this.state.inventory.find((i) => i.id === ingredientId);
+      if (ing && ing.quantity < requiredQty) {
+        throw new InvalidDomainTransitionError({
+          domain: 'order_status',
+          fromState: 'cart',
+          toState: 'placed',
+          action: 'create_order',
+          message: `Insufficient inventory for ingredient "${ing.name}" to prepare this order.`,
+          httpStatus: 400,
+        });
+      }
+    }
+
+    const firstOrderEligible =
+      !input.isPosTerminal &&
+      allowFirstOrderOffer &&
+      this.isFirstOrderEligible(input.customerId, crmCustomerId, customerOrderIds);
     const totals = calculateCartTotals(
       canonicalItems,
       input.couponCode ?? '',
       input.serviceMode,
       Boolean(input.isPosTerminal),
-      this.state.campaigns
+      this.state.campaigns,
+      input.redeemPoints || 0,
+      firstOrderEligible
     );
+
+    const availablePoints = input.isPosTerminal
+      ? this.state.rewardPoints || 0
+      : this.getCustomerRewardPoints(input.customerId);
+    if ((input.redeemPoints || 0) > availablePoints) {
+      throw new InvalidDomainTransitionError({
+        domain: 'order_status',
+        fromState: 'insufficient_reward_points',
+        toState: 'order_placed',
+        action: 'redeem_points',
+        message: 'You do not have enough Beans for this redemption.',
+        httpStatus: 400,
+      });
+    }
 
     if (input.couponCode?.trim() && totals.couponError) {
       throw new InvalidDomainTransitionError({
@@ -1308,6 +1760,34 @@ export class CafeStore {
       });
     }
 
+    const selectedCampaign = this.state.campaigns.find(
+      (campaign) => campaign.code.toUpperCase() === input.couponCode?.trim().toUpperCase()
+    );
+    if (
+      selectedCampaign?.targetSegment &&
+      selectedCampaign.targetSegment !== 'all' &&
+      selectedCampaign.targetSegment !== customerSegment
+    ) {
+      throw new InvalidDomainTransitionError({
+        domain: 'campaign',
+        fromState: 'not_eligible',
+        toState: 'applied',
+        action: 'apply_coupon',
+        message: 'This offer is not available for your customer account.',
+        httpStatus: 400,
+      });
+    }
+
+    if (totals.pointsRedeemed && totals.pointsRedeemed > 0) {
+      this.state.rewardPoints = Math.max(0, (this.state.rewardPoints || 0) - totals.pointsRedeemed);
+      if (input.customerId) {
+        const cust = this.state.customers.find((c) => c.id === input.customerId);
+        if (cust && cust.loyaltyPoints !== undefined) {
+          cust.loyaltyPoints = Math.max(0, cust.loyaltyPoints - totals.pointsRedeemed);
+        }
+      }
+    }
+
     this.state.nextOrderSeq += 1;
     const nextNum = this.state.nextOrderSeq;
     const paymentMode = input.paymentMode || (input.isPosTerminal ? 'cash' : 'upi');
@@ -1318,7 +1798,12 @@ export class CafeStore {
       kotNumber: `#${nextNum}`,
       isPosTerminal: Boolean(input.isPosTerminal),
       serviceMode: input.serviceMode,
-      tableNumber: input.serviceMode === 'dine-in' ? input.tableNumber || 'T3' : undefined,
+      tableNumber: input.serviceMode === 'dine-in' ? input.tableNumber : undefined,
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      customerPhone: input.customerPhone,
+      deliveryAddress:
+        input.serviceMode === 'delivery' ? input.deliveryAddress : undefined,
       deliveryPartner:
         input.serviceMode === 'delivery'
           ? input.deliveryPartner || 'Direct Delivery'
@@ -1326,6 +1811,8 @@ export class CafeStore {
       items: canonicalItems,
       subtotal: totals.subtotal,
       discount: totals.discount,
+      pointsDiscount: totals.pointsDiscount,
+      pointsRedeemed: totals.pointsRedeemed,
       tax: totals.tax,
       total: totals.total,
       paymentMode,
@@ -1334,6 +1821,7 @@ export class CafeStore {
       customerId: input.customerId,
       status: 'placed',
       createdAtLabel: 'Just now',
+      createdAt: new Date().toISOString(),
       elapsedMinutes: 0,
       isUrgent: true,
       serverName: 'Neha V.',
@@ -1344,6 +1832,12 @@ export class CafeStore {
     this.ordersById.set(newOrder.id, newOrder);
 
     if (input.idempotencyKey) {
+      const existingKeys = Object.keys(this.state.idempotencyOrderIds);
+      if (existingKeys.length >= 1000) {
+        for (let i = 0; i < 200; i++) {
+          delete this.state.idempotencyOrderIds[existingKeys[i]];
+        }
+      }
       this.state.idempotencyOrderIds[input.idempotencyKey] = newOrder.id;
     }
 
@@ -1364,22 +1858,26 @@ export class CafeStore {
       }
     }
 
-    // Deduct ingredient stock for every accepted order channel (QR and POS).
-    // The order ID guard makes repeated deductions for the same order a no-op.
-    this.deductStockForOrder(newOrder);
+    // Deduct ingredient stock according to database-backed recipe burn
+    if (input.isPosTerminal || newOrder.status === 'accepted') {
+      this.deductStockForOrder(newOrder);
+    }
 
     this.recordActivity({
       type: 'order_created',
       title: `Order #${newOrder.id} Placed`,
       description: `${newOrder.serviceMode.toUpperCase()} · KOT ${newOrder.kotNumber} · ₹${newOrder.total} (${newOrder.items.length} items)`,
-      actorName: input.isPosTerminal ? 'POS Cashier' : 'Customer',
-      actorRole: input.isPosTerminal ? 'cashier' : 'customer',
+      actorName: input.isPosTerminal ? 'Admin' : 'Customer',
+      actorRole: input.isPosTerminal ? 'admin' : 'customer',
       severity: 'info',
       orderId: newOrder.id,
       amount: newOrder.total,
     });
 
     this.touch();
+    // Await durable write so acknowledged order is never lost on crash
+    await this.flushToPersistence();
+
     return {
       order: clone(newOrder),
       duplicate: false,
@@ -1395,70 +1893,37 @@ export class CafeStore {
     this.stockDeductedOrderIds.add(order.id);
 
     const lowStockAlerts: InventoryIngredient[] = [];
-    const RECIPE_BURN: Record<string, Array<{ ingredientId: string; amount: number }>> = {
-      cappuccino: [
-        { ingredientId: 'ing-beans', amount: 0.02 },
-        { ingredientId: 'ing-milk', amount: 0.2 },
-      ],
-      'protein-shake': [{ ingredientId: 'ing-milk', amount: 0.25 }],
-      'veg-sandwich': [{ ingredientId: 'ing-bread', amount: 2 }],
-      'paneer-wrap': [{ ingredientId: 'ing-paneer', amount: 0.1 }],
-      'cold-coffee': [
-        { ingredientId: 'ing-beans', amount: 0.02 },
-        { ingredientId: 'ing-milk', amount: 0.2 },
-      ],
-      'test-chai-1': [{ ingredientId: 'ing-milk', amount: 0.1 }],
-      'espresso-single': [{ ingredientId: 'ing-beans', amount: 0.018 }],
-      'espresso-double': [{ ingredientId: 'ing-beans', amount: 0.036 }],
-      'flat-white': [
-        { ingredientId: 'ing-beans', amount: 0.02 },
-        { ingredientId: 'ing-milk', amount: 0.18 },
-      ],
-      'iced-latte': [
-        { ingredientId: 'ing-beans', amount: 0.02 },
-        { ingredientId: 'ing-milk', amount: 0.22 },
-      ],
-      'margherita-pizza': [
-        { ingredientId: 'ing-paneer', amount: 0.1 },
-        { ingredientId: 'ing-bread', amount: 1 },
-      ],
-      'classic-cheeseburger': [
-        { ingredientId: 'ing-bread', amount: 2 },
-        { ingredientId: 'ing-paneer', amount: 0.05 },
-      ],
-      'creamy-alfredo-pasta': [
-        { ingredientId: 'ing-milk', amount: 0.15 },
-        { ingredientId: 'ing-paneer', amount: 0.05 },
-      ],
-      'mediterranean-salad': [{ ingredientId: 'ing-paneer', amount: 0.05 }],
-      'citrus-sunrise-drink': [{ ingredientId: 'ing-syrup', amount: 0.03 }],
-      'berry-cheesecake': [
-        { ingredientId: 'ing-milk', amount: 0.15 },
-        { ingredientId: 'ing-syrup', amount: 0.02 },
-      ],
-      'french-fries': [{ ingredientId: 'ing-fries', amount: 0.2 }],
-      mocha: [
-        { ingredientId: 'ing-beans', amount: 0.02 },
-        { ingredientId: 'ing-milk', amount: 0.2 },
-        { ingredientId: 'ing-syrup', amount: 0.02 },
-      ],
-    };
+    const recipeCatalog = this.state.recipes || INITIAL_RECIPES;
 
     order.items.forEach((item) => {
-      const burn = RECIPE_BURN[item.menuItemId];
+      const burn = recipeCatalog[item.menuItemId];
       if (burn) {
         burn.forEach(({ ingredientId, amount }) => {
           const ingIndex = this.state.inventory.findIndex((i) => i.id === ingredientId);
           if (ingIndex !== -1) {
             const ing = this.state.inventory[ingIndex];
-            const newQty = Math.max(0, Math.round((ing.quantity - amount * item.quantity) * 100) / 100);
+            const consumed = amount * item.quantity;
+            const newQty = Math.max(0, Math.round((ing.quantity - consumed) * 100) / 100);
             const status = newQty < ing.minThreshold ? 'Critical' : 'Good';
             this.state.inventory[ingIndex] = {
               ...ing,
               quantity: newQty,
-              status,
+              status: computeInventoryStatus(newQty, ing.minThreshold),
               fillPct: Math.min(100, Math.round((newQty / ing.maxCapacity) * 100)),
             };
+            this.recordStockMovement({
+              ingredientId: ing.id,
+              ingredientName: ing.name,
+              type: 'sale',
+              quantityDelta: -consumed,
+              beforeQuantity: ing.quantity,
+              afterQuantity: newQty,
+              unit: ing.unit,
+              unitCost: ing.unitCost,
+              referenceId: order.id,
+              note: `Recipe consumption for order ${order.id}`,
+              actorName: 'CafeOS POS',
+            });
 
             if (newQty < ing.minThreshold) {
               lowStockAlerts.push(this.state.inventory[ingIndex]);
@@ -1476,7 +1941,9 @@ export class CafeStore {
       }
     });
 
-    this.touch();
+    if (lowStockAlerts.length) {
+      this.touch();
+    }
     return lowStockAlerts;
   }
 
@@ -1484,7 +1951,7 @@ export class CafeStore {
     orderId: string,
     newStatus: OrderStatus,
     actorName = 'Staff',
-    actorRole = 'manager'
+    actorRole = 'admin'
   ): { order: CafeOrder; lowStockAlerts: InventoryIngredient[] } | null {
     const target = this.ordersById.get(orderId);
     if (!target) return null;
@@ -1552,7 +2019,7 @@ export class CafeStore {
     const target = this.ordersById.get(orderId);
     if (!target) return null;
     const nextStatus = transitionOrderStatus(target.status);
-    const result = this.updateOrderStatus(orderId, nextStatus, 'Kitchen Barista', 'barista');
+    const result = this.updateOrderStatus(orderId, nextStatus, 'Kitchen Staff', 'kitchen');
     return result ? result.order : null;
   }
 
@@ -1564,6 +2031,121 @@ export class CafeStore {
     );
     this.touch();
     return clone(target);
+  }
+
+  public addMenuItem(input: z.infer<typeof addMenuItemSchema>): MenuItem {
+    const id = `item-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const fallbackImage = input.category === 'Beverages'
+      ? 'https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&w=400&q=80'
+      : input.category === 'Pizza' || input.category === 'Burger' || input.category === 'Meals'
+      ? 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=400&q=80'
+      : 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=400&q=80';
+
+    const newItem: MenuItem = {
+      id,
+      name: input.name.trim(),
+      description: input.description?.trim() || '',
+      price: Math.round(input.price),
+      category: input.category,
+      rating: 5.0,
+      isVeg: input.isVeg,
+      isBestSeller: input.isBestSeller ?? false,
+      isAvailable: true,
+      station: input.station,
+      defaultNote: input.defaultNote || '',
+      imageUrl: input.imageUrl?.trim() || fallbackImage,
+      unitsSold: 0,
+    };
+
+    this.state.menuItems.unshift(newItem);
+    this.menuById.set(newItem.id, newItem);
+    if (input.recipe.length > 0) {
+      const validRecipe = input.recipe
+        .filter((line) => this.state.inventory.some((ingredient) => ingredient.id === line.ingredientId))
+        .map((line) => {
+          const ing = this.state.inventory.find((i) => i.id === line.ingredientId)!;
+          const normalizedAmount = convertRecipeAmountToInventoryUnit(line.amount, line.amountUnit, ing.unit);
+          return {
+            ingredientId: line.ingredientId,
+            amount: normalizedAmount,
+            amountUnit: line.amountUnit,
+          };
+        });
+      if (validRecipe.length > 0) {
+        this.state.recipes = {
+          ...(this.state.recipes || INITIAL_RECIPES),
+          [newItem.id]: validRecipe,
+        };
+        newItem.recipe = validRecipe;
+        this.state.menuItems[0].recipe = validRecipe;
+      }
+    }
+    this.recordActivity({
+      type: 'stock_updated',
+      title: `Product Added: ${newItem.name}`,
+      description: `New menu item added to ${newItem.category} (₹${newItem.price})`,
+      actorName: 'Admin',
+      actorRole: 'admin',
+      severity: 'info',
+    });
+    this.touch();
+    return clone(newItem);
+  }
+
+  public updateMenuItem(id: string, updates: z.infer<typeof updateMenuItemSchema>): MenuItem | null {
+    const existing = this.menuById.get(id);
+    if (!existing) return null;
+
+    const updated: MenuItem = {
+      ...existing,
+      name: updates.name !== undefined ? updates.name.trim() : existing.name,
+      description: updates.description !== undefined ? updates.description.trim() : existing.description,
+      price: updates.price !== undefined ? Math.round(updates.price) : existing.price,
+      category: updates.category !== undefined ? updates.category : existing.category,
+      isVeg: updates.isVeg !== undefined ? updates.isVeg : existing.isVeg,
+      isBestSeller: updates.isBestSeller !== undefined ? updates.isBestSeller : existing.isBestSeller,
+      isAvailable: updates.isAvailable !== undefined ? updates.isAvailable : existing.isAvailable,
+      station: updates.station !== undefined ? updates.station : existing.station,
+      defaultNote: updates.defaultNote !== undefined ? updates.defaultNote.trim() : existing.defaultNote,
+      imageUrl: updates.imageUrl !== undefined ? updates.imageUrl.trim() : existing.imageUrl,
+      variants: updates.variants !== undefined ? updates.variants : (existing.variants || []),
+    };
+
+    if (updates.recipe && updates.recipe.length > 0) {
+      const validRecipe = updates.recipe
+        .filter((line) => this.state.inventory.some((ingredient) => ingredient.id === line.ingredientId))
+        .map((line) => {
+          const ing = this.state.inventory.find((i) => i.id === line.ingredientId)!;
+          const normalizedAmount = convertRecipeAmountToInventoryUnit(line.amount, line.amountUnit, ing.unit);
+          return {
+            ingredientId: line.ingredientId,
+            amount: normalizedAmount,
+            amountUnit: line.amountUnit,
+          };
+        });
+      if (validRecipe.length > 0) {
+        this.state.recipes = {
+          ...(this.state.recipes || INITIAL_RECIPES),
+          [id]: validRecipe,
+        };
+        updated.recipe = validRecipe;
+      }
+    }
+
+    this.menuById.set(id, updated);
+    this.state.menuItems = this.state.menuItems.map((item) => (item.id === id ? updated : item));
+
+    this.recordActivity({
+      type: 'stock_updated',
+      title: `Product Updated: ${updated.name}`,
+      description: `Menu item updated (₹${updated.price}, ${updated.category}, ${updated.station})`,
+      actorName: 'Admin',
+      actorRole: 'admin',
+      severity: 'info',
+    });
+
+    this.touch();
+    return clone(updated);
   }
 
   public toggleMenuItemAvailability(menuItemId: string): MenuItem | null {
@@ -1581,7 +2163,7 @@ export class CafeStore {
         ? `${item.name} is now available for ordering`
         : `${item.name} marked out of stock`,
       actorName: 'Staff',
-      actorRole: 'manager',
+      actorRole: 'admin',
       severity: item.isAvailable ? 'info' : 'warning',
     });
     this.touch();
@@ -1594,49 +2176,61 @@ export class CafeStore {
   ): { order: CafeOrder; pointsAwarded: number } | null {
     const order = this.ordersById.get(orderId);
     if (!order) return null;
+
+    const alreadyReviewed = order.rating !== undefined;
     order.rating = feedback.rating;
     if (feedback.tags) order.feedbackTags = feedback.tags;
     if (feedback.comment) order.feedbackComment = feedback.comment;
 
-    const pointsAwarded = 25;
-    this.state.rewardPoints = (this.state.rewardPoints || 0) + pointsAwarded;
+    // Only award loyalty points once per order to prevent point farming
+    const pointsAwarded = alreadyReviewed ? 0 : 25;
+    if (pointsAwarded > 0) {
+      this.state.rewardPoints = (this.state.rewardPoints || 0) + pointsAwarded;
+      order.loyaltyPointsAwarded = pointsAwarded;
 
-    let customerName = 'Guest Customer';
-    if (feedback.customerPhone || order.customerId) {
-      const customer = this.state.customers.find(
-        (c) =>
-          (feedback.customerPhone &&
-            c.phone.replace(/\D/g, '') === feedback.customerPhone.replace(/\D/g, '')) ||
-          (order.customerId && c.id === order.customerId)
-      );
-      if (customer) {
-        customerName = customer.name;
-        customer.loyaltyPoints = (customer.loyaltyPoints || 0) + pointsAwarded;
+      let customerName = 'Guest Customer';
+      if (feedback.customerPhone || order.customerId) {
+        const customer = this.state.customers.find(
+          (c) =>
+            (feedback.customerPhone &&
+              c.phone.replace(/\D/g, '') === feedback.customerPhone.replace(/\D/g, '')) ||
+            (order.customerId && c.id === order.customerId)
+        );
+        if (customer) {
+          customerName = customer.name;
+          customer.loyaltyPoints = (customer.loyaltyPoints || 0) + pointsAwarded;
+        }
       }
+
+      const entry: PointLedgerEntry = {
+        id: `pt-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        orderId: order.id,
+        initials:
+          customerName
+            .split(' ')
+            .map((w) => w[0])
+            .join('')
+            .slice(0, 2)
+            .toUpperCase() || 'GC',
+        customerName,
+        context: `Order Feedback · ${order.kotNumber} (${feedback.rating}★)`,
+        pointsDelta: pointsAwarded,
+        note: feedback.comment ? `"${feedback.comment.slice(0, 40)}"` : 'Verified guest review submitted',
+      };
+      this.state.pointLedger.unshift(entry);
     }
 
-    const entry: PointLedgerEntry = {
-      id: `pt-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      orderId: order.id,
-      initials:
-        customerName
-          .split(' ')
-          .map((w) => w[0])
-          .join('')
-          .slice(0, 2)
-          .toUpperCase() || 'GC',
-      customerName,
-      context: `Order Feedback · ${order.kotNumber} (${feedback.rating}★)`,
-      pointsDelta: pointsAwarded,
-      note: feedback.comment ? `"${feedback.comment.slice(0, 40)}"` : 'Verified guest review submitted',
-    };
-    this.state.pointLedger.unshift(entry);
     this.touch();
 
     return {
       order: clone(order),
       pointsAwarded,
     };
+  }
+
+  public getTable(tableId: string): CafeTable | null {
+    const target = this.tablesById.get(tableId);
+    return target ? clone(target) : null;
   }
 
   public checkInTable(tableId: string): CafeTable | null {
@@ -1786,18 +2380,345 @@ export class CafeStore {
     return this.moveTableParty('merge', sourceTableId, targetTableId);
   }
 
-  public restockIngredient(id: string, addedQty?: number): InventoryIngredient | null {
-    const exists = this.state.inventory.some((i) => i.id === id);
-    if (!exists) return null;
-    this.state.inventory = restockIngredientItem(this.state.inventory, id, addedQty);
-    const updated = this.state.inventory.find((i) => i.id === id) ?? null;
-    if (updated) {
-      updated.reorderRequested = false;
-      updated.reorderRequestedAt = undefined;
-      updated.reorderNote = undefined;
+  public restockIngredient(
+    id: string,
+    addedQty: number,
+    unitCost: number,
+    actorName = 'Admin'
+  ): InventoryIngredient | null {
+    const existing = this.state.inventory.find((item) => item.id === id);
+    if (!existing) return null;
+    const movementQty = addedQty;
+    const item = this.updateIngredientQuantity(
+      id,
+      movementQty,
+      'receipt',
+      undefined,
+      'Manual restock',
+      actorName,
+      unitCost
+    );
+    if (!item) return null;
+    const updated = this.state.inventory.find((ingredient) => ingredient.id === id);
+    if (!updated) return null;
+    updated.maxCapacity = Math.max(updated.maxCapacity, updated.quantity);
+    updated.fillPct = Math.min(100, Math.round((updated.quantity / updated.maxCapacity) * 100));
+    if (!this.state.inventoryBatches) this.state.inventoryBatches = [];
+    this.state.inventoryBatches = [
+      {
+        id: `batch-${crypto.randomUUID().slice(0, 10)}`,
+        ingredientId: updated.id,
+        ingredientName: updated.name,
+        batchNumber: `REC-${Date.now()}`,
+        quantity: movementQty,
+        unit: updated.unit,
+        unitCost: updated.unitCost,
+        receivedAt: new Date().toISOString(),
+        supplier: updated.supplier,
+        status: 'active',
+      },
+      ...this.state.inventoryBatches,
+    ];
+    updated.reorderRequested = false;
+    updated.reorderRequestedAt = undefined;
+    updated.reorderNote = undefined;
+    this.touch();
+    return clone(updated);
+  }
+
+  private recordStockMovement(input: Omit<StockMovement, 'id' | 'createdAt'>): StockMovement {
+    if (!this.state.stockMovements) this.state.stockMovements = [];
+    const movement: StockMovement = {
+      ...input,
+      id: `stm-${crypto.randomUUID().slice(0, 12)}`,
+      createdAt: new Date().toISOString(),
+    };
+    this.state.stockMovements = [movement, ...this.state.stockMovements].slice(0, 5000);
+    return movement;
+  }
+
+  private updateIngredientQuantity(
+    ingredientId: string,
+    quantityDelta: number,
+    type: StockMovement['type'],
+    referenceId?: string,
+    note?: string,
+    actorName?: string,
+    unitCost?: number
+  ): InventoryIngredient | null {
+    const index = this.state.inventory.findIndex((item) => item.id === ingredientId);
+    if (index === -1) return null;
+    const ingredient = this.state.inventory[index];
+    const afterQuantity = Math.max(
+      0,
+      Math.round((ingredient.quantity + quantityDelta) * 100) / 100
+    );
+    const updated: InventoryIngredient = {
+      ...ingredient,
+      quantity: afterQuantity,
+      unitCost: unitCost ?? ingredient.unitCost,
+      status: computeInventoryStatus(afterQuantity, ingredient.minThreshold),
+      fillPct: Math.min(100, Math.round((afterQuantity / ingredient.maxCapacity) * 100)),
+      movementType: quantityDelta >= 0 ? 'in' : 'out',
+    };
+    this.state.inventory[index] = updated;
+    this.recordStockMovement({
+      ingredientId,
+      ingredientName: ingredient.name,
+      type,
+      quantityDelta,
+      beforeQuantity: ingredient.quantity,
+      afterQuantity,
+      unit: ingredient.unit,
+      unitCost: updated.unitCost,
+      referenceId,
+      note,
+      actorName,
+    });
+    return clone(updated);
+  }
+
+  public receiveStock(
+    input: z.infer<typeof stockReceiptSchema>,
+    actorName = 'Admin'
+  ): InventoryIngredient | null {
+    const currentItem = this.state.inventory.find((item) => item.id === input.ingredientId);
+    if (!currentItem) return null;
+    const unitCost = input.unitCost ?? currentItem.unitCost;
+    const item = this.updateIngredientQuantity(
+      input.ingredientId,
+      input.quantity,
+      'receipt',
+      undefined,
+      input.note || `Stock received${input.supplier ? ` from ${input.supplier}` : ''}`,
+      actorName,
+      unitCost
+    );
+    if (!item) return null;
+    if (!this.state.inventoryBatches) this.state.inventoryBatches = [];
+    const batch: InventoryBatch = {
+      id: `batch-${crypto.randomUUID().slice(0, 10)}`,
+      ingredientId: item.id,
+      ingredientName: item.name,
+      batchNumber: input.batchNumber || `REC-${Date.now()}`,
+      quantity: input.quantity,
+      unit: item.unit,
+      unitCost,
+      receivedAt: new Date().toISOString(),
+      expiryDate: input.expiryDate || undefined,
+      supplier: input.supplier || item.supplier,
+      status: 'active',
+    };
+    this.state.inventoryBatches = [batch, ...this.state.inventoryBatches];
+    item.reorderRequested = false;
+    item.reorderRequestedAt = undefined;
+    item.reorderNote = undefined;
+    this.touch();
+    return clone(item);
+  }
+
+  public recordWaste(
+    input: z.infer<typeof stockWasteSchema>,
+    actorName = 'Kitchen Staff'
+  ): InventoryIngredient | null {
+    const item = this.updateIngredientQuantity(
+      input.ingredientId,
+      -input.quantity,
+      'waste',
+      input.batchId,
+      input.reason,
+      actorName
+    );
+    if (!item) return null;
+    if (input.batchId && this.state.inventoryBatches) {
+      this.state.inventoryBatches = this.state.inventoryBatches.map((batch) =>
+        batch.id === input.batchId
+          ? {
+              ...batch,
+              quantity: Math.max(0, batch.quantity - input.quantity),
+              status:
+                batch.quantity <= input.quantity
+                  ? 'consumed'
+                  : batch.status,
+            }
+          : batch
+      );
     }
     this.touch();
-    return updated ? clone(updated) : null;
+    return clone(item);
+  }
+
+  public transferStock(
+    input: z.infer<typeof stockTransferSchema>,
+    actorName = 'Admin'
+  ): InventoryIngredient | null {
+    const item = this.updateIngredientQuantity(
+      input.ingredientId,
+      -input.quantity,
+      'transfer',
+      undefined,
+      `Transfer from ${input.fromLocation} to ${input.toLocation}${input.note ? ` - ${input.note}` : ''}`,
+      actorName
+    );
+    this.touch();
+    return item;
+  }
+
+  public createStockCount(
+    input: z.infer<typeof stockCountSchema>,
+    actorName = 'Admin'
+  ): StockCount {
+    const lines: StockCountLine[] = input.physicalCounts.map((entry) => {
+      const item = this.state.inventory.find((candidate) => candidate.id === entry.ingredientId);
+      if (!item) {
+        throw new InvalidDomainTransitionError({
+          domain: 'inventory',
+          fromState: 'unknown',
+          toState: 'counted',
+          action: 'create_stock_count',
+          message: `Ingredient ${entry.ingredientId} does not exist.`,
+          httpStatus: 404,
+        });
+      }
+      return {
+        ingredientId: item.id,
+        ingredientName: item.name,
+        systemQuantity: item.quantity,
+        physicalQuantity: entry.physicalQuantity,
+        variance: Math.round((entry.physicalQuantity - item.quantity) * 100) / 100,
+        unit: item.unit,
+        unitCost: item.unitCost,
+      };
+    });
+    const count: StockCount = {
+      id: `count-${crypto.randomUUID().slice(0, 10)}`,
+      status: 'draft',
+      lines,
+      createdAt: new Date().toISOString(),
+      note: input.note,
+    };
+    if (!this.state.stockCounts) this.state.stockCounts = [];
+    this.state.stockCounts = [count, ...this.state.stockCounts];
+    this.touch();
+    return clone(count);
+  }
+
+  public approveStockCount(countId: string, actorName = 'Admin'): StockCount | null {
+    const count = this.state.stockCounts?.find((entry) => entry.id === countId);
+    if (!count || count.status === 'approved') return count ? clone(count) : null;
+    for (const line of count.lines) {
+      if (line.variance !== 0) {
+        this.updateIngredientQuantity(
+          line.ingredientId,
+          line.variance,
+          'stock_count',
+          count.id,
+          count.note || 'Approved physical stock count',
+          actorName
+        );
+      }
+    }
+    count.status = 'approved';
+    count.approvedAt = new Date().toISOString();
+    this.touch();
+    return clone(count);
+  }
+
+  public createPurchaseOrder(
+    input: z.infer<typeof purchaseOrderSchema>,
+    actorName = 'Admin'
+  ): PurchaseOrder {
+    const lines: PurchaseOrderLine[] = input.lines.map((line) => {
+      const item = this.state.inventory.find((candidate) => candidate.id === line.ingredientId);
+      if (!item) {
+        throw new InvalidDomainTransitionError({
+          domain: 'inventory',
+          fromState: 'unknown',
+          toState: 'ordered',
+          action: 'create_purchase_order',
+          message: `Ingredient ${line.ingredientId} does not exist.`,
+          httpStatus: 404,
+        });
+      }
+      return {
+        ingredientId: item.id,
+        ingredientName: item.name,
+        orderedQuantity: line.quantity,
+        receivedQuantity: 0,
+        unit: item.unit,
+        unitCost: line.unitCost,
+      };
+    });
+    const purchaseOrder: PurchaseOrder = {
+      id: `PO-${Date.now().toString(36).toUpperCase()}`,
+      supplier: input.supplier,
+      status: 'ordered',
+      lines,
+      createdAt: new Date().toISOString(),
+      note: input.note,
+    };
+    if (!this.state.purchaseOrders) this.state.purchaseOrders = [];
+    this.state.purchaseOrders = [purchaseOrder, ...this.state.purchaseOrders];
+    this.recordActivity({
+      type: 'stock_updated',
+      title: `Purchase Order ${purchaseOrder.id} Created`,
+      description: `Ordered from ${input.supplier}. ${lines.length} ingredient SKU(s).`,
+      actorName,
+      severity: 'info',
+      amount: lines.reduce((sum, line) => sum + line.orderedQuantity * line.unitCost, 0),
+    });
+    this.touch();
+    return clone(purchaseOrder);
+  }
+
+  public receivePurchaseOrder(
+    input: z.infer<typeof receivePurchaseOrderSchema>,
+    actorName = 'Admin'
+  ): PurchaseOrder | null {
+    const purchaseOrder = this.state.purchaseOrders?.find(
+      (entry) => entry.id === input.purchaseOrderId
+    );
+    if (!purchaseOrder) return null;
+    let totalReceived = 0;
+    for (const receivedLine of input.receivedLines) {
+      const line = purchaseOrder.lines.find(
+        (candidate) => candidate.ingredientId === receivedLine.ingredientId
+      );
+      if (!line) continue;
+      const remaining = line.orderedQuantity - line.receivedQuantity;
+      const receivedQuantity = Math.min(receivedLine.quantity, remaining);
+      if (receivedQuantity <= 0) continue;
+      line.receivedQuantity += receivedQuantity;
+      totalReceived += receivedQuantity;
+      this.receiveStock(
+        {
+          ingredientId: line.ingredientId,
+          quantity: receivedQuantity,
+          unitCost: line.unitCost,
+          supplier: purchaseOrder.supplier,
+          batchNumber: receivedLine.batchNumber || `${purchaseOrder.id}-${line.ingredientId}`,
+          expiryDate: receivedLine.expiryDate,
+          note: `Received against ${purchaseOrder.id}`,
+        },
+        actorName
+      );
+    }
+    if (totalReceived <= 0) return clone(purchaseOrder);
+    const fullyReceived = purchaseOrder.lines.every(
+      (line) => line.receivedQuantity >= line.orderedQuantity
+    );
+    purchaseOrder.status = fullyReceived ? 'received' : 'partially_received';
+    if (fullyReceived) purchaseOrder.receivedAt = new Date().toISOString();
+    this.recordActivity({
+      type: 'stock_updated',
+      title: `Purchase Order ${purchaseOrder.id} Received`,
+      description: `${purchaseOrder.status === 'received' ? 'Fully' : 'Partially'} received from ${purchaseOrder.supplier}.`,
+      actorName,
+      severity: 'info',
+      amount: totalReceived,
+    });
+    this.touch();
+    return clone(purchaseOrder);
   }
 
   public requestIngredientReorder(
@@ -1820,8 +2741,8 @@ export class CafeStore {
       type: 'stock_updated',
       title: `Kitchen Stock Alert: ${item.name}`,
       description: `Kitchen requested reorder for ${item.name} (${item.quantity} ${item.unit} in stock). ${item.reorderNote}`,
-      actorName: staffName || 'Kitchen Chef',
-      actorRole: 'chef',
+      actorName: staffName || 'Kitchen Staff',
+      actorRole: 'kitchen',
       severity: 'warning',
     });
     this.touch();
@@ -1872,6 +2793,159 @@ export class CafeStore {
     return clone(created);
   }
 
+  public upsertGoogleCustomer(data: {
+    id: string;
+    name: string;
+    email: string;
+    avatarUrl?: string;
+    phone?: string;
+    googleSubjectId?: string;
+    emailVerified?: boolean;
+    phoneVerified?: boolean;
+    createdAt?: string;
+  }): CustomerProfile {
+    const normalizedEmail = data.email.trim().toLowerCase();
+    const normalizedPhone = data.phone ? normalizePhone(data.phone) : '';
+
+    // Check if customer already exists by id, email, or phone
+    let existing = this.customersById.get(data.id);
+    if (!existing) {
+      existing = this.state.customers.find(
+        (c) =>
+          c.id === data.id ||
+          (c.email && c.email.trim().toLowerCase() === normalizedEmail) ||
+          (Boolean(normalizedPhone) && Boolean(c.phone) && normalizePhone(c.phone) === normalizedPhone)
+      );
+    }
+
+    if (existing) {
+      if (data.name) existing.name = data.name;
+      existing.email = normalizedEmail;
+      if (data.avatarUrl) existing.avatarUrl = data.avatarUrl;
+      if (data.phone) existing.phone = data.phone;
+      existing.provider = 'google';
+      existing.googleSubjectId = data.googleSubjectId || data.id.replace(/^google:/, '');
+      existing.emailVerified = data.emailVerified ?? true;
+      existing.phoneVerified = data.phoneVerified ?? existing.phoneVerified ?? false;
+      if (data.createdAt) existing.createdAt = existing.createdAt || data.createdAt;
+      existing.lastVisit = 'Just now';
+      existing.visits = Math.max(1, (existing.visits || 0) + 1);
+      this.customersById.set(existing.id, existing);
+      this.touch();
+      return clone(existing);
+    }
+
+    const parts = (data.name || 'Customer').trim().split(/\s+/);
+    const initials = (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase();
+    const newCustomer: CustomerProfile = {
+      id: data.id,
+      initials,
+      name: data.name || 'Valued Customer',
+      phone: data.phone || '',
+      email: normalizedEmail,
+      avatarUrl: data.avatarUrl,
+      provider: 'google',
+      googleSubjectId: data.googleSubjectId || data.id.replace(/^google:/, ''),
+      emailVerified: data.emailVerified ?? true,
+      phoneVerified: data.phoneVerified ?? false,
+      createdAt: data.createdAt,
+      segment: 'new',
+      visits: 1,
+      totalSpent: 0,
+      avgTicket: 0,
+      favorites: 'Roastery Member',
+      lastVisit: 'Just joined',
+      note: 'Verified Google Account',
+      loyaltyPoints: 50,
+    };
+
+    this.customersById.set(newCustomer.id, newCustomer);
+    this.state.customers = [newCustomer, ...this.state.customers];
+    this.recordActivity({
+      type: 'customer_signed_up',
+      title: `New Customer: ${newCustomer.name}`,
+      description: 'Google Sign-In created a customer account.',
+      actorName: newCustomer.name,
+      actorRole: 'Customer',
+      severity: 'info',
+    });
+    this.touch();
+    return clone(newCustomer);
+  }
+
+  public syncCustomerProfile(
+    customerId: string,
+    updates: {
+      name?: string;
+      phone?: string;
+      email?: string;
+      note?: string;
+    }
+  ): CustomerProfile | null {
+    let customer = this.customersById.get(customerId);
+    if (!customer) {
+      customer = this.state.customers.find((c) => c.id === customerId);
+    }
+    if (!customer && updates.email) {
+      const normalizedEmail = updates.email.trim().toLowerCase();
+      customer = this.state.customers.find(
+        (c) => c.email && c.email.trim().toLowerCase() === normalizedEmail
+      );
+    }
+    if (!customer) return null;
+
+    if (updates.name?.trim()) customer.name = updates.name.trim();
+    if (updates.phone?.trim()) {
+      const normalizedPhone = normalizePhone(updates.phone);
+      if (!/^\d{10}$/.test(normalizedPhone)) {
+        throw new Error('Customer mobile number must contain exactly 10 digits.');
+      }
+      if (normalizePhone(customer.phone) !== normalizedPhone) {
+        customer.phoneVerified = false;
+      }
+      customer.phone = normalizedPhone;
+    }
+    if (updates.email?.trim()) customer.email = updates.email.trim().toLowerCase();
+    if (updates.note?.trim()) customer.note = updates.note.trim();
+
+    this.customersById.set(customer.id, customer);
+    this.touch();
+    return clone(customer);
+  }
+
+  public findCustomerIdByPhone(phone: string): string | null {
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) return null;
+    const matches = this.state.customers.filter(
+      (customer) => normalizePhone(customer.phone) === normalizedPhone
+    );
+    return matches.length === 1 ? matches[0].id : null;
+  }
+
+  public getCustomers(): CustomerProfile[] {
+    return clone(this.state.customers);
+  }
+
+  public deleteCustomer(id: string): boolean {
+    const idx = this.state.customers.findIndex((c) => c.id === id);
+    if (idx === -1) return false;
+    this.state.customers.splice(idx, 1);
+    this.customersById.delete(id);
+    this.touch();
+    return true;
+  }
+
+  public clearCustomers(): void {
+    this.state.customers = [];
+    this.customersById.clear();
+    this.touch();
+  }
+
+  public getCustomerSegment(customerId?: string): CustomerSegment | undefined {
+    if (!customerId) return undefined;
+    return this.state.customers.find((customer) => customer.id === customerId)?.segment;
+  }
+
   public exportCustomerPii(id: string): Record<string, unknown> | null {
     const customer = this.customersById.get(id);
     if (!customer) return null;
@@ -1903,6 +2977,9 @@ export class CafeStore {
       id: shortId('camp'),
       title: input.title,
       code: input.code,
+      discountPercentage: input.discountPercentage,
+      offerType: input.discountPercentage > 0 ? 'percentage' : 'manual',
+      minimumOrderAmount: input.minimumOrderAmount,
       status: 'active',
       validityLabel: input.validityLabel,
       description: input.description,
@@ -1910,6 +2987,7 @@ export class CafeStore {
       revenueLabel: '₹0 revenue',
       icon: 'sell',
       tone: 'primary',
+      targetSegment: input.targetSegment,
     };
     this.state.campaigns = [created, ...this.state.campaigns];
     this.touch();
@@ -1935,16 +3013,7 @@ export class CafeStore {
       initials,
       name: input.name,
       role: input.role,
-      roleIcon:
-        /owner/i.test(input.role) || input.role === 'Store Manager'
-          ? 'shield_person'
-          : /kitchen/i.test(input.role)
-            ? 'skillet'
-            : /server/i.test(input.role)
-              ? 'table_bar'
-              : input.role === 'Cashier'
-                ? 'point_of_sale'
-                : 'coffee_maker',
+      roleIcon: input.role === 'Admin' ? 'shield_person' : 'skillet',
       shiftLabel: input.shiftLabel,
       shiftBucket: 'afternoon',
       isOnDuty: true,

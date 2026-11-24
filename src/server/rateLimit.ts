@@ -6,8 +6,19 @@ interface RateLimitOptions {
   keyPrefix: string;
 }
 
+/**
+ * Extracts client IP securely without allowing spoofed X-Forwarded-For headers
+ * from untrusted upstream connections.
+ */
+export function getTrustedClientIp(
+  req: Pick<Request, 'ip'> & { socket: Pick<Request['socket'], 'remoteAddress'> }
+): string {
+  return req.ip || req.socket.remoteAddress || '127.0.0.1';
+}
+
 export function createRateLimiter(options: RateLimitOptions) {
   const hits = new Map<string, number[]>();
+  const MAX_TRACKED_KEYS = 10_000;
 
   const sweepInterval = setInterval(() => {
     const cutoff = Date.now() - options.windowMs;
@@ -23,12 +34,17 @@ export function createRateLimiter(options: RateLimitOptions) {
   sweepInterval.unref();
 
   return (req: Request, res: Response, next: NextFunction): void => {
-    // Express derives req.ip from the socket peer unless trust proxy is explicitly
-    // configured. Never trust a client-supplied X-Forwarded-For value directly.
-    const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    const key = `${options.keyPrefix}:${ip}`;
+    const clientIp = getTrustedClientIp(req);
+    const key = `${options.keyPrefix}:${clientIp}`;
     const now = Date.now();
     const cutoff = now - options.windowMs;
+
+    // Guard against memory exhaustion from random IP spoofing
+    if (hits.size >= MAX_TRACKED_KEYS && !hits.has(key)) {
+      // Evict oldest keys
+      const keys = Array.from(hits.keys()).slice(0, 500);
+      for (const k of keys) hits.delete(k);
+    }
 
     const existing = (hits.get(key) ?? []).filter((t) => t > cutoff);
     if (existing.length >= options.maxRequests) {

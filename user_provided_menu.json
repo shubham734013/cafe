@@ -1,0 +1,718 @@
+{
+  "cafe": {
+    "name": "The Sawariya Cafe",
+    "short_name": "TSC",
+    "taglines": [
+      "Good Food • Good Mood",
+      "Good Food • Good Mood • Great Moments"
+    ],
+    "phone": "01414611071",
+    "whatsapp": "7300348070",
+    "instagram_handle": "@the_sawariya_cafe",
+    "currency": "INR",
+    "table_number_field": true,
+    "delivery": {
+      "free_delivery_up_to_km": 1,
+      "minimum_order_value": 249,
+      "fee_beyond_1km": null
+    },
+    "order_wait_minutes_printed": {
+      "regular_menu": [
+        10,
+        15
+      ],
+      "special_menu": [
+        15,
+        20
+      ]
+    },
+    "wifi": {
+      "ssid": "Airtel_The sawariya cafe",
+      "password": "Sawariya@1177",
+      "qr_image": "qr_codes/wifi.png"
+    },
+    "social_qr": {
+      "instagram": "qr_codes/instagram.png",
+      "google_review": "qr_codes/google_review.png"
+    },
+    "qr_decode_results": {
+      "wifi": null,
+      "instagram": null,
+      "google_review": null
+    },
+    "address": null,
+    "opening_hours": null,
+    "website": null,
+    "email": null
+  },
+  "menu": [
+    {
+      "id": "aloo-tikki-burger",
+      "name": "Aloo Tikki Burger",
+      "category": "Burgers",
+      "currency": "INR",
+      "price": 49,
+      "variants": [],
+      "image": "images/burger.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "double-aloo-tikki-burger",
+      "name": "Double Aloo Tikki Burger",
+      "category": "Burgers",
+      "currency": "INR",
+      "price": 69,
+      "variants": [],
+      "image": "images/burger.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "cheese-burger",
+      "name": "Cheese Burger",
+      "category": "Burgers",
+      "currency": "INR",
+      "price": 79,
+      "variants": [],
+      "image": "images/burger.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "paneer-burger",
+      "name": "Paneer Burger",
+      "category": "Burgers",
+      "currency": "INR",
+      "price": 79,
+      "variants": [],
+      "image": "images/burger.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "cheese-paneer-burger",
+      "name": "Cheese Paneer Burger",
+      "category": "Burgers",
+      "currency": "INR",
+      "price": 99,
+      "variants": [],
+      "image": "images/burger.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "tsc-special-burger",
+      "name": "TSC Special Burger",
+      "category": "Burgers",
+      "currency": "INR",
+      "price": 99,
+      "variants": [],
+      "image": "images/tsc_special_burger.png",
+      "image_scope": "item_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "corn-pizza",
+      "name": "Corn Pizza",
+      "category": "Pizza",
+      "currency": "INR",
+      "price": 79,
+      "variants": [],
+      "image": "images/pizza.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "onion-capsicum-pizza",
+      "name": "Onion Capsicum Pizza",
+      "category": "Pizza",
+      "currency": "INR",
+      "price": 99,
+      "variants": [],
+      "image": "images/pizza.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "otc-pizza",
+      "name": "OTC Pizza",
+      "category": "Pizza",
+      "currency": "INR",
+      "price": 109,
+      "variants": [],
+      "image": "images/pizza.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "margherita-pizza",
+      "name": "Margherita Pizza",
+      "category": "Pizza",
+      "currency": "INR",
+      "price": 129,
+      "variants": [],
+      "image": "images/pizza.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "tandoori-pizza",
+      "name": "Tandoori Pizza",
+      "category": "Pizza",
+      "currency": "INR",
+      "price": 139,
+      "variants": [],
+      "image": "images/pizza.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "paneer-pizza",
+      "name": "Paneer Pizza",
+      "category": "Pizza",
+      "currency": "INR",
+      "price": 149,
+      "variants": [],
+      "image": "images/pizza.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "double-cheese-pizza",
+      "name": "Double Cheese Pizza",
+      "category": "Pizza",
+      "currency": "INR",
+      "price": 149,
+      "variants": [],
+      "image": "images/pizza.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "plain-maggi",
+      "name": "Plain Maggi",
+      "category": "Maggi",
+      "currency": "INR",
+      "price": 39,
+      "variants": [],
+      "image": "images/maggi.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "masala-maggi",
+      "name": "Masala Maggi",
+      "category": "Maggi",
+      "currency": "INR",
+      "price": 69,
+      "variants": [],
+      "image": "images/maggi.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "cheesy-maggi",
+      "name": "Cheesy Maggi",
+      "category": "Maggi",
+      "currency": "INR",
+      "price": 89,
+      "variants": [],
+      "image": "images/maggi.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "tandoori-maggi",
+      "name": "Tandoori Maggi",
+      "category": "Maggi",
+      "currency": "INR",
+      "price": 89,
+      "variants": [],
+      "image": "images/maggi.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "veg-sandwich",
+      "name": "Veg Sandwich",
+      "category": "Sandwiches",
+      "currency": "INR",
+      "price": 49,
+      "variants": [],
+      "image": "images/sandwich.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "veg-grill-sandwich",
+      "name": "Veg Grill Sandwich",
+      "category": "Sandwiches",
+      "currency": "INR",
+      "price": 69,
+      "variants": [],
+      "image": "images/sandwich.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "corn-grill-sandwich",
+      "name": "Corn Grill Sandwich",
+      "category": "Sandwiches",
+      "currency": "INR",
+      "price": 79,
+      "variants": [],
+      "image": "images/sandwich.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "tandoori-grill-sandwich",
+      "name": "Tandoori Grill Sandwich",
+      "category": "Sandwiches",
+      "currency": "INR",
+      "price": 89,
+      "variants": [],
+      "image": "images/sandwich.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "cheese-grill-sandwich",
+      "name": "Cheese Grill Sandwich",
+      "category": "Sandwiches",
+      "currency": "INR",
+      "price": 99,
+      "variants": [],
+      "image": "images/sandwich.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "paneer-grill-sandwich",
+      "name": "Paneer Grill Sandwich",
+      "category": "Sandwiches",
+      "currency": "INR",
+      "price": 99,
+      "variants": [],
+      "image": "images/sandwich.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "smiley-bread-pizza",
+      "name": "Smiley Bread Pizza",
+      "category": "Special Bread Pizza",
+      "currency": "INR",
+      "price": 79,
+      "variants": [],
+      "image": "images/smiley_bread_pizza.png",
+      "image_scope": "item_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "name-bread-pizza",
+      "name": "Name Bread Pizza",
+      "category": "Special Bread Pizza",
+      "currency": "INR",
+      "price": 99,
+      "variants": [],
+      "image": "images/name_bread_pizza.png",
+      "image_scope": "item_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "smiley-name-bread-pizza",
+      "name": "Smiley + Name Bread Pizza",
+      "category": "Special Bread Pizza",
+      "currency": "INR",
+      "price": 119,
+      "variants": [],
+      "image": "images/smiley_name_bread_pizza.png",
+      "image_scope": "item_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "french-fries",
+      "name": "French Fries",
+      "category": "Fries & Momos",
+      "currency": "INR",
+      "price": null,
+      "variants": [
+        {
+          "size": "Regular",
+          "price": 70
+        }
+      ],
+      "image": null,
+      "image_scope": null,
+      "source": "user_addition"
+    },
+    {
+      "id": "steamed-momos",
+      "name": "Steamed Momos",
+      "category": "Fries & Momos",
+      "currency": "INR",
+      "price": 60,
+      "variants": [],
+      "image": null,
+      "image_scope": null,
+      "source": "user_addition",
+      "notes": "User message: Stem moms"
+    },
+    {
+      "id": "fried-momos",
+      "name": "Fried Momos",
+      "category": "Fries & Momos",
+      "currency": "INR",
+      "price": 80,
+      "variants": [],
+      "image": null,
+      "image_scope": null,
+      "source": "user_addition",
+      "notes": "User message: Fry momos"
+    },
+    {
+      "id": "cold-coffee",
+      "name": "Cold Coffee",
+      "category": "Cold Coffee",
+      "currency": "INR",
+      "price": null,
+      "variants": [
+        {
+          "size": "Normal",
+          "price": 30
+        },
+        {
+          "size": "Medium",
+          "price": 50
+        },
+        {
+          "size": "Large",
+          "price": 60
+        }
+      ],
+      "image": "images/cold_coffee.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "cold-coffee-with-ice-cream",
+      "name": "Cold Coffee with Ice Cream",
+      "category": "Cold Coffee",
+      "currency": "INR",
+      "price": null,
+      "variants": [
+        {
+          "size": "Normal",
+          "price": 40
+        },
+        {
+          "size": "Medium",
+          "price": 60
+        },
+        {
+          "size": "Large",
+          "price": 80
+        }
+      ],
+      "image": "images/cold_coffee.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "vanilla-shake",
+      "name": "Vanilla Shake",
+      "category": "Shakes",
+      "currency": "INR",
+      "price": 69,
+      "variants": [],
+      "image": null,
+      "image_scope": null,
+      "source": "printed_menu"
+    },
+    {
+      "id": "chocolate-shake",
+      "name": "Chocolate Shake",
+      "category": "Shakes",
+      "currency": "INR",
+      "price": 69,
+      "variants": [],
+      "image": null,
+      "image_scope": null,
+      "source": "printed_menu"
+    },
+    {
+      "id": "butterscotch-shake",
+      "name": "Butterscotch Shake",
+      "category": "Shakes",
+      "currency": "INR",
+      "price": 69,
+      "variants": [],
+      "image": null,
+      "image_scope": null,
+      "source": "printed_menu"
+    },
+    {
+      "id": "strawberry-shake",
+      "name": "Strawberry Shake",
+      "category": "Shakes",
+      "currency": "INR",
+      "price": 69,
+      "variants": [],
+      "image": "images/strawberry_shake.png",
+      "image_scope": "item_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "kit-kat-shake",
+      "name": "Kit Kat Shake",
+      "category": "Shakes",
+      "currency": "INR",
+      "price": 99,
+      "variants": [],
+      "image": null,
+      "image_scope": null,
+      "source": "printed_menu"
+    },
+    {
+      "id": "oreo-shake",
+      "name": "Oreo Shake",
+      "category": "Shakes",
+      "currency": "INR",
+      "price": 99,
+      "variants": [],
+      "image": null,
+      "image_scope": null,
+      "source": "printed_menu"
+    },
+    {
+      "id": "biscoff-shake",
+      "name": "Biscoff Shake",
+      "category": "Shakes",
+      "currency": "INR",
+      "price": 119,
+      "variants": [],
+      "image": null,
+      "image_scope": null,
+      "source": "printed_menu"
+    },
+    {
+      "id": "chai",
+      "name": "Chai",
+      "category": "Hot Beverages",
+      "currency": "INR",
+      "price": null,
+      "variants": [
+        {
+          "size": "Small",
+          "price": 10
+        },
+        {
+          "size": "Large",
+          "price": 20
+        }
+      ],
+      "image": "images/hot_beverage.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "kulhad-chai",
+      "name": "Kulhad Chai",
+      "category": "Hot Beverages",
+      "currency": "INR",
+      "price": null,
+      "variants": [
+        {
+          "size": "Small",
+          "price": 20
+        },
+        {
+          "size": "Large",
+          "price": 30
+        }
+      ],
+      "image": "images/hot_beverage.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "hot-coffee",
+      "name": "Hot Coffee",
+      "category": "Hot Beverages",
+      "currency": "INR",
+      "price": null,
+      "variants": [
+        {
+          "size": "Small",
+          "price": 20
+        },
+        {
+          "size": "Large",
+          "price": 30
+        }
+      ],
+      "image": "images/hot_beverage.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    },
+    {
+      "id": "black-coffee",
+      "name": "Black Coffee",
+      "category": "Hot Beverages",
+      "currency": "INR",
+      "price": null,
+      "variants": [
+        {
+          "size": "Regular",
+          "price": 15
+        }
+      ],
+      "image": "images/hot_beverage.png",
+      "image_scope": "category_illustration",
+      "source": "printed_menu"
+    }
+  ],
+  "combos": [
+    {
+      "id": "special-pizza-combo",
+      "name": "Sawariya Special Pizza Combo",
+      "price": 349,
+      "components": [
+        {
+          "item": "Paneer Pizza",
+          "quantity": 2
+        },
+        {
+          "item": "Cold Coffee",
+          "quantity": 2,
+          "size": "Medium"
+        }
+      ],
+      "image": null
+    },
+    {
+      "id": "combo-1",
+      "name": "Aloo Tikki Burger Combo",
+      "price": 179,
+      "components": [
+        {
+          "item": "Aloo Tikki Burger",
+          "quantity": 2
+        },
+        {
+          "item": "Cold Coffee",
+          "quantity": 2,
+          "size": "Medium"
+        }
+      ],
+      "image": "images/combo_1.png"
+    },
+    {
+      "id": "combo-2",
+      "name": "Paneer Burger Combo",
+      "price": 119,
+      "components": [
+        {
+          "item": "Paneer Burger",
+          "quantity": 1
+        },
+        {
+          "item": "Cold Coffee",
+          "quantity": 1,
+          "size": "Medium"
+        }
+      ],
+      "image": "images/combo_2.png"
+    },
+    {
+      "id": "combo-3",
+      "name": "Onion Capsicum Pizza Combo",
+      "price": 349,
+      "components": [
+        {
+          "item": "Onion Capsicum Pizza",
+          "quantity": 2
+        },
+        {
+          "item": "Cold Coffee",
+          "quantity": 4,
+          "size": "Medium"
+        }
+      ],
+      "image": "images/combo_3.png"
+    },
+    {
+      "id": "combo-4",
+      "name": "Veg Grill Sandwich Combo",
+      "price": 219,
+      "components": [
+        {
+          "item": "Veg Grill Sandwich",
+          "quantity": 2
+        },
+        {
+          "item": "Cold Coffee",
+          "quantity": 2,
+          "size": "Medium"
+        }
+      ],
+      "image": "images/combo_4.png"
+    }
+  ],
+  "offers": [
+    {
+      "name": "Birthday Party",
+      "minimum_order_value": 800,
+      "duration_minutes": 90,
+      "description": "Place an order worth ₹800 and celebrate your birthday; 1.5 hours for eating. Cake and decoration inclusion not specified.",
+      "image": "images/birthday_party.png"
+    },
+    {
+      "name": "Cold Coffee Offer",
+      "description": "Buy 5 medium cold coffees, get 1 small cold coffee free (printed value ₹30).",
+      "image": "images/coffee_offer.png"
+    },
+    {
+      "name": "Customize Combo",
+      "description": "Contact reception for a customized combo. Pricing not specified."
+    },
+    {
+      "name": "Social Media / Review Offer (printed)",
+      "description": "Follow on Instagram + give a Google review to receive one cup of ice cream free.",
+      "publish_recommended": false,
+      "notes": "Do not automatically enable this review-linked reward; verify platform rules first."
+    }
+  ],
+  "assets": {
+    "burger": "images/burger.png",
+    "maggi": "images/maggi.png",
+    "pizza": "images/pizza.png",
+    "sandwich": "images/sandwich.png",
+    "smiley_bread_pizza": "images/smiley_bread_pizza.png",
+    "name_bread_pizza": "images/name_bread_pizza.png",
+    "smiley_name_bread_pizza": "images/smiley_name_bread_pizza.png",
+    "tsc_special_burger": "images/tsc_special_burger.png",
+    "combo_1": "images/combo_1.png",
+    "combo_2": "images/combo_2.png",
+    "combo_3": "images/combo_3.png",
+    "combo_4": "images/combo_4.png",
+    "birthday_party": "images/birthday_party.png",
+    "coffee_offer": "images/coffee_offer.png",
+    "cold_coffee": "images/cold_coffee.png",
+    "strawberry_shake": "images/strawberry_shake.png",
+    "hot_beverage": "images/hot_beverage.png",
+    "wifi": "qr_codes/wifi.png",
+    "instagram": "qr_codes/instagram.png",
+    "google_review": "qr_codes/google_review.png"
+  },
+  "notes": [
+    "Food images are crops from printed menu illustrations, not verified product photographs. Category illustrations are not item-specific.",
+    "Names lightly normalized (Maggie to Maggi; Stem moms to Steamed Momos; Fry momos to Fried Momos).",
+    "Combos 1–4 have descriptive names assigned for website use.",
+    "Unspecified details use null.",
+    "Coffee small/normal terminology differs between the offer and regular menu.",
+    "QR images are extracted as printed; verify scan functionality before publishing."
+  ]
+}

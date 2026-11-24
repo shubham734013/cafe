@@ -23,8 +23,42 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
   settings,
 }) => {
   const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>('80mm');
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<string | null>(null);
 
   if (!order) return null;
+
+  const handleSendBillEmail = async () => {
+    const targetEmail = recipientEmail.trim() || order.customerPhone ? `${recipientEmail.trim()}` : '';
+    if (!targetEmail || !targetEmail.includes('@')) {
+      setEmailStatus('Please enter a valid recipient email.');
+      return;
+    }
+    setIsSendingEmail(true);
+    setEmailStatus(null);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/send-bill-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: targetEmail,
+          name: order.customerName,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to email bill');
+      setEmailStatus(
+        data.simulated
+          ? `[Simulated] Bill dispatched to ${targetEmail} via Brevo.`
+          : `Tax invoice successfully emailed to ${targetEmail} via Brevo!`
+      );
+    } catch (err) {
+      setEmailStatus(err instanceof Error ? err.message : 'Failed to send bill');
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
 
   const cafeName = settings?.cafeName || 'Seth Sawariya Cafe';
   const address = settings?.address || '12 Civil Lines, Near Clock Tower, Jaipur, RJ 302001';
@@ -42,9 +76,9 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg bg-surface-container-low border border-outline-variant/30 text-on-surface p-0 overflow-hidden sm:rounded-2xl">
+      <DialogContent className="max-w-lg bg-surface-container-low dark:bg-slate-900/85 dark:backdrop-blur-2xl dark:border-white/10 dark:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)] border border-outline-variant/30 text-on-surface p-0 overflow-hidden sm:rounded-2xl">
         {/* Modal Controls Header (Screen only) */}
-        <div className="print:hidden p-4 border-b border-outline-variant/20 flex flex-col gap-3 bg-surface-container">
+        <div className="print:hidden p-4 border-b border-outline-variant/20 flex flex-col gap-3 bg-surface-container/80 dark:bg-slate-900/60 dark:backdrop-blur-md">
           <div className="flex items-center justify-between">
             <div>
               <DialogTitle className="text-base font-bold text-on-surface flex items-center gap-2">
@@ -89,12 +123,43 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
             <button
               type="button"
               onClick={handlePrint}
-              className="px-4 py-2 rounded-xl bg-primary hover:brightness-110 text-on-primary text-xs font-bold flex items-center gap-1.5 shadow-md cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-primary hover:brightness-110 text-on-primary text-xs font-bold flex items-center gap-1.5 shadow-md cursor-pointer shrink-0"
             >
               <span className="material-symbols-outlined text-[16px]">print</span>
               <span>Print Slip</span>
             </button>
           </div>
+
+          {/* Email Bill via Brevo Bar */}
+          <div className="pt-2 border-t border-outline-variant/15 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="relative flex-1">
+              <span className="material-symbols-outlined text-[16px] text-on-surface-variant absolute left-2.5 top-2 pointer-events-none">
+                mail
+              </span>
+              <input
+                type="email"
+                value={recipientEmail}
+                onChange={(e) => setRecipientEmail(e.target.value)}
+                placeholder="customer@email.com for Brevo receipt"
+                className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-surface-container-lowest border border-outline-variant/30 text-xs text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleSendBillEmail}
+              disabled={isSendingEmail}
+              className="px-3 py-1.5 rounded-xl bg-[#FF6422] hover:bg-[#E55518] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all disabled:opacity-50 cursor-pointer shrink-0"
+            >
+              <span className="material-symbols-outlined text-[15px]">send</span>
+              <span>{isSendingEmail ? 'Sending...' : 'Email Bill via Brevo'}</span>
+            </button>
+          </div>
+
+          {emailStatus && (
+            <p className="text-[11px] font-medium text-[#FF6422] animate-fade-in">
+              {emailStatus}
+            </p>
+          )}
         </div>
 
         {/* Thermal Paper Roll Scroll Container */}
@@ -110,6 +175,9 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
               <div className="flex flex-col gap-2">
                 {/* Header */}
                 <div className="text-center flex flex-col items-center">
+                  <div className="w-14 h-14 rounded-full overflow-hidden border border-neutral-300 mb-1.5 shadow-xs">
+                    <img src="/images/tsc-logo.jpg" alt={cafeName} className="w-full h-full object-cover" />
+                  </div>
                   <h1 className="text-base font-extrabold uppercase tracking-wider">{cafeName}</h1>
                   <p className="text-[10px] text-neutral-600 mt-0.5 max-w-[90%]">{address}</p>
                   <p className="text-[10px] text-neutral-700">Phone: {phone}</p>
@@ -213,13 +281,13 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
                   <div className="flex justify-between">
                     <span>Payment Mode:</span>
                     <strong className="font-bold uppercase">
-                      {order.paymentMode === 'cash' ? 'CASH' : order.paymentMode === 'card' ? 'CARD / EDC' : 'UPI'}
+                      {order.paymentMode === 'cash' ? 'CASH' : order.paymentMode === 'card' ? 'CARD' : 'UPI'}
                     </strong>
                   </div>
                   <div className="flex justify-between">
                     <span>Payment Status:</span>
                     <strong className="font-bold text-emerald-800 uppercase">
-                      {order.paymentStatus === 'paid' ? 'PAID / SETTLED' : 'UNPAID / COUNTER'}
+                      {order.paymentStatus === 'paid' ? 'PAID' : 'PAY ON COUNTER'}
                     </strong>
                   </div>
                   {order.paymentRef && (

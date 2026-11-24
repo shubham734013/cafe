@@ -9,6 +9,9 @@ export interface UpiGatewayOrder {
   status: UpiGatewayPaymentStatus;
   paymentUrl: string;
   utr?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  customerName?: string;
 }
 
 interface UpiGatewayConfig {
@@ -54,6 +57,9 @@ export interface UpiGatewayClient {
     clientOrderId: string;
     amountPaise: number;
     note: string;
+    customerPhone?: string;
+    customerName?: string;
+    customerEmail?: string;
   }): Promise<UpiGatewayOrder>;
   getOrder(clientOrderId: string): Promise<UpiGatewayOrder | null>;
 }
@@ -173,6 +179,9 @@ export class UpiGateway implements UpiGatewayClient {
     clientOrderId: string;
     amountPaise: number;
     note: string;
+    customerPhone?: string;
+    customerName?: string;
+    customerEmail?: string;
   }): Promise<UpiGatewayOrder> {
     if (!Number.isSafeInteger(input.amountPaise) || input.amountPaise < 100 || input.amountPaise > 10_000_000) {
       throw new UpiGatewayRequestError(

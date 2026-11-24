@@ -48,7 +48,10 @@ export const cafeOpenApiSpec = {
           },
         ],
         responses: {
-          '200': { description: 'Authorized CafeOS state, optionally reduced to one route' },
+          '200': {
+            description:
+              'Authorized CafeOS state, optionally reduced to one route; customer state includes first-order offer eligibility when available.',
+          },
           '400': { description: 'Unknown screen or scope' },
         },
       },
@@ -103,6 +106,31 @@ export const cafeOpenApiSpec = {
                   tags: { type: 'array', items: { type: 'string', maxLength: 60 } },
                   dishName: { type: 'string', maxLength: 80 },
                   diningMode: { type: 'string', enum: ['dine-in', 'takeaway', 'delivery'] },
+                },
+              },
+              '/customer/identity': {
+                post: {
+                  tags: ['Auth & Settings'],
+                  summary: 'Bind the Supabase customer account and match a verified phone to one CRM profile',
+                  parameters: [
+                    {
+                      name: 'Authorization',
+                      in: 'header',
+                      required: true,
+                      schema: { type: 'string' },
+                      description: 'Bearer Supabase access token',
+                    },
+                  ],
+                  responses: {
+                    '200': { description: 'Phone verification and CRM match result' },
+                    '401': { description: 'Supabase customer session is invalid' },
+                    '503': { description: 'Supabase identity verification is not configured' },
+                  },
+                },
+                delete: {
+                  tags: ['Auth & Settings'],
+                  summary: 'Clear the signed-in customer account and CRM offer identity',
+                  responses: { '204': { description: 'Customer account and CRM identity cleared' } },
                 },
               },
             },
@@ -216,6 +244,21 @@ export const cafeOpenApiSpec = {
         tags: ['Inventory'],
         summary: 'Restock an ingredient SKU',
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['addedQty', 'unitCost'],
+                properties: {
+                  addedQty: { type: 'number', exclusiveMinimum: 0 },
+                  unitCost: { type: 'number', minimum: 0 },
+                },
+              },
+            },
+          },
+        },
         responses: { '200': { description: 'Ingredient restocked' } },
       },
     },
@@ -245,6 +288,27 @@ export const cafeOpenApiSpec = {
       post: {
         tags: ['Campaigns & Staff'],
         summary: 'Create promo campaign',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  code: { type: 'string' },
+                  validityLabel: { type: 'string' },
+                  description: { type: 'string' },
+                  targetSegment: {
+                    type: 'string',
+                    enum: ['all', 'vip', 'loyal', 'regular', 'new', 'risk'],
+                    default: 'all',
+                  },
+                },
+              },
+            },
+          },
+        },
         responses: { '201': { description: 'Campaign created' } },
       },
     },

@@ -1,4 +1,3 @@
-import { DAILY_SALES_BY_RANGE } from '../data/cafeSeedData';
 import {
   CafeOrder,
   CampaignFilter,
@@ -34,13 +33,63 @@ export interface CartTotals {
   couponError: string | null;
 }
 
+const BUILT_IN_CAMPAIGN_RULES: Record<string, Partial<PromoCampaign>> = {
+  BDAY800: {
+    offerType: 'manual',
+    minimumOrderAmount: 800,
+    manualRedemptionMessage: 'Book this birthday offer with cafe staff; it is not an automatic cart discount.',
+  },
+  BUY5GET1: {
+    offerType: 'buy_x_get_y',
+    qualifyingMenuItemId: 'cold-coffee',
+    qualifyingSize: 'Medium',
+    buyQuantity: 5,
+    freeQuantity: 1,
+    freeItemPrice: 30,
+  },
+  FREEICECREAM: {
+    offerType: 'manual',
+    manualRedemptionMessage: 'Follow and review proof must be checked by cafe staff before redeeming this offer.',
+  },
+  FREEDEL249: {
+    offerType: 'manual',
+    minimumOrderAmount: 249,
+    manualRedemptionMessage: 'Delivery distance must be verified by cafe staff before free delivery can be applied.',
+  },
+  'CUSTOM-COMBO': {
+    offerType: 'manual',
+    manualRedemptionMessage: 'Contact cafe staff to arrange this custom combo.',
+  },
+  FIRSTBITE: { offerType: 'first_order_percentage', discountPercentage: 20 },
+  CAMPUS15: {
+    offerType: 'manual',
+    discountPercentage: 15,
+    minimumOrderAmount: 199,
+    manualRedemptionMessage: 'Show a valid college ID to cafe staff to redeem this student offer.',
+  },
+};
+
+function getCampaignOfferType(campaign: PromoCampaign): NonNullable<PromoCampaign['offerType']> {
+  const code = campaign.code.trim().toUpperCase();
+  return (
+    campaign.offerType ??
+    BUILT_IN_CAMPAIGN_RULES[code]?.offerType ??
+    (campaign.discountPercentage ? 'percentage' : 'manual')
+  );
+}
+
+export function isCampaignAutomaticallyRedeemable(campaign: PromoCampaign): boolean {
+  return getCampaignOfferType(campaign) !== 'manual';
+}
+
 export function calculateCartTotals(
   items: CartItem[],
   couponCode: string,
   serviceMode: ServiceMode,
   isPosTerminal = false,
   campaigns?: PromoCampaign[],
-  redeemPoints = 0
+  redeemPoints = 0,
+  firstOrderEligible = false
 ): CartTotals {
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -75,39 +124,76 @@ export function calculateCartTotals(
     const matchingCampaign = campaigns?.find(
       (c) => c.code.trim().toUpperCase() === normalizedCoupon
     );
-    if (matchingCampaign && matchingCampaign.status !== 'active') {
-      couponError = `Promo code ${normalizedCoupon} is currently ${matchingCampaign.status} and cannot be applied.`;
-    } else if (normalizedCoupon === 'CAFE50') {
-      if (subtotal >= 200) {
-        discount = 50;
-        discountLabel = 'Special Discount (CAFE50)';
-        couponApplied = true;
+    if (matchingCampaign?.status === 'active') {
+      const legacyRule = BUILT_IN_CAMPAIGN_RULES[normalizedCoupon];
+      const offerType = getCampaignOfferType(matchingCampaign);
+      const minimumOrderAmount =
+        matchingCampaign.minimumOrderAmount ?? legacyRule?.minimumOrderAmount ?? 0;
+      const discountPercentage =
+        matchingCampaign.discountPercentage ?? legacyRule?.discountPercentage ?? 0;
+
+      if (subtotal < minimumOrderAmount) {
+        couponError = `This offer requires a minimum order of ₹${minimumOrderAmount}.`;
+      } else if (offerType === 'percentage' || offerType === 'first_order_percentage') {
+        if (offerType === 'first_order_percentage' && !firstOrderEligible) {
+          couponError = 'This promo code is only valid on your first order.';
+        } else if (
+          !Number.isFinite(discountPercentage) ||
+          discountPercentage <= 0 ||
+          discountPercentage > 100
+        ) {
+          couponError = 'This promo code does not have a valid bill discount configured.';
+        } else {
+          discount = Math.round((subtotal * discountPercentage) / 100);
+          discountLabel = `${matchingCampaign.title} (${discountPercentage}% off)`;
+          couponApplied = true;
+        }
+      } else if (offerType === 'buy_x_get_y') {
+        const qualifyingMenuItemId =
+          matchingCampaign.qualifyingMenuItemId ?? legacyRule?.qualifyingMenuItemId;
+        const qualifyingSize = matchingCampaign.qualifyingSize ?? legacyRule?.qualifyingSize;
+        const buyQuantity = matchingCampaign.buyQuantity ?? legacyRule?.buyQuantity ?? 0;
+        const freeQuantity = matchingCampaign.freeQuantity ?? legacyRule?.freeQuantity ?? 0;
+        const freeItemPrice = matchingCampaign.freeItemPrice ?? legacyRule?.freeItemPrice ?? 0;
+        const qualifyingQuantity = items.reduce(
+          (quantity, item) =>
+            item.menuItemId === qualifyingMenuItemId &&
+            item.size?.trim().toLowerCase() === qualifyingSize?.trim().toLowerCase()
+              ? quantity + item.quantity
+              : quantity,
+          0
+        );
+
+        if (
+          !qualifyingMenuItemId ||
+          !qualifyingSize ||
+          buyQuantity <= 0 ||
+          freeQuantity <= 0 ||
+          freeItemPrice <= 0
+        ) {
+          couponError = 'This offer is not configured correctly. Please ask cafe staff for help.';
+        } else if (qualifyingQuantity < buyQuantity) {
+          couponError = `Add ${buyQuantity - qualifyingQuantity} more ${qualifyingSize} Cold Coffees to use this offer.`;
+        } else {
+          discount = Math.min(
+            subtotal,
+            Math.floor(qualifyingQuantity / buyQuantity) * freeQuantity * freeItemPrice
+          );
+          discountLabel = `${matchingCampaign.title} (free Cold Coffee)`;
+          couponApplied = true;
+        }
       } else {
-        couponError = 'Add ₹' + (200 - subtotal) + ' more to apply CAFE50';
+        couponError =
+          matchingCampaign.manualRedemptionMessage ??
+          legacyRule?.manualRedemptionMessage ??
+          'This offer requires staff verification and cannot be applied automatically.';
       }
-    } else if (normalizedCoupon === 'SAW10') {
-      discount = Math.round(subtotal * 0.1);
-      discountLabel = 'Member 10% Off (SAW10)';
-      couponApplied = true;
-    } else if (normalizedCoupon === 'CAMPUS15') {
-      if (subtotal >= 199) {
-        discount = Math.round(subtotal * 0.15);
-        discountLabel = 'Student Discount (CAMPUS15)';
-        couponApplied = true;
-      } else {
-        couponError = 'Add ₹' + (199 - subtotal) + ' more to apply CAMPUS15';
-      }
-    } else if (normalizedCoupon === 'BOGO2025') {
-      discount = Math.round(subtotal * 0.2);
-      discountLabel = 'Evening Brew Promo (BOGO2025)';
-      couponApplied = true;
-    } else if (matchingCampaign && matchingCampaign.status === 'active') {
-      discount = Math.round(subtotal * 0.1);
-      discountLabel = `${matchingCampaign.title} (${normalizedCoupon})`;
-      couponApplied = true;
     } else {
-      couponError = 'Invalid code. Try CAFE50, SAW10, or BOGO2025';
+      couponError = 'This promo code is invalid or inactive.';
     }
+  } else if (firstOrderEligible) {
+    discount = Math.round(subtotal * 0.2);
+    discountLabel = 'First Order Offer (20%)';
   }
 
   // Loyalty Points Redemption (2 pts = ₹1 discount, capped at 50% subtotal)
@@ -194,8 +280,11 @@ export interface KotCardPhaseInfo {
 export function deriveKotCardPhase(
   order: Pick<CafeOrder, 'status' | 'items'>
 ): KotCardPhaseInfo {
-  const totalCount = order.items.length;
-  const checkedCount = order.items.filter((i) => Boolean(i.checked)).length;
+  const activeItems = order.items.filter((i) => i.status !== 'cancelled');
+  const totalCount = activeItems.length > 0 ? activeItems.length : order.items.length;
+  const checkedCount = activeItems.length > 0
+    ? activeItems.filter((i) => Boolean(i.checked)).length
+    : order.items.filter((i) => Boolean(i.checked)).length;
   const allItemsChecked = totalCount > 0 && checkedCount === totalCount;
   const isPrepared = order.status === 'ready' || order.status === 'served';
 
@@ -227,10 +316,26 @@ export function filterMenuItems(
       matchesCategory = true;
     } else if (category === 'Best Sellers') {
       matchesCategory = Boolean(item.isBestSeller);
-    } else if (category === 'Drink') {
-      matchesCategory = item.category === 'Drink' || item.category === 'Beverages';
-    } else if (category === 'Dessert') {
-      matchesCategory = item.category === 'Dessert' || item.category === 'Desserts';
+    } else if (item.category === category) {
+      matchesCategory = true;
+    } else if (category === 'Burger' || category === 'Burgers') {
+      matchesCategory = item.category === 'Burger' || item.category === 'Burgers';
+    } else if (category === 'Drink' || category === 'Beverages') {
+      matchesCategory =
+        item.category === 'Drink' ||
+        item.category === 'Beverages' ||
+        item.category === 'Cold Coffee' ||
+        item.category === 'Hot Beverages' ||
+        item.category === 'Shakes';
+    } else if (category === 'Snacks') {
+      matchesCategory =
+        item.category === 'Snacks' ||
+        item.category === 'Fries & Momos' ||
+        item.category === 'Maggi' ||
+        item.category === 'Sandwiches' ||
+        item.category === 'Special Bread Pizza';
+    } else if (category === 'Dessert' || category === 'Desserts') {
+      matchesCategory = item.category === 'Dessert' || item.category === 'Desserts' || item.category === 'Shakes';
     } else {
       matchesCategory = item.category === category;
     }
@@ -266,9 +371,10 @@ export function filterOrders(
 }
 
 export function computeDashboardMetrics(orders: CafeOrder[], range: DateRangeKey) {
-  const baseline = DAILY_SALES_BY_RANGE[range];
-  const activeOrders = orders.filter((o) => o.paymentStatus !== 'cancelled');
-  const refundedOrders = orders.filter((o) => o.paymentStatus === 'refunded');
+  const activeOrders = orders.filter(
+    (order) => order.paymentStatus !== 'cancelled' && isOrderWithinRange(order, range)
+  );
+  const refundedOrders = activeOrders.filter((order) => order.paymentStatus === 'refunded');
   const refundedAmount = refundedOrders.reduce(
     (acc, o) => acc + (o.refundAmount || o.total),
     0
@@ -277,30 +383,66 @@ export function computeDashboardMetrics(orders: CafeOrder[], range: DateRangeKey
   const liveRevenue = activeOrders
     .filter((o) => o.paymentStatus !== 'refunded')
     .reduce((acc, o) => acc + o.total, 0);
-
-  const totalOrders = baseline.baseOrders + liveOrdersCount;
-  const totalRevenue = Math.max(0, baseline.baseRevenue + liveRevenue);
+  const totalOrders = liveOrdersCount;
+  const totalRevenue = liveRevenue;
   const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
-  const customers = baseline.baseCustomers + liveOrdersCount;
+  const customers = new Set(
+    activeOrders
+      .filter((order) => order.paymentStatus !== 'refunded')
+      .map((order) => order.customerId)
+      .filter((customerId): customerId is string => Boolean(customerId))
+  ).size;
+  const bars = buildPast7DaysRevenueTrend(orders);
+  const peak = bars.reduce(
+    (highest, bar) => (bar.revenue > highest.revenue ? bar : highest),
+    bars[0]
+  );
+
+  const grossSales = liveRevenue + refundedAmount;
 
   return {
     totalOrders,
     totalRevenue,
+    grossSales,
     avgOrderValue,
     customers,
     refundedCount: refundedOrders.length,
     refundedAmount,
-    ordersDelta: baseline.ordersDelta,
-    revDelta: baseline.revDelta,
-    aovDelta: baseline.aovDelta,
-    custDelta: baseline.custDelta,
-    peakLabel: baseline.peakLabel,
-    bars: baseline.bars,
+    peakLabel: peak.revenue > 0 ? `${formatINR(peak.revenue)} Peak` : 'No sales yet',
+    bars,
   };
+}
+
+function isOrderWithinRange(order: CafeOrder, range: DateRangeKey, now = new Date()): boolean {
+  if (!order.createdAt) return false;
+  const createdAt = new Date(order.createdAt);
+  if (Number.isNaN(createdAt.getTime())) return false;
+
+  const rangeStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (range === 'Last 7 Days') {
+    rangeStart.setDate(rangeStart.getDate() - 6);
+  } else if (range === 'Last 30 Days') {
+    rangeStart.setDate(rangeStart.getDate() - 29);
+  } else if (range === 'This Month') {
+    rangeStart.setDate(1);
+  } else if (range === 'Quarter to Date') {
+    rangeStart.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);
+  }
+  return createdAt >= rangeStart && createdAt <= now;
 }
 
 export function formatINR(amount: number): string {
   return `₹${amount.toLocaleString('en-IN')}`;
+}
+
+function sanitizeCsvCell(val: string): string {
+  const trimmed = val.trim();
+  const needsFormulaEscape = /^[=+\-@\t\r]/.test(trimmed);
+  const safe = needsFormulaEscape ? `'${trimmed}` : trimmed;
+  if (needsFormulaEscape || safe.includes(',') || safe.includes('"') || safe.includes('\n')) {
+    return `"${safe.replace(/"/g, '""')}"`;
+  }
+  return safe;
 }
 
 export function formatOrderCsv(orders: CafeOrder[]): string {
@@ -308,18 +450,20 @@ export function formatOrderCsv(orders: CafeOrder[]): string {
   const rows = orders.map((order) => {
     const location =
       order.serviceMode === 'dine-in'
-        ? `Table ${order.tableNumber || 'T1'}`
+        ? order.tableNumber
+          ? `Table ${order.tableNumber}`
+          : 'Dine-In'
         : order.deliveryPartner || 'Takeaway';
     const itemsSummary = order.items.map((i) => `${i.quantity}x ${i.name}`).join('; ');
     return [
-      order.id,
-      order.kotNumber,
-      order.serviceMode,
-      location,
-      `"${itemsSummary.replace(/"/g, '""')}"`,
-      order.status,
+      sanitizeCsvCell(order.id),
+      sanitizeCsvCell(order.kotNumber),
+      sanitizeCsvCell(order.serviceMode),
+      sanitizeCsvCell(location),
+      sanitizeCsvCell(itemsSummary),
+      sanitizeCsvCell(order.status),
       String(order.total),
-      order.createdAtLabel,
+      sanitizeCsvCell(order.createdAtLabel),
     ].join(',');
   });
   return [header.join(','), ...rows].join('\n');
@@ -426,79 +570,79 @@ export function filterStaffRoster(
   }
 }
 
-const PAST_7_DAY_ORDER_COUNTS = [104, 146, 189, 212, 152, 268, 172];
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const SHORT_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-export function buildPast7DaysRevenueTrend(orders: CafeOrder[]): DailyRevenuePoint[] {
-  const sevenDayBars = DAILY_SALES_BY_RANGE['Last 7 Days'].bars;
-  const liveRevenue = orders.reduce((acc, o) => acc + o.total, 0);
-  const initialSeedLiveRevenue = 1762;
+function dateKey(date: Date): string {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
 
-  return sevenDayBars.map((bar, idx) => {
-    const isLatestDay = idx === sevenDayBars.length - 1;
-    const baseRevenue = isLatestDay
-      ? Math.max(0, bar.amount - initialSeedLiveRevenue)
-      : bar.amount;
-    const revenue = isLatestDay ? baseRevenue + liveRevenue : baseRevenue;
-    const ordersCount = isLatestDay
-      ? PAST_7_DAY_ORDER_COUNTS[idx] + orders.length
-      : PAST_7_DAY_ORDER_COUNTS[idx];
-
-    return {
-      day: bar.day,
-      shortLabel: bar.shortLabel,
-      revenue,
-      ordersCount,
-      isPeak: bar.isPeak,
-    };
+function getOrdersForDay(orders: CafeOrder[], day: Date): CafeOrder[] {
+  const key = dateKey(day);
+  return orders.filter((order) => {
+    if (!order.createdAt) return false;
+    const createdAt = new Date(order.createdAt);
+    return !Number.isNaN(createdAt.getTime()) && dateKey(createdAt) === key;
   });
 }
 
-const PAST_30_DAY_ORDER_COUNTS = [
-  132, 148, 165, 194, 248, 212, 141, 138, 156, 174,
-  208, 256, 224, 152, 144, 162, 188, 218, 264, 231,
-  158, 149, 172, 196, 229, 272, 238, 164, 178, 168,
-];
-
-const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const SHORT_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+export function buildPast7DaysRevenueTrend(
+  orders: CafeOrder[],
+  referenceDate: Date = new Date()
+): DailyRevenuePoint[] {
+  const start = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    referenceDate.getDate() - 6
+  );
+  const points = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(start);
+    day.setDate(start.getDate() + index);
+    const dayOrders = getOrdersForDay(orders, day);
+    return {
+      day: day.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }),
+      shortLabel: day.toLocaleDateString('en-IN', { weekday: 'short' }),
+      revenue: dayOrders
+        .filter((order) => order.paymentStatus !== 'refunded' && order.paymentStatus !== 'cancelled')
+        .reduce((total, order) => total + order.total, 0),
+      ordersCount: dayOrders.filter((order) => order.paymentStatus !== 'cancelled').length,
+    };
+  });
+  const peakRevenue = Math.max(...points.map((point) => point.revenue));
+  return points.map((point) => ({
+    ...point,
+    isPeak: peakRevenue > 0 && point.revenue === peakRevenue,
+  }));
+}
 
 export function buildPast30DaysOrderVolumeTrend(
   orders: CafeOrder[],
   referenceDate: Date = new Date()
 ): DailyOrderVolumePoint[] {
-  const liveRevenue = orders.reduce((acc, o) => acc + o.total, 0);
-  const initialSeedLiveRevenue = 1762;
-  const avgSeedTicket = 128;
-
-  const anchor = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
-  const rawPoints = PAST_30_DAY_ORDER_COUNTS.map((baseCount, idx) => {
-    const offsetDays = PAST_30_DAY_ORDER_COUNTS.length - 1 - idx;
-    const d = new Date(anchor);
-    d.setDate(anchor.getDate() - offsetDays);
-
-    const shortLabel = `${d.getDate()} ${SHORT_MONTHS[d.getMonth()]}`;
-    const isLatestDay = idx === PAST_30_DAY_ORDER_COUNTS.length - 1;
-    const dayLabel = isLatestDay
-      ? `${SHORT_WEEKDAYS[d.getDay()]}, ${shortLabel} (Today)`
-      : `${SHORT_WEEKDAYS[d.getDay()]}, ${shortLabel}`;
-
-    const ordersCount = isLatestDay ? baseCount + orders.length : baseCount;
-    const revenue = isLatestDay
-      ? Math.max(0, baseCount * avgSeedTicket - initialSeedLiveRevenue) + liveRevenue
-      : baseCount * avgSeedTicket;
-
+  const start = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    referenceDate.getDate() - 29
+  );
+  const points = Array.from({ length: 30 }, (_, index) => {
+    const day = new Date(start);
+    day.setDate(start.getDate() + index);
+    const dayOrders = getOrdersForDay(orders, day);
+    const shortLabel = `${day.getDate()} ${SHORT_MONTHS[day.getMonth()]}`;
+    const isToday = dateKey(day) === dateKey(referenceDate);
     return {
-      day: dayLabel,
+      day: `${SHORT_WEEKDAYS[day.getDay()]}, ${shortLabel}${isToday ? ' (Today)' : ''}`,
       shortLabel,
-      ordersCount,
-      revenue,
+      ordersCount: dayOrders.filter((order) => order.paymentStatus !== 'cancelled').length,
+      revenue: dayOrders
+        .filter((order) => order.paymentStatus !== 'refunded' && order.paymentStatus !== 'cancelled')
+        .reduce((total, order) => total + order.total, 0),
     };
   });
-
-  const maxOrders = Math.max(...rawPoints.map((p) => p.ordersCount), 0);
-  return rawPoints.map((p) => ({
-    ...p,
-    isPeak: maxOrders > 0 && p.ordersCount === maxOrders,
+  const maxOrders = Math.max(...points.map((point) => point.ordersCount), 0);
+  return points.map((point) => ({
+    ...point,
+    isPeak: maxOrders > 0 && point.ordersCount === maxOrders,
   }));
 }
 
@@ -514,4 +658,81 @@ export function getLowInventoryItems(items: InventoryIngredient[]): InventoryIng
       const ratioB = b.minThreshold > 0 ? b.quantity / b.minThreshold : 1;
       return ratioA - ratioB;
     });
+}
+
+/**
+ * Converts recipe ingredient quantity for 1 pc (e.g. 20 grams, 200 ml, 2 pcs)
+ * into the ingredient's native inventory unit (kg, L, g, ml, pcs).
+ */
+export function convertRecipeAmountToInventoryUnit(
+  amount: number,
+  recipeUnit: string | undefined,
+  inventoryUnit: string
+): number {
+  if (!amount || amount <= 0) return 0;
+  const rUnit = (recipeUnit || '').toLowerCase().trim();
+  const iUnit = (inventoryUnit || '').toLowerCase().trim();
+
+  // Inventory is in kg
+  if (iUnit === 'kg') {
+    if (rUnit === 'g' || rUnit === 'gms' || rUnit === 'gram' || rUnit === 'grams') {
+      return Math.round((amount / 1000) * 100000) / 100000;
+    }
+    if (rUnit === 'kg') {
+      return amount;
+    }
+    return amount >= 1 ? Math.round((amount / 1000) * 100000) / 100000 : amount;
+  }
+
+  // Inventory is in L (liters)
+  if (iUnit === 'l' || iUnit === 'liter' || iUnit === 'liters') {
+    if (rUnit === 'ml' || rUnit === 'g' || rUnit === 'gms') {
+      return Math.round((amount / 1000) * 100000) / 100000;
+    }
+    if (rUnit === 'l') {
+      return amount;
+    }
+    return amount >= 1 ? Math.round((amount / 1000) * 100000) / 100000 : amount;
+  }
+
+  // Inventory is in g (grams)
+  if (iUnit === 'g' || iUnit === 'gms') {
+    if (rUnit === 'kg') {
+      return amount * 1000;
+    }
+    return amount;
+  }
+
+  // Inventory is in ml
+  if (iUnit === 'ml') {
+    if (rUnit === 'l') {
+      return amount * 1000;
+    }
+    return amount;
+  }
+
+  // Inventory is in pcs
+  return amount;
+}
+
+/**
+ * Calculates total stock deducted for an order of quantity Q
+ */
+export function calculateOrderStockDeduction(
+  recipeAmountFor1Pc: number,
+  recipeUnit: string | undefined,
+  inventoryUnit: string,
+  orderQuantity: number
+): {
+  unitDeduction: number;
+  totalDeduction: number;
+  formattedDeduction: string;
+} {
+  const perPc = convertRecipeAmountToInventoryUnit(recipeAmountFor1Pc, recipeUnit, inventoryUnit);
+  const total = Math.round(perPc * orderQuantity * 100000) / 100000;
+  return {
+    unitDeduction: perPc,
+    totalDeduction: total,
+    formattedDeduction: `${total} ${inventoryUnit}`,
+  };
 }
