@@ -10,8 +10,12 @@
       "destination": "https://sawariya-cafe-8bmf.onrender.com/api/:match*"
     },
     {
-      "source": "/socket.io/:match*",
-      "destination": "https://sawariya-cafe-8bmf.onrender.com/socket.io/:match*"
+      "source": "/socket.io",
+      "destination": "https://sawariya-cafe-8bmf.onrender.com/socket.io"
+    },
+    {
+      "source": "/socket.io/(.*)",
+      "destination": "https://sawariya-cafe-8bmf.onrender.com/socket.io/$1"
     },
     {
       "source": "/(.*)",

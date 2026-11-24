@@ -113,19 +113,27 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
     void import('socket.io-client')
       .then(({ io }) => {
         if (disposed) return;
-        const socket = io({
+        const socketHost =
+          import.meta.env.VITE_SOCKET_URL ||
+          (typeof window !== 'undefined' && window.location.hostname.endsWith('vercel.app')
+            ? 'https://sawariya-cafe-8bmf.onrender.com'
+            : undefined);
+
+        const socketOptions = {
           query: {
             outletId: 'seth-sawariya-main',
             tableToken,
             orderId,
             scope: kitchenRoute ? 'kitchen' : 'main',
           },
-          transports: ['polling', 'websocket'],
+          transports: ['websocket', 'polling'],
           reconnection: true,
           reconnectionAttempts: 10,
           reconnectionDelay: 1000,
           reconnectionDelayMax: 5000,
-        });
+        };
+
+        const socket = socketHost ? io(socketHost, socketOptions) : io(socketOptions);
 
         const handleConnect = () => {
           setSocketConnected(true);
