@@ -192,13 +192,20 @@ export function createCafeServer(
       ];
   const isOriginAllowed = (origin: string): boolean => {
     if (allowedOrigins.includes(origin)) return true;
-    if (isProduction) return false;
     try {
       const { protocol, hostname } = new URL(origin);
-      return (
-        (protocol === 'http:' && ['localhost', '127.0.0.1'].includes(hostname)) ||
-        (protocol === 'https:' && hostname.endsWith('.trycloudflare.com'))
-      );
+      if (protocol === 'http:' && ['localhost', '127.0.0.1'].includes(hostname)) {
+        return true;
+      }
+      if (
+        protocol === 'https:' &&
+        (hostname.endsWith('.trycloudflare.com') ||
+          hostname.endsWith('.vercel.app') ||
+          hostname.endsWith('.onrender.com'))
+      ) {
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }
