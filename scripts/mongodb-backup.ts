@@ -3,8 +3,8 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017';
-const databaseName = process.env.MONGODB_DB_NAME || 'cafeos';
+const mongoUri = process.env.MONGODB_URI?.trim();
+const databaseName = process.env.MONGODB_DB_NAME?.trim();
 const args = process.argv.slice(2);
 const command = args[0];
 const timestamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');
@@ -24,6 +24,10 @@ function runMongoTool(tool: 'mongodump' | 'mongorestore', toolArgs: string[]): P
 }
 
 async function main(): Promise<void> {
+  if (!mongoUri || !databaseName) {
+    throw new Error('Set MONGODB_URI and MONGODB_DB_NAME before running a backup or restore.');
+  }
+
   if (command === 'backup') {
     const backupRoot = path.resolve(args[1] || path.join('.data', 'backups', timestamp));
     fs.mkdirSync(backupRoot, { recursive: true, mode: 0o700 });
@@ -47,6 +51,9 @@ async function main(): Promise<void> {
     if (!args.includes('--confirm')) {
       throw new Error('Restore replaces matching database collections. Re-run with --confirm.');
     }
+    if (!args.includes('--drop')) {
+      throw new Error('Restore drops matching target collections. Re-run with both --confirm and --drop.');
+    }
     await runMongoTool('mongorestore', [
       '--uri',
       mongoUri,
@@ -60,7 +67,7 @@ async function main(): Promise<void> {
   }
 
   throw new Error(
-    'Usage: npm run db:backup [backup-folder] | npm run db:restore -- <backup-folder> --confirm'
+    'Usage: npm run db:backup [backup-folder] | npm run db:restore -- <backup-folder> --confirm --drop'
   );
 }
 

@@ -9,11 +9,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { CAFE_ASSETS } from '../data/cafeSeedData';
 import { addLoyaltyRuleSchema } from '../shared/schemas';
 import { LoyaltyRule, PointLedgerEntry } from '../types/cafe';
 import { formatINR } from '../utils/cafeLogic';
-import { CafeImage } from './CafeImage';
 
 interface LoyaltyRewardsAdminScreenProps {
   rules: LoyaltyRule[];
@@ -175,39 +173,6 @@ export const LoyaltyRewardsAdminScreen: React.FC<LoyaltyRewardsAdminScreenProps>
             <span className="text-[11px] text-on-surface-variant">points value</span>
           </div>
         </div>
-      </div>
-
-      {/* Sync Matrix Reference Banner */}
-      <div className="rounded-xl overflow-hidden bg-surface-container p-3 flex items-center gap-3">
-        <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-surface-container-high">
-          <CafeImage
-            src={CAFE_ASSETS.loyaltySyncRef}
-            alt="Loyalty and rewards layout specification reference"
-            className="w-full h-full object-cover"
-          />
-        </div>
-        <div className="flex flex-col min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="px-1.5 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold uppercase tracking-wider">
-              Sync Matrix
-            </span>
-            <span className="text-[11px] text-on-surface-variant">POS Auto-Credit Disabled</span>
-          </div>
-          <p className="text-xs text-on-surface mt-0.5 truncate font-medium">
-            Automated Reward Engine
-          </p>
-          <p className="text-[11px] text-on-surface-variant truncate">
-            Automatic point awards are unavailable while payment collection is disabled.
-          </p>
-        </div>
-        <button
-          type="button"
-          aria-label="Rule Settings"
-          onClick={() => setRuleModalOpen(true)}
-          className="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant hover:text-on-surface shrink-0 cursor-pointer"
-        >
-          <span className="material-symbols-outlined text-[18px]">tune</span>
-        </button>
       </div>
 
       {/* Program Rules + Tiers */}

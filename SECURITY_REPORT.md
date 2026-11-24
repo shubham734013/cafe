@@ -1,5 +1,7 @@
 # Security Hardening & Remediation Report — CafeOS
 
+> **Historical snapshot, not a current security certification.** The status, test count, file list, and claims below predate later repository changes and have not been revalidated as a report. Use the current source, test suite, and production-readiness findings instead; do not use this document alone to approve deployment.
+
 **Date:** 2026-11-20  
 **Branch:** `security-hardening`  
 **Base:** `origin/main` (untouched)  

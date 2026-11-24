@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { MENU_ITEM_CATEGORIES } from '../types/cafe';
+
 export const serviceModeSchema = z.enum(['dine-in', 'takeaway', 'delivery']);
 export const orderStatusSchema = z.enum(['placed', 'preparing', 'ready', 'served']);
 export const tableFloorSchema = z.enum([
@@ -13,7 +15,7 @@ export const cartItemSchema = z.object({
   name: z.string().min(1).max(120),
   price: z.number().nonnegative(),
   quantity: z.number().int().positive().max(99),
-  size: z.enum(['Small', 'Medium', 'Large']).optional(),
+  size: z.string().trim().min(1).max(40).optional(),
   note: z.string().trim().max(200).default(''),
   imageUrl: z.string().trim().max(500).default(''),
   station: z.enum(['Barista', 'Grill', 'Fryer', 'Cold Bar', 'Kitchen']),
@@ -28,6 +30,12 @@ export const createOrderSchema = z.object({
       (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
       z.string().trim().min(1, 'Table number must be at least 1 character').max(16).optional()
     ),
+  deliveryAddress: z
+    .string()
+    .trim()
+    .min(5, 'Enter a complete delivery address')
+    .max(240, 'Delivery address is too long')
+    .optional(),
   deliveryPartner: z
     .preprocess(
       (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
@@ -39,6 +47,13 @@ export const createOrderSchema = z.object({
     .max(50, 'Cannot exceed 50 items per order'),
   couponCode: z.string().trim().max(32).optional().default(''),
   cookingNote: z.string().trim().max(240).optional().default(''),
+  customerName: z.string().trim().max(120).optional(),
+  customerEmail: z
+    .preprocess(
+      (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+      z.string().trim().email().optional()
+    ),
+  customerPhone: z.string().trim().max(20).optional(),
   isPosTerminal: z.boolean().optional().default(false),
   paymentMode: z.enum(['upi', 'cash', 'card']).optional().default('upi'),
   customerId: z
@@ -60,19 +75,9 @@ export const toggleKotItemSchema = z.object({
 
 export const addMenuItemSchema = z.object({
   name: z.string().trim().min(2, 'Name must be at least 2 characters').max(80),
-  description: z.string().trim().max(300).optional().default(''),
+  description: z.string().trim().max(500).optional().default(''),
   price: z.coerce.number().positive('Price must be greater than 0').max(100000),
-  category: z.enum([
-    'Beverages',
-    'Snacks',
-    'Meals',
-    'Combos',
-    'Desserts',
-    'Pizza',
-    'Burger',
-    'Pasta',
-    'Salad',
-  ]),
+  category: z.enum(MENU_ITEM_CATEGORIES),
   isVeg: z.boolean().default(true),
   isBestSeller: z.boolean().optional().default(false),
   station: z.enum(['Barista', 'Grill', 'Fryer', 'Cold Bar', 'Kitchen']).default('Kitchen'),
@@ -88,6 +93,37 @@ export const addMenuItemSchema = z.object({
     )
     .optional()
     .default([]),
+});
+
+export const updateMenuItemSchema = z.object({
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(80).optional(),
+  description: z.string().trim().max(500).optional(),
+  price: z.coerce.number().positive('Price must be greater than 0').max(100000).optional(),
+  category: z.enum(MENU_ITEM_CATEGORIES).optional(),
+  isVeg: z.boolean().optional(),
+  isBestSeller: z.boolean().optional(),
+  isAvailable: z.boolean().optional(),
+  station: z.enum(['Barista', 'Grill', 'Fryer', 'Cold Bar', 'Kitchen']).optional(),
+  variants: z
+    .array(
+      z.object({
+        size: z.string().trim().min(1).max(40),
+        price: z.coerce.number().positive().max(100000),
+      })
+    )
+    .max(12)
+    .optional(),
+  imageUrl: z.string().trim().optional(),
+  defaultNote: z.string().trim().optional(),
+  recipe: z
+    .array(
+      z.object({
+        ingredientId: z.string().trim().min(1),
+        amount: z.coerce.number().positive('Ingredient quantity must be greater than 0'),
+        amountUnit: z.enum(['g', 'kg', 'ml', 'L', 'pcs']).optional(),
+      })
+    )
+    .optional(),
 });
 
 export const addIngredientSchema = z.object({
@@ -207,11 +243,13 @@ export const reserveTableSchema = z.object({
 
 export const addCustomerSchema = z.object({
   name: z.string().trim().min(2, 'Full name is required').max(80),
+  email: z.string().trim().email('Enter a valid email address').optional().or(z.literal('')),
   phone: z
     .string()
     .trim()
-    .transform((val) => val.replace(/\D/g, '').slice(-10))
-    .refine((val) => /^\d{10}$/.test(val), 'Enter a valid 10-digit Indian mobile number'),
+    .optional()
+    .transform((val) => (val ? val.replace(/\D/g, '').slice(-10) : ''))
+    .default(''),
   segment: customerSegmentSchema,
   favorites: z.string().trim().min(2, 'Enter favorite item').max(120),
   note: z.string().trim().max(180).optional(),
@@ -234,6 +272,13 @@ export const createCampaignSchema = z.object({
     .max(20)
     .regex(/^[A-Za-z0-9_-]+$/, 'Letters, numbers, - or _ only')
     .transform((v) => v.toUpperCase()),
+  discountPercentage: z.coerce
+    .number()
+    .int()
+    .min(0, 'Discount cannot be negative')
+    .max(100, 'Discount cannot exceed 100%')
+    .default(0),
+  minimumOrderAmount: z.coerce.number().int().min(0).default(0),
   validityLabel: z.string().trim().min(2, 'Validity window is required').max(40),
   description: z.string().trim().min(4, 'Offer rule summary is required').max(200),
   targetSegment: z
@@ -250,11 +295,17 @@ export const addStaffSchema = z.object({
     .string()
     .trim()
     .optional()
-    .transform((v) => (v ? v.replace(/\D/g, '').slice(-10) : undefined)),
+    .transform((v) => (v ? v.replace(/\D/g, '').slice(-10) : undefined))
+    .refine((value) => !value || value.length === 10, 'Enter a valid 10-digit mobile number'),
 });
 
 export const cafeSettingsSchema = z.object({
   cafeName: z.string().trim().min(2, 'Cafe name is required').max(80),
+  logoUrl: z
+    .string()
+    .trim()
+    .regex(/^\/images\/(?:uploads\/)?[\w-]+\.(?:jpe?g|png|webp)$/i, 'Choose a valid cafe logo')
+    .default('/images/tsc-logo.jpg'),
   subCategory: z.string().trim().min(2, 'Sub-category is required').max(100),
   address: z.string().trim().min(5, 'Store address is required').max(240),
   phone: z.string().trim().min(7, 'Valid contact number is required').max(24),
@@ -324,3 +375,20 @@ export const brevoConfirmationSchema = z.object({
   phone: z.string().trim().max(25).optional().default(''),
   code: z.string().trim().max(10).optional(),
 });
+
+export const sendBillEmailSchema = z.object({
+  email: z.string().trim().email('Valid email is required').max(120),
+  name: z.string().trim().max(80).optional(),
+});
+export type SendBillEmailInput = z.infer<typeof sendBillEmailSchema>;
+
+export const broadcastEmailSchema = z.object({
+  targetSegment: z.enum(['all', 'vip', 'loyal', 'regular', 'new', 'risk']).default('all'),
+  subject: z.string().trim().min(3, 'Subject must be at least 3 characters').max(150),
+  heading: z.string().trim().min(3, 'Heading is required').max(120),
+  message: z.string().trim().min(10, 'Message body must be at least 10 characters').max(2000),
+  promoCode: z.string().trim().max(30).optional(),
+  discountBadge: z.string().trim().max(40).optional(),
+  testEmail: z.string().trim().email().optional(),
+});
+export type BroadcastEmailInput = z.infer<typeof broadcastEmailSchema>;

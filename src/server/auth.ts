@@ -66,7 +66,7 @@ export function assertAuthSecretConfigured(): void {
     throw new Error('CAFE_AUTH_SECRET must be at least 32 characters long.');
   }
   if (WEAK_SECRETS.has(secret.toLowerCase())) {
-    throw new Error(`CAFE_AUTH_SECRET cannot be a known weak or default string ("${secret}").`);
+    throw new Error('CAFE_AUTH_SECRET cannot be a known weak or default string.');
   }
   if (inProd && secret === crypto.createHash('sha256').update('seth-sawariya-cafeos-dev-secret').digest('hex')) {
     throw new Error('CAFE_AUTH_SECRET cannot be the hardcoded dev fallback in production.');
@@ -85,7 +85,7 @@ export function assertAuthSecretConfigured(): void {
       throw new Error(`The configured ${role} PIN must be exactly 4 digits.`);
     }
     if (inProd && WEAK_PINS.has(pin)) {
-      throw new Error(`Production startup failed: Default or weak PIN "${pin}" is not allowed for ${role}.`);
+      throw new Error(`Production startup failed: Default or weak PIN is not allowed for ${role}.`);
     }
     if (pins.some((other) => other.role !== role && other.pin === pin)) {
       throw new Error(`The configured ${role} PIN must be unique across staff roles.`);
@@ -450,6 +450,10 @@ export function signStaffSession(payload: StaffSessionPayload): string {
   return signJwtToken(payload, 15 * 60 * 1000);
 }
 
+export function signCustomerSession(payload: CustomerSessionPayload): string {
+  return signJwtToken(payload, 24 * 60 * 60 * 1000);
+}
+
 export function verifyStaffSessionToken(token: string | undefined): StaffSessionPayload | null {
   const parsed = verifyJwtToken<StaffSessionPayload>(token);
   if (
@@ -613,6 +617,15 @@ export function updateCustomerCrmIdentityCookie(
     secure: isProduction,
     path: '/',
     maxAge: 24 * 60 * 60 * 1000,
+  });
+}
+
+export function clearCustomerSessionCookie(res: Response): void {
+  res.clearCookie(CUSTOMER_SESSION_COOKIE, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: isProduction,
+    path: '/',
   });
 }
 

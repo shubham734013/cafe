@@ -33,6 +33,55 @@ export interface CartTotals {
   couponError: string | null;
 }
 
+const BUILT_IN_CAMPAIGN_RULES: Record<string, Partial<PromoCampaign>> = {
+  BDAY800: {
+    offerType: 'manual',
+    minimumOrderAmount: 800,
+    manualRedemptionMessage: 'Book this birthday offer with cafe staff; it is not an automatic cart discount.',
+  },
+  BUY5GET1: {
+    offerType: 'buy_x_get_y',
+    qualifyingMenuItemId: 'cold-coffee',
+    qualifyingSize: 'Medium',
+    buyQuantity: 5,
+    freeQuantity: 1,
+    freeItemPrice: 30,
+  },
+  FREEICECREAM: {
+    offerType: 'manual',
+    manualRedemptionMessage: 'Follow and review proof must be checked by cafe staff before redeeming this offer.',
+  },
+  FREEDEL249: {
+    offerType: 'manual',
+    minimumOrderAmount: 249,
+    manualRedemptionMessage: 'Delivery distance must be verified by cafe staff before free delivery can be applied.',
+  },
+  'CUSTOM-COMBO': {
+    offerType: 'manual',
+    manualRedemptionMessage: 'Contact cafe staff to arrange this custom combo.',
+  },
+  FIRSTBITE: { offerType: 'first_order_percentage', discountPercentage: 20 },
+  CAMPUS15: {
+    offerType: 'manual',
+    discountPercentage: 15,
+    minimumOrderAmount: 199,
+    manualRedemptionMessage: 'Show a valid college ID to cafe staff to redeem this student offer.',
+  },
+};
+
+function getCampaignOfferType(campaign: PromoCampaign): NonNullable<PromoCampaign['offerType']> {
+  const code = campaign.code.trim().toUpperCase();
+  return (
+    campaign.offerType ??
+    BUILT_IN_CAMPAIGN_RULES[code]?.offerType ??
+    (campaign.discountPercentage ? 'percentage' : 'manual')
+  );
+}
+
+export function isCampaignAutomaticallyRedeemable(campaign: PromoCampaign): boolean {
+  return getCampaignOfferType(campaign) !== 'manual';
+}
+
 export function calculateCartTotals(
   items: CartItem[],
   couponCode: string,
@@ -76,9 +125,69 @@ export function calculateCartTotals(
       (c) => c.code.trim().toUpperCase() === normalizedCoupon
     );
     if (matchingCampaign?.status === 'active') {
-      discount = Math.round(subtotal * 0.1);
-      discountLabel = `${matchingCampaign.title} (${normalizedCoupon})`;
-      couponApplied = true;
+      const legacyRule = BUILT_IN_CAMPAIGN_RULES[normalizedCoupon];
+      const offerType = getCampaignOfferType(matchingCampaign);
+      const minimumOrderAmount =
+        matchingCampaign.minimumOrderAmount ?? legacyRule?.minimumOrderAmount ?? 0;
+      const discountPercentage =
+        matchingCampaign.discountPercentage ?? legacyRule?.discountPercentage ?? 0;
+
+      if (subtotal < minimumOrderAmount) {
+        couponError = `This offer requires a minimum order of ₹${minimumOrderAmount}.`;
+      } else if (offerType === 'percentage' || offerType === 'first_order_percentage') {
+        if (offerType === 'first_order_percentage' && !firstOrderEligible) {
+          couponError = 'This promo code is only valid on your first order.';
+        } else if (
+          !Number.isFinite(discountPercentage) ||
+          discountPercentage <= 0 ||
+          discountPercentage > 100
+        ) {
+          couponError = 'This promo code does not have a valid bill discount configured.';
+        } else {
+          discount = Math.round((subtotal * discountPercentage) / 100);
+          discountLabel = `${matchingCampaign.title} (${discountPercentage}% off)`;
+          couponApplied = true;
+        }
+      } else if (offerType === 'buy_x_get_y') {
+        const qualifyingMenuItemId =
+          matchingCampaign.qualifyingMenuItemId ?? legacyRule?.qualifyingMenuItemId;
+        const qualifyingSize = matchingCampaign.qualifyingSize ?? legacyRule?.qualifyingSize;
+        const buyQuantity = matchingCampaign.buyQuantity ?? legacyRule?.buyQuantity ?? 0;
+        const freeQuantity = matchingCampaign.freeQuantity ?? legacyRule?.freeQuantity ?? 0;
+        const freeItemPrice = matchingCampaign.freeItemPrice ?? legacyRule?.freeItemPrice ?? 0;
+        const qualifyingQuantity = items.reduce(
+          (quantity, item) =>
+            item.menuItemId === qualifyingMenuItemId &&
+            item.size?.trim().toLowerCase() === qualifyingSize?.trim().toLowerCase()
+              ? quantity + item.quantity
+              : quantity,
+          0
+        );
+
+        if (
+          !qualifyingMenuItemId ||
+          !qualifyingSize ||
+          buyQuantity <= 0 ||
+          freeQuantity <= 0 ||
+          freeItemPrice <= 0
+        ) {
+          couponError = 'This offer is not configured correctly. Please ask cafe staff for help.';
+        } else if (qualifyingQuantity < buyQuantity) {
+          couponError = `Add ${buyQuantity - qualifyingQuantity} more ${qualifyingSize} Cold Coffees to use this offer.`;
+        } else {
+          discount = Math.min(
+            subtotal,
+            Math.floor(qualifyingQuantity / buyQuantity) * freeQuantity * freeItemPrice
+          );
+          discountLabel = `${matchingCampaign.title} (free Cold Coffee)`;
+          couponApplied = true;
+        }
+      } else {
+        couponError =
+          matchingCampaign.manualRedemptionMessage ??
+          legacyRule?.manualRedemptionMessage ??
+          'This offer requires staff verification and cannot be applied automatically.';
+      }
     } else {
       couponError = 'This promo code is invalid or inactive.';
     }
@@ -207,10 +316,26 @@ export function filterMenuItems(
       matchesCategory = true;
     } else if (category === 'Best Sellers') {
       matchesCategory = Boolean(item.isBestSeller);
-    } else if (category === 'Drink') {
-      matchesCategory = item.category === 'Drink' || item.category === 'Beverages';
-    } else if (category === 'Dessert') {
-      matchesCategory = item.category === 'Dessert' || item.category === 'Desserts';
+    } else if (item.category === category) {
+      matchesCategory = true;
+    } else if (category === 'Burger' || category === 'Burgers') {
+      matchesCategory = item.category === 'Burger' || item.category === 'Burgers';
+    } else if (category === 'Drink' || category === 'Beverages') {
+      matchesCategory =
+        item.category === 'Drink' ||
+        item.category === 'Beverages' ||
+        item.category === 'Cold Coffee' ||
+        item.category === 'Hot Beverages' ||
+        item.category === 'Shakes';
+    } else if (category === 'Snacks') {
+      matchesCategory =
+        item.category === 'Snacks' ||
+        item.category === 'Fries & Momos' ||
+        item.category === 'Maggi' ||
+        item.category === 'Sandwiches' ||
+        item.category === 'Special Bread Pizza';
+    } else if (category === 'Dessert' || category === 'Desserts') {
+      matchesCategory = item.category === 'Dessert' || item.category === 'Desserts' || item.category === 'Shakes';
     } else {
       matchesCategory = item.category === category;
     }
@@ -273,9 +398,12 @@ export function computeDashboardMetrics(orders: CafeOrder[], range: DateRangeKey
     bars[0]
   );
 
+  const grossSales = liveRevenue + refundedAmount;
+
   return {
     totalOrders,
     totalRevenue,
+    grossSales,
     avgOrderValue,
     customers,
     refundedCount: refundedOrders.length,

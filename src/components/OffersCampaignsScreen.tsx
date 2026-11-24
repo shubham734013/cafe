@@ -38,12 +38,13 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
 }) => {
   const [filter, setFilter] = useState<CampaignFilter>('all');
   const [modalOpen, setModalOpen] = useState(false);
-
   const form = useForm<CreateCampaignValues>({
     resolver: zodResolver(createCampaignSchema),
     defaultValues: {
       title: '',
       code: '',
+      discountPercentage: 0,
+      minimumOrderAmount: 0,
       validityLabel: 'Till 28 Feb',
       description: 'Live across POS billing terminal and customer QR menu checkout.',
       targetSegment: 'all',
@@ -77,6 +78,8 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
     form.reset({
       title: '',
       code: '',
+      discountPercentage: 0,
+      minimumOrderAmount: 0,
       validityLabel: 'Till 28 Feb',
       description: 'Live across POS billing terminal and customer QR menu checkout.',
       targetSegment: 'all',
@@ -89,6 +92,8 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
     onCreateCampaign({
       title: parsed.title,
       code: parsed.code,
+      discountPercentage: parsed.discountPercentage,
+      minimumOrderAmount: parsed.minimumOrderAmount,
       status: 'active',
       validityLabel: parsed.validityLabel,
       description: parsed.description,
@@ -117,14 +122,16 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleOpenCreate}
-          className="shrink-0 flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-primary-container text-on-primary-container text-xs font-bold shadow-md shadow-primary-container/20 active:scale-95 transition-transform cursor-pointer"
-        >
-          <span className="material-symbols-outlined text-[18px]">add_circle</span>
-          <span>Create</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="shrink-0 flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-primary-container text-on-primary-container text-xs font-bold shadow-md shadow-primary-container/20 active:scale-95 transition-transform cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">add_circle</span>
+            <span>Create</span>
+          </button>
+        </div>
       </div>
 
       {/* Performance Highlights + Visual Anchor */}
@@ -317,6 +324,11 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
                           sell
                         </span>
                         <span>{camp.code}</span>
+                        {camp.discountPercentage !== undefined && camp.discountPercentage > 0 && (
+                          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-black text-emerald-400">
+                            {camp.discountPercentage}% OFF
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -360,7 +372,7 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
                   </div>
                   <div className="flex flex-col">
                     <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Impact</span>
-                    <span className="text-xs sm:text-sm md:text-base text-[#f59e0b] dark:text-[#fbbf24] font-black tabular-nums tracking-tight">
+                    <span className="text-xs sm:text-sm md:text-base text-secondary font-black tabular-nums tracking-tight">
                       {camp.revenueLabel || 'Active Promo'}
                     </span>
                   </div>
@@ -376,6 +388,11 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
                 <p className="text-xs text-on-surface-variant/80 leading-relaxed line-clamp-2 px-0.5">
                   {camp.description}
                 </p>
+                {camp.minimumOrderAmount ? (
+                  <p className="text-[11px] font-semibold text-on-surface-variant">
+                    Minimum order ₹{camp.minimumOrderAmount.toLocaleString('en-IN')}
+                  </p>
+                ) : null}
 
                 {/* Footer Row: Validity & Status */}
                 <div className="flex items-center justify-between gap-3 text-xs sm:text-sm pt-0.5">
@@ -462,6 +479,51 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
                   )}
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                    Discount Percentage
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      {...form.register('discountPercentage')}
+                      className="w-full px-3 py-2.5 pr-9 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-on-surface-variant">
+                      %
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-on-surface-variant">
+                    Set 0 for staff-verified offers.
+                  </p>
+                  {form.formState.errors.discountPercentage && (
+                    <p className="text-[11px] text-error mt-1">
+                      {form.formState.errors.discountPercentage.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                    Minimum Order (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    {...form.register('minimumOrderAmount')}
+                    className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  {form.formState.errors.minimumOrderAmount && (
+                    <p className="text-[11px] text-error mt-1">
+                      {form.formState.errors.minimumOrderAmount.message}
+                    </p>
+                  )}
+                </div>
+              </div>
               <div>
                 <label className="block text-xs font-semibold text-on-surface-variant mb-1">
                   Offer Rule Summary
@@ -517,6 +579,7 @@ export const OffersCampaignsScreen: React.FC<OffersCampaignsScreenProps> = ({
           </form>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 };

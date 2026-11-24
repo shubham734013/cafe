@@ -10,25 +10,9 @@ interface RateLimitOptions {
  * Extracts client IP securely without allowing spoofed X-Forwarded-For headers
  * from untrusted upstream connections.
  */
-export function getTrustedClientIp(req: Request): string {
-  // If Express trust proxy is enabled, req.ip resolves via configured trusted proxies
-  if (req.ip && req.ip !== '::1' && req.ip !== '127.0.0.1') {
-    return req.ip;
-  }
-
-  // If behind a trusted reverse proxy (explicitly configured via TRUSTED_PROXY)
-  const isTrustedProxy = Boolean(process.env.TRUST_PROXY || process.env.TRUSTED_PROXY);
-  if (isTrustedProxy) {
-    const xff = req.headers['x-forwarded-for'];
-    if (typeof xff === 'string' && xff.trim()) {
-      const parts = xff.split(',').map((p) => p.trim()).filter(Boolean);
-      // Rightmost entry is appended by the immediate trusted proxy, preventing client header spoofing
-      if (parts.length > 0) {
-        return parts[parts.length - 1];
-      }
-    }
-  }
-
+export function getTrustedClientIp(
+  req: Pick<Request, 'ip'> & { socket: Pick<Request['socket'], 'remoteAddress'> }
+): string {
   return req.ip || req.socket.remoteAddress || '127.0.0.1';
 }
 

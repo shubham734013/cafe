@@ -48,7 +48,7 @@ test('supabaseClient enforces real credentials and rejects fake fallback logins'
         await loginWithGoogle();
       },
       (err: Error) => {
-        assert.match(err.message, /Supabase Auth is not configured/i);
+        assert.match(err.message, /Google Sign-In is not configured|Supabase Auth is not configured/i);
         return true;
       }
     );

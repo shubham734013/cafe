@@ -1,11 +1,15 @@
 import React, { useMemo, useState } from 'react';
 import type { CafeOrder, CustomerReview, MenuItem } from '../types/cafe';
 import type { CustomerFeedbackInput } from '../shared/schemas';
-import { Marquee } from '@/components/ui/marquee';
-import { CardSpotlight } from '@/components/ui/card-spotlight';
+import TestimonialsSection, {
+  type CommunityTestimonialsData,
+} from '@/components/ui/community-testimonial';
 import { BlurFade } from '@/components/ui/blur-fade';
 import { NumberTicker } from '@/components/ui/number-ticker';
 import { ShinyText } from '@/components/ui/shiny-text';
+
+const GOOGLE_REVIEW_URL =
+  'https://search.google.com/local/writereview?placeid=ChIJKdSBIaazbTkRbOW0-Yl-R00&source=g.page.m.ia._&utm_source=gbp&laa=nmx-review-solicitation-ia2';
 
 interface CustomerReviewsSectionProps {
   orders?: CafeOrder[];
@@ -26,7 +30,7 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
 }) => {
   const [writeModalOpen, setWriteModalOpen] = useState(false);
 
-  const [newRating, setNewRating] = useState<number>(1);
+  const [newRating, setNewRating] = useState<number | null>(null);
   const [newName, setNewName] = useState('');
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -61,6 +65,31 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
 
     return [...customerReviews, ...liveOrderReviews];
   }, [customerReviews, menuItems, orders]);
+  const averageRating =
+    allReviews.reduce((total, review) => total + review.rating, 0) / (allReviews.length || 1);
+  const testimonialsData: CommunityTestimonialsData = {
+    title: 'What our customers say',
+    subtitle: 'Real feedback shared by guests at The Sawariya Cafe.',
+    rows: [
+      {
+        id: 'customer-reviews',
+        speed: '45s',
+        direction: 'left',
+        testimonials: allReviews.map((review) => ({
+          id: review.id,
+          quote: review.comment,
+          authorName: review.customerName,
+          authorTitle: [review.dateLabel, review.diningMode?.replace(/^Verified /, '')]
+            .filter(Boolean)
+            .join(' · '),
+          avatarUrl: review.avatarUrl,
+          initials: review.initials,
+          rating: review.rating,
+          dishName: review.dishName,
+        })),
+      },
+    ],
+  };
 
   const handleDishClick = (dishName?: string) => {
     if (!dishName || !onSelectDish) return;
@@ -76,6 +105,11 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
 
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (newRating === null) {
+      setSubmitError('Please select a rating before sending your feedback.');
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitError('');
     try {
@@ -88,7 +122,7 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
       setWriteModalOpen(false);
       setNewName('');
       setNewComment('');
-      setNewRating(1);
+      setNewRating(null);
       onNotify('Thank you. Your feedback has been sent to our team.');
     } catch (error) {
       setSubmitError(
@@ -101,14 +135,14 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
 
   return (
     <BlurFade delay={0.2} inView className="pt-4 pb-8">
-      <div className="flex items-center justify-between gap-3 mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
           <h2 className="text-base font-extrabold text-on-surface tracking-tight">
             Customer Reviews
           </h2>
           {allReviews.length > 0 && (
             <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/25 text-amber-400 text-xs font-bold">
-              <span>★ 4.9</span>
+              <span>★ {averageRating.toFixed(1)}</span>
               <span className="text-[10px] text-amber-400/80">
                 (<NumberTicker value={allReviews.length} />)
               </span>
@@ -116,65 +150,49 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setWriteModalOpen(true)}
-          className="text-xs font-bold text-[#FF6422] hover:text-[#E55518] transition-colors cursor-pointer flex items-center gap-1 group"
-        >
-          <span className="material-symbols-outlined text-[16px] group-hover:scale-110 transition-transform">
-            rate_review
-          </span>
-          <ShinyText text="Give Feedback" speed={2.5} className="font-bold text-[#FF6422]" />
-        </button>
+        <div className="flex items-center gap-3">
+          <a
+            href={GOOGLE_REVIEW_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Write a Google review (opens in a new tab)"
+            className="text-xs font-bold text-[#FF6422] hover:text-[#E55518] transition-colors flex items-center gap-1 group"
+          >
+            <span className="material-symbols-outlined text-[16px] group-hover:scale-110 transition-transform">
+              rate_review
+            </span>
+            <ShinyText text="Google Review" speed={2.5} className="font-bold text-[#FF6422]" />
+          </a>
+          <button
+            type="button"
+            onClick={() => setWriteModalOpen(true)}
+            className="text-xs font-semibold text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+          >
+            Give Feedback
+          </button>
+        </div>
       </div>
 
       {allReviews.length === 0 ? (
-        <div className="w-full py-8 text-center text-sm text-on-surface-variant bg-surface-container/30 rounded-2xl border border-outline-variant/10">
-          No reviews yet. Be the first to share your experience!
+        <div
+          role="status"
+          className="mx-auto mt-5 w-full max-w-sm rounded-3xl border border-outline-variant bg-surface-container-low p-6 text-center shadow-sm"
+        >
+          <span className="mx-auto flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <span className="material-symbols-outlined" aria-hidden="true">
+              rate_review
+            </span>
+          </span>
+          <p className="mt-4 font-semibold text-on-surface">No reviews yet</p>
+          <p className="mt-1 text-sm leading-relaxed text-on-surface-variant">
+            Be the first to share your experience with us.
+          </p>
         </div>
       ) : (
-        <div className="relative w-full overflow-hidden">
-          <Marquee pauseOnHover className="py-2 [--duration:35s]">
-            {allReviews.map((review) => (
-              <CardSpotlight
-                key={review.id}
-                color="rgba(255, 100, 34, 0.12)"
-                radius={240}
-                className="w-[280px] sm:w-[320px] shrink-0 rounded-2xl border border-outline-variant/15 bg-surface-container/60 dark:bg-slate-900/60 backdrop-blur-xl p-4 shadow-md liquid-glass-card hover:scale-[1.02] transition-transform"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="truncate text-sm font-bold text-on-surface">
-                    {review.customerName}
-                  </h3>
-                  <span className="flex shrink-0 items-center gap-1 text-xs font-black text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-                    <span aria-hidden="true">★</span>
-                    {review.rating}
-                  </span>
-                </div>
-                <p className="mt-1 text-[11px] text-on-surface-variant font-medium">
-                  {review.dateLabel}
-                  {review.diningMode ? ` · ${review.diningMode.replace('Verified ', '')}` : ''}
-                </p>
-                <p className="mt-3 text-xs leading-relaxed text-on-surface line-clamp-3">
-                  "{review.comment}"
-                </p>
-                {review.dishName && (
-                  <button
-                    type="button"
-                    onClick={() => handleDishClick(review.dishName)}
-                    className="mt-3 inline-flex items-center gap-1 text-left text-[11px] font-bold text-primary hover:underline cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">restaurant</span>
-                    <span>{review.dishName}</span>
-                  </button>
-                )}
-              </CardSpotlight>
-            ))}
-          </Marquee>
-          {/* Subtle gradient edges on sides */}
-          <div className="pointer-events-none absolute inset-y-0 left-0 w-1/12 bg-gradient-to-r from-background to-transparent" />
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-1/12 bg-gradient-to-l from-background to-transparent" />
-        </div>
+        <TestimonialsSection
+          data={testimonialsData}
+          onSelectDish={(dishName) => handleDishClick(dishName)}
+        />
       )}
 
       {/* Customer Feedback Modal */}
@@ -207,13 +225,13 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
             <form onSubmit={handleSubmitReview} className="space-y-3">
               <div>
                 <label className="mb-1 block text-xs text-on-surface-variant">Rating</label>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1" role="group" aria-label="Rating">
                   {[1, 2, 3, 4, 5].map((star) => {
                     return (
                       <button
                         key={star}
                         type="button"
-                        aria-label={`Rate ${star} stars`}
+                        aria-label={`Rate ${star} star${star === 1 ? '' : 's'}`}
                         aria-pressed={star === newRating}
                         onClick={() => setNewRating(star)}
                         className="text-2xl"

@@ -249,6 +249,12 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
                               : 'Takeaway'}
                         </span>
                       </div>
+                      {isDelivery && order.deliveryAddress && (
+                        <p className="mt-1 flex items-start gap-1.5 text-xs text-on-surface-variant">
+                          <span className="material-symbols-outlined mt-px text-[14px]">location_on</span>
+                          <span className="line-clamp-2">{order.deliveryAddress}</span>
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -304,7 +310,7 @@ export const OrderManagementScreen: React.FC<OrderManagementScreenProps> = ({
                   </div>
                   <div className="flex flex-col">
                     <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Total Amount</span>
-                    <span className="text-xs sm:text-sm md:text-base text-[#f59e0b] dark:text-[#fbbf24] font-black tabular-nums tracking-tight">
+                    <span className="text-xs sm:text-sm md:text-base text-secondary font-black tabular-nums tracking-tight">
                       {formatINR(order.total)}
                     </span>
                   </div>

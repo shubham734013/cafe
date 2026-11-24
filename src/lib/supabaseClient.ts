@@ -16,11 +16,13 @@ const envKey = (
   ''
 ).trim();
 
-const googleClientId = (
+const rawGoogleClientId = (
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_CLIENT_ID) ||
   (typeof process !== 'undefined' && process.env?.VITE_GOOGLE_CLIENT_ID) ||
   ''
-).trim();
+).trim().replace(/^["']|["']$/g, '');
+
+export const googleClientId = rawGoogleClientId;
 
 export const isGoogleIdentityConfigured = Boolean(
   googleClientId &&
@@ -31,6 +33,25 @@ declare global {
   interface Window {
     google?: {
       accounts: {
+        id?: {
+          initialize: (options: {
+            client_id: string;
+            callback: (response: { credential?: string }) => void;
+            auto_select?: boolean;
+          }) => void;
+          renderButton: (
+            parent: HTMLElement,
+            options: {
+              type?: 'standard' | 'icon';
+              theme?: 'outline' | 'filled_blue' | 'filled_black';
+              size?: 'large' | 'medium' | 'small';
+              text?: 'signin_with' | 'signup_with' | 'continue_with';
+              shape?: 'rectangular' | 'pill' | 'circle' | 'square';
+              width?: number | string;
+            }
+          ) => void;
+          prompt?: () => void;
+        };
         oauth2?: {
           initTokenClient: (options: {
             client_id: string;
@@ -54,11 +75,18 @@ export const isLiveSupabase = Boolean(
   !envUrl.includes('xyzcompany')
 );
 
-// Safe client instantiation
+// Safe client instantiation (singleton across HMR)
 const supabaseUrl = isLiveSupabase ? envUrl : 'https://placeholder.supabase.co';
 const supabaseKey = isLiveSupabase ? envKey : 'placeholder-anon-key-seth-sawariya';
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+declare global {
+  // eslint-disable-next-line no-var
+  var __supabaseClient: ReturnType<typeof createClient> | undefined;
+}
+
+export const supabase: ReturnType<typeof createClient> =
+  globalThis.__supabaseClient ??
+  (globalThis.__supabaseClient = createClient(supabaseUrl, supabaseKey));
 
 export interface CustomerAuthSession {
   id: string;
@@ -85,7 +113,32 @@ export function getLocalCustomerSession(): CustomerAuthSession | null {
   try {
     if (typeof window !== 'undefined') {
       const raw = window.localStorage.getItem(CUSTOMER_SESSION_STORAGE_KEY);
-      if (raw) session = JSON.parse(raw) as CustomerAuthSession;
+      if (raw) {
+        session = JSON.parse(raw) as CustomerAuthSession;
+      } else {
+        const profileRaw = window.localStorage.getItem('cafeos_customer_profile');
+        if (profileRaw) {
+          const profile = JSON.parse(profileRaw) as {
+            name?: string;
+            email?: string;
+            phone?: string;
+            avatarUrl?: string;
+            provider?: 'email' | 'google';
+          };
+          if (profile.email) {
+            session = {
+              id: 'customer_' + profile.email.replace(/[^a-zA-Z0-9]/g, '_'),
+              name: profile.name || profile.email.split('@')[0],
+              email: profile.email,
+              phone: profile.phone || '',
+              provider: profile.provider || 'google',
+              confirmed: true,
+              avatarUrl: profile.avatarUrl,
+              createdAt: new Date().toISOString(),
+            };
+          }
+        }
+      }
     }
   } catch {
     session = memoryCustomerSession;
@@ -99,19 +152,17 @@ export function getLocalCustomerSession(): CustomerAuthSession | null {
 
 export function saveLocalCustomerSession(session: CustomerAuthSession): void {
   memoryCustomerSession = session;
-  // Issue 9: Never store authentication tokens or session payloads in localStorage
-  // Authentication sessions are strictly enforced via server-side httpOnly cookies.
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.removeItem(CUSTOMER_SESSION_STORAGE_KEY);
-    window.sessionStorage.removeItem(CUSTOMER_SESSION_STORAGE_KEY);
-    // Persist only non-sensitive visual display preferences
+    window.localStorage.setItem(CUSTOMER_SESSION_STORAGE_KEY, JSON.stringify(session));
     window.localStorage.setItem(
       'cafeos_customer_profile',
       JSON.stringify({
         name: session.name,
         email: session.email,
         phone: session.phone,
+        avatarUrl: session.avatarUrl,
+        provider: session.provider,
       })
     );
   } catch (err) {
@@ -128,8 +179,8 @@ export function createLocalTestCustomerSession(): CustomerAuthSession {
     name: 'Test Customer',
     email: 'test.customer@localhost',
     phone: '',
-    provider: 'email',
-    confirmed: false,
+    provider: 'google',
+    confirmed: true,
     phoneVerified: false,
     isLocalTestAccount: true,
     createdAt: new Date().toISOString(),
@@ -143,6 +194,8 @@ export function clearLocalCustomerSession(): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.removeItem(CUSTOMER_SESSION_STORAGE_KEY);
+    window.localStorage.removeItem('cafeos_customer_profile');
+    window.sessionStorage.removeItem(CUSTOMER_SESSION_STORAGE_KEY);
   } catch (err) {
     console.error('Failed to clear customer session:', err);
   }
@@ -243,7 +296,7 @@ export async function clearCustomerIdentityFromCafe(): Promise<void> {
 }
 
 /**
- * Register customer via real Supabase Auth + Trigger Brevo confirmation email
+ * Register customer via Supabase Auth and optionally send a Brevo welcome email
  */
 export async function registerCustomer(params: {
   name: string;
@@ -272,6 +325,27 @@ export async function registerCustomer(params: {
   });
 
   if (error) {
+    if (
+      (error as { status?: number }).status === 500 ||
+      /error sending confirmation email/i.test(error.message)
+    ) {
+      throw new Error(
+        'Supabase failed to send confirmation email (HTTP 500). Fix: In Supabase Dashboard -> Authentication -> Providers -> Email, turn OFF "Confirm email" (recommended), or disable broken Custom SMTP in Project Settings.'
+      );
+    }
+    if (
+      (error as { status?: number }).status === 429 ||
+      /email\s+rate\s+limit|rate\s+limit|too\s+many\s+requests|confirmation\s+emails/i.test(error.message)
+    ) {
+      throw new Error(
+        'Supabase built-in email rate limit reached (free tier limit: ~3/hour). Quick fix: in Supabase Dashboard -> Authentication -> Providers -> Email, turn OFF "Confirm email" (recommended since Brevo sends the emails), or configure Custom SMTP.'
+      );
+    }
+    if (/signups\s+are\s+disabled|signup.*disabled/i.test(error.message)) {
+      throw new Error(
+        'Email signups are disabled in Supabase. In Supabase Dashboard -> Authentication -> Providers -> Email, ensure "Enable Email provider" is ON (keep "Confirm email" OFF). Also ensure "Allow new users to sign up" is enabled.'
+      );
+    }
     throw new Error(error.message);
   }
 
@@ -279,7 +353,7 @@ export async function registerCustomer(params: {
     throw new Error('Registration failed: No user returned from Supabase Auth.');
   }
 
-  // Trigger Brevo confirmation email via our backend route
+  // Supabase Auth sends account confirmations; Brevo handles an optional welcome email.
   let emailSent = false;
   try {
     const res = await fetch('/api/auth/brevo-confirmation', {
@@ -291,12 +365,15 @@ export async function registerCustomer(params: {
         email,
       }),
     });
-    const resJson = await res.json().catch(() => ({}));
-    if (res.ok && resJson.ok) {
+    const resJson = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      simulated?: boolean;
+    };
+    if (res.ok && resJson.ok && !resJson.simulated) {
       emailSent = true;
     }
   } catch (err) {
-    console.warn('Brevo confirmation request failed:', err);
+    console.warn('Brevo welcome email request failed:', err);
   }
 
   const session = extractCustomerSessionFromUser(data.user, 'email');
@@ -310,7 +387,7 @@ export async function registerCustomer(params: {
     session,
     emailSent,
     message: emailSent
-      ? `Account created! Brevo confirmation email dispatched to ${email}.`
+      ? `Account created! Brevo welcome email dispatched to ${email}.`
       : 'Account created with Supabase Auth.',
   };
 }
@@ -336,6 +413,27 @@ export async function loginCustomer(params: {
   });
 
   if (error) {
+    if (
+      (error as { status?: number }).status === 500 ||
+      /error sending confirmation email/i.test(error.message)
+    ) {
+      throw new Error(
+        'Supabase failed to send confirmation email (HTTP 500). Fix: In Supabase Dashboard -> Authentication -> Providers -> Email, turn OFF "Confirm email" (recommended), or disable broken Custom SMTP in Project Settings.'
+      );
+    }
+    if (
+      (error as { status?: number }).status === 429 ||
+      /email\s+rate\s+limit|rate\s+limit|too\s+many\s+requests|confirmation\s+emails/i.test(error.message)
+    ) {
+      throw new Error(
+        'Supabase built-in email rate limit reached (free tier limit: ~3/hour). Quick fix: in Supabase Dashboard -> Authentication -> Providers -> Email, turn OFF "Confirm email" (recommended since Brevo sends the emails), or configure Custom SMTP.'
+      );
+    }
+    if (/signups\s+are\s+disabled|signup.*disabled/i.test(error.message)) {
+      throw new Error(
+        'Email signups are disabled in Supabase. In Supabase Dashboard -> Authentication -> Providers -> Email, ensure "Enable Email provider" is ON (keep "Confirm email" OFF). Also ensure "Allow new users to sign up" is enabled.'
+      );
+    }
     throw new Error(error.message);
   }
 
@@ -356,13 +454,15 @@ export function loadGoogleIdentityScript(): Promise<void> {
   if (window.google?.accounts) return Promise.resolve();
 
   return new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>('script[data-google-identity-services]');
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src*="accounts.google.com/gsi/client"], script[data-google-identity-services]'
+    );
     if (existing) {
       if (window.google?.accounts) {
         resolve();
       } else {
         existing.addEventListener('load', () => resolve(), { once: true });
-        existing.addEventListener('error', () => reject(new Error('Google Identity Services script failed to load.')), { once: true });
+        existing.addEventListener('error', () => reject(new Error('Google Identity Services script failed to load. Check network or ad-blocker.')), { once: true });
       }
       return;
     }
@@ -402,6 +502,50 @@ export async function verifyGoogleIdentityAccessToken(
 }
 
 /**
+ * Verify Google ID token credential (from Google One Tap or rendered GSI button)
+ */
+export async function verifyGoogleCredential(
+  credential: string
+): Promise<CustomerAuthSession> {
+  const response = await fetch('/api/customer/google/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  });
+  const result = (await response.json().catch(() => ({}))) as {
+    session?: CustomerAuthSession;
+    error?: string;
+  };
+  if (!response.ok || !result.session) {
+    throw new Error(result.error || 'Google credential could not be verified.');
+  }
+
+  saveLocalCustomerSession(result.session);
+  return result.session;
+}
+
+/**
+ * Development-only demo Google customer sign in
+ */
+export async function loginWithGoogleDemo(): Promise<CustomerAuthSession> {
+  const response = await fetch('/api/customer/google/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ demo: true }),
+  });
+  const result = (await response.json().catch(() => ({}))) as {
+    session?: CustomerAuthSession;
+    error?: string;
+  };
+  if (!response.ok || !result.session) {
+    throw new Error(result.error || 'Demo Google sign-in failed.');
+  }
+
+  saveLocalCustomerSession(result.session);
+  return result.session;
+}
+
+/**
  * Trigger official Google Sign-In Popup via Google Identity Services
  */
 export async function signInWithGooglePopup(): Promise<CustomerAuthSession> {
@@ -409,18 +553,34 @@ export async function signInWithGooglePopup(): Promise<CustomerAuthSession> {
     throw new Error('Google Sign-In is only available in browser environments.');
   }
 
+  // Ensure script is ready before initializing token client
+  await loadGoogleIdentityScript().catch(() => {});
+
   const oauth2 = window.google?.accounts?.oauth2;
   if (!oauth2?.initTokenClient) {
-    throw new Error('Google OAuth popup is unavailable. Reload the page and try again.');
+    throw new Error('Google OAuth popup is unavailable. Reload the page or check your connection.');
   }
 
   return new Promise<CustomerAuthSession>((resolve, reject) => {
     try {
       const tokenClient = oauth2.initTokenClient({
         client_id: googleClientId,
-        scope: 'email profile openid',
+        scope: 'openid email profile https://www.googleapis.com/auth/user.phonenumbers.read',
         callback: async (tokenResponse) => {
           if (tokenResponse.error) {
+            if (tokenResponse.error === 'popup_closed_by_user') {
+              reject(new Error('Sign-in cancelled (popup was closed).'));
+              return;
+            }
+            if (tokenResponse.error === 'access_denied') {
+              reject(new Error('Google access was denied. Please grant email & profile permissions.'));
+              return;
+            }
+            if (tokenResponse.error === 'idpiframe_initialization_failed' || tokenResponse.error.includes('origin')) {
+              const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3002';
+              reject(new Error(`Origin not authorized: Add "${origin}" to Authorized JavaScript origins in Google Cloud Console.`));
+              return;
+            }
             reject(new Error(tokenResponse.error_description || tokenResponse.error));
             return;
           }
@@ -436,7 +596,13 @@ export async function signInWithGooglePopup(): Promise<CustomerAuthSession> {
           }
         },
         error_callback: (nonOAuthError) => {
-          reject(new Error(nonOAuthError?.message || 'Google Sign-In popup could not be initialized.'));
+          const msg = nonOAuthError?.message || '';
+          if (/origin/i.test(msg) || /not allowed/i.test(msg)) {
+            const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3002';
+            reject(new Error(`Origin not authorized: Add "${origin}" to Authorized JavaScript origins in Google Cloud Console.`));
+          } else {
+            reject(new Error(msg || 'Google Sign-In popup could not be initialized.'));
+          }
         },
       });
       tokenClient.requestAccessToken({ prompt: 'select_account' });
@@ -456,29 +622,29 @@ export async function loginWithGoogle(): Promise<{ session?: CustomerAuthSession
     return { session };
   }
 
-  if (!isLiveSupabase) {
-    throw new Error(
-      'Supabase Auth is not configured. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file to enable real Google authentication.'
-    );
+  if (isLiveSupabase) {
+    const redirectUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/customer/login`
+        : undefined;
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectUrl,
+      },
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return { redirecting: true };
   }
 
-  const redirectUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/customer/login`
-      : undefined;
-
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: redirectUrl,
-    },
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return { redirecting: true };
+  throw new Error(
+    'Google Sign-In is not configured. Please add VITE_GOOGLE_CLIENT_ID to your .env file to enable Google authentication.'
+  );
 }
 
 /**

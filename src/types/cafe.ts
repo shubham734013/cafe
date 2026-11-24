@@ -20,7 +20,8 @@ export type CustomerScreenId =
   | 'profile'
   | 'login'
   | 'privacy-policy'
-  | 'terms-and-conditions';
+  | 'terms-and-conditions'
+  | 'akshat';
 export type StaffScreenId =
   | 'staff-home'
   | 'pos-terminal'
@@ -52,35 +53,40 @@ export type OrderStatus =
   | 'served'
   | 'paid'
   | 'cancelled';
-export type MenuCategory =
-  | 'All'
-  | 'Best Sellers'
-  | 'Beverages'
-  | 'Snacks'
-  | 'Meals'
-  | 'Combos'
-  | 'Desserts'
-  | 'Pizza'
-  | 'Burger'
-  | 'Pasta'
-  | 'Salad'
-  | 'Drink'
-  | 'Dessert';
+export const MENU_ITEM_CATEGORIES = [
+  'Burgers',
+  'Pizza',
+  'Maggi',
+  'Sandwiches',
+  'Special Bread Pizza',
+  'Fries & Momos',
+  'Cold Coffee',
+  'Shakes',
+  'Hot Beverages',
+  'Combos',
+  'Beverages',
+  'Snacks',
+  'Meals',
+  'Desserts',
+  'Burger',
+  'Pasta',
+  'Salad',
+  'Drink',
+  'Dessert',
+] as const;
+
+export type MenuItemCategory = (typeof MENU_ITEM_CATEGORIES)[number];
+export type MenuCategory = 'All' | 'Best Sellers' | MenuItemCategory;
 export type DateRangeKey = 'Today' | 'Last 7 Days' | 'Last 30 Days' | 'This Month' | 'Quarter to Date';
 export type ReportCategory = 'Sales Report' | 'Item Report' | 'Inventory Report' | 'Customer Report' | 'Staff Roster';
 
 export type InventoryTab =
   | 'Inventory'
   | 'Low Stock'
-  | 'Ingredients'
   | 'Stock In'
   | 'Stock Out'
   | 'Suppliers'
-  | 'Movements'
-  | 'Purchase Orders'
-  | 'Batches'
-  | 'Waste'
-  | 'Stock Counts';
+  | 'Purchase Orders';
 export type InventoryStatus = 'Good' | 'Reorder Soon' | 'Critical';
 
 export type TableFloor = 'Floor 1 (Main Hall)' | 'Floor 2 (Rooftop)' | 'Outdoor Patio';
@@ -101,7 +107,7 @@ export interface MenuItem {
   name: string;
   description: string;
   price: number;
-  category: Exclude<MenuCategory, 'All' | 'Best Sellers'>;
+  category: MenuItemCategory;
   rating: number;
   isVeg: boolean;
   isBestSeller?: boolean;
@@ -112,6 +118,7 @@ export interface MenuItem {
   unitsSold: number;
   reviewsCount?: number;
   recipe?: RecipeBurnItem[];
+  variants?: Array<{ size: string; price: number }>;
 }
 
 export interface CartItem {
@@ -119,7 +126,7 @@ export interface CartItem {
   name: string;
   price: number;
   quantity: number;
-  size?: 'Small' | 'Medium' | 'Large';
+  size?: string;
   note: string;
   imageUrl: string;
   station: MenuItem['station'];
@@ -147,6 +154,11 @@ export interface CafeOrder {
   isPosTerminal?: boolean;
   serviceMode: ServiceMode;
   tableNumber?: string;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  paidEmailSentAt?: string;
+  deliveryAddress?: string;
   deliveryPartner?: string;
   riderNote?: string;
   items: CartItem[];
@@ -192,7 +204,8 @@ export interface CafeActivityLogItem {
     | 'stock_updated'
     | 'table_updated'
     | 'feedback_received'
-    | 'campaign_toggled';
+    | 'campaign_toggled'
+    | 'customer_signed_up';
   title: string;
   description: string;
   actorName: string;
@@ -320,6 +333,13 @@ export interface CustomerProfile {
   initials: string;
   name: string;
   phone: string;
+  email?: string;
+  avatarUrl?: string;
+  provider?: 'google' | 'email';
+  googleSubjectId?: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+  createdAt?: string;
   segment: Exclude<CustomerSegment, 'all'>;
   visits: number;
   totalSpent: number;
@@ -354,6 +374,15 @@ export interface PromoCampaign {
   id: string;
   title: string;
   code: string;
+  discountPercentage?: number;
+  offerType?: 'percentage' | 'first_order_percentage' | 'buy_x_get_y' | 'manual';
+  minimumOrderAmount?: number;
+  manualRedemptionMessage?: string;
+  qualifyingMenuItemId?: string;
+  qualifyingSize?: string;
+  buyQuantity?: number;
+  freeQuantity?: number;
+  freeItemPrice?: number;
   status: Exclude<CampaignFilter, 'all'>;
   validityLabel: string;
   description: string;
@@ -383,6 +412,7 @@ export interface StaffMember {
 
 export interface CafeSettings {
   cafeName: string;
+  logoUrl?: string;
   subCategory: string;
   address: string;
   phone: string;
@@ -396,6 +426,11 @@ export interface CafeSettings {
   posPrinterConnected: boolean;
   upiVpa?: string;
   upiPayeeName?: string;
+  whatsapp?: string;
+  instagramHandle?: string;
+  wifiSsid?: string;
+  wifiPassword?: string;
+  minDeliveryOrder?: number;
 }
 
 export interface DailyRevenuePoint {

@@ -8,12 +8,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ORDER_STATUS_META } from '../state/cafeStateMachines';
-import { CafeOrder, InventoryIngredient, OrderStatus } from '../types/cafe';
+import { CafeOrder, InventoryIngredient, MenuItem, OrderStatus } from '../types/cafe';
 import { deriveKotCardPhase, isKitchenActiveOrder } from '../utils/cafeLogic';
+import { MenuItemStockControlModal } from './MenuItemStockControlModal';
 
 interface KitchenDisplayScreenProps {
   orders: CafeOrder[];
   inventory?: InventoryIngredient[];
+  menuItems?: MenuItem[];
   isConnected?: boolean;
   pendingOrderId?: string | null;
   onToggleKotItem: (orderId: string, menuItemId: string) => void;
@@ -21,6 +23,7 @@ interface KitchenDisplayScreenProps {
   onAdvanceOrderStatus: (orderId: string) => void | Promise<void>;
   onRefresh?: () => void;
   onRequestReorder?: (ingredientId: string, note?: string) => Promise<void>;
+  onToggleMenuAvailability?: (id: string) => Promise<void> | void;
   onNotify: (msg: string) => void;
 }
 
@@ -100,6 +103,7 @@ KotElapsedBadge.displayName = 'KotElapsedBadge';
 export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
   orders,
   inventory = [],
+  menuItems = [],
   isConnected = false,
   pendingOrderId = null,
   onToggleKotItem,
@@ -107,6 +111,7 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
   onAdvanceOrderStatus,
   onRefresh,
   onRequestReorder,
+  onToggleMenuAvailability,
   onNotify,
 }) => {
   const [filter, setFilter] = useState<KotFilter>('all');
@@ -114,6 +119,7 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
   const [localPendingId, setLocalPendingId] = useState<string | null>(null);
   const [justPreparedIds, setJustPreparedIds] = useState<Set<string>>(() => new Set());
   const [stockModalOpen, setStockModalOpen] = useState(false);
+  const [itemStockModalOpen, setItemStockModalOpen] = useState(false);
   const [stockSearch, setStockSearch] = useState('');
   const [reorderNotes, setReorderNotes] = useState<Record<string, string>>({});
   const [requestingId, setRequestingId] = useState<string | null>(null);
@@ -123,9 +129,15 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
   const [cancelQty, setCancelQty] = useState(1);
   const [cancelReason, setCancelReason] = useState('Out of Stock / Ingredient Unavailable');
   const [cancelCustomReason, setCancelCustomReason] = useState('');
+  const [alsoMark86, setAlsoMark86] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const prevStatusMapRef = useRef<Record<string, OrderStatus>>({});
   const prevOrderCountRef = useRef<number | null>(null);
+
+  const outOfStockItemsCount = useMemo(
+    () => menuItems.filter((i) => i.isAvailable === false).length,
+    [menuItems]
+  );
 
   const lowStockCount = useMemo(
     () =>
@@ -256,7 +268,11 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
         finalReason,
         cancelQty
       );
+      if (alsoMark86 && onToggleMenuAvailability) {
+        void onToggleMenuAvailability(cancelTarget.item.menuItemId);
+      }
       setCancelTarget(null);
+      setAlsoMark86(false);
     } catch {
       // onNotify is called by the mutation handler
     } finally {
@@ -270,8 +286,8 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
         {/* Live KOT Top Banner & Sound Controls */}
         <div className="w-full bg-surface-container rounded-3xl p-4 sm:p-5 border border-outline-variant/15 shadow-sm flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-[#FF6422]/15 flex items-center justify-center text-[#FF6422] shrink-0">
-              <span className="material-symbols-outlined text-[26px]">soup_kitchen</span>
+            <div className="w-12 h-12 rounded-2xl overflow-hidden border border-[#D4AF37]/60 shadow-sm shrink-0 bg-black p-0.5">
+              <img src="/images/tsc-logo.jpg" alt="The Sawariya Cafe" className="w-full h-full object-cover rounded-xl" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -296,6 +312,23 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Menu Item Stock Control (86 / In Stock) */}
+            {onToggleMenuAvailability && (
+              <button
+                type="button"
+                onClick={() => setItemStockModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-all active:scale-95 cursor-pointer shrink-0"
+              >
+                <span className="material-symbols-outlined text-[18px]">remove_shopping_cart</span>
+                <span className="hidden sm:inline">86 / Item Stock</span>
+                {outOfStockItemsCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                    {outOfStockItemsCount}
+                  </span>
+                )}
+              </button>
+            )}
+
             {/* Kitchen Stock Alert & Reorder Button */}
             <button
               type="button"
@@ -888,6 +921,19 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
                   </div>
                 </div>
 
+                {/* Option to also 86 the item */}
+                {onToggleMenuAvailability && (
+                  <label className="flex items-center gap-2.5 cursor-pointer p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-semibold select-none hover:bg-rose-500/15 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={alsoMark86}
+                      onChange={(e) => setAlsoMark86(e.target.checked)}
+                      className="rounded text-rose-500 focus:ring-rose-400 w-4 h-4 cursor-pointer"
+                    />
+                    <span>Also tag <strong>{cancelTarget.item.name}</strong> as <strong>Out of Stock (86)</strong> for future orders</span>
+                  </label>
+                )}
+
                 {/* Modal Action Buttons */}
                 <div className="flex gap-2 pt-1">
                   <button
@@ -923,6 +969,16 @@ export const KitchenDisplayScreen: React.FC<KitchenDisplayScreenProps> = ({
             )}
           </DialogContent>
         </Dialog>
+        {/* Menu Item Stock Control (86 / In Stock) Dialog */}
+        {onToggleMenuAvailability && (
+          <MenuItemStockControlModal
+            open={itemStockModalOpen}
+            onOpenChange={setItemStockModalOpen}
+            menuItems={menuItems}
+            onToggleAvailability={onToggleMenuAvailability}
+            roleLabel="Kitchen KDS"
+          />
+        )}
       </div>
     </MotionConfig>
   );

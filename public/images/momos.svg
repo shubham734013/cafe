@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+    <defs>
+      <radialGradient id="momoBg" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#FFFDF7"/>
+        <stop offset="100%" stop-color="#F2E6CE"/>
+      </radialGradient>
+      <linearGradient id="steamer" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#DDBEA9"/>
+        <stop offset="100%" stop-color="#B79477"/>
+      </linearGradient>
+    </defs>
+    <circle cx="100" cy="100" r="92" fill="url(#momoBg)"/>
+    <!-- Steam -->
+    <path d="M 85 45 Q 80 32 88 22" stroke="#D3B89D" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.6"/>
+    <path d="M 102 42 Q 108 30 102 20" stroke="#D3B89D" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.6"/>
+    <path d="M 120 46 Q 115 34 122 24" stroke="#D3B89D" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.6"/>
+    <!-- Bamboo Basket Steamer -->
+    <ellipse cx="100" cy="148" rx="68" ry="18" fill="url(#steamer)"/>
+    <ellipse cx="100" cy="142" rx="64" ry="15" fill="#E6CCB2"/>
+    <!-- Momos (Steamed Dumplings with pleats) -->
+    <!-- Momo 1 Left -->
+    <path d="M 55 125 C 50 100, 85 95, 88 120 C 88 132, 55 135, 55 125 Z" fill="#FFF9ED" stroke="#D4A373" stroke-width="1.5"/>
+    <path d="M 70 98 Q 72 110 70 125" stroke="#D4A373" stroke-width="1.5" fill="none"/>
+    <path d="M 62 105 Q 66 115 64 125" stroke="#D4A373" stroke-width="1.5" fill="none"/>
+    <path d="M 78 105 Q 76 115 78 125" stroke="#D4A373" stroke-width="1.5" fill="none"/>
+    <!-- Momo 2 Right -->
+    <path d="M 112 120 C 115 95, 150 100, 145 125 C 145 135, 112 132, 112 120 Z" fill="#FFF9ED" stroke="#D4A373" stroke-width="1.5"/>
+    <path d="M 130 98 Q 128 110 130 125" stroke="#D4A373" stroke-width="1.5" fill="none"/>
+    <!-- Momo 3 Center -->
+    <path d="M 78 138 C 75 110, 125 110, 122 138 C 122 148, 78 148, 78 138 Z" fill="#FFFFFF" stroke="#D4A373" stroke-width="1.8"/>
+    <path d="M 100 112 L 100 140" stroke="#D4A373" stroke-width="1.5"/>
+    <path d="M 90 118 Q 94 130 92 140" stroke="#D4A373" stroke-width="1.5" fill="none"/>
+    <path d="M 110 118 Q 106 130 108 140" stroke="#D4A373" stroke-width="1.5" fill="none"/>
+    <!-- Spicy Red Chutney Bowl in Center -->
+    <ellipse cx="100" cy="100" rx="16" ry="8" fill="#BA181B"/>
+    <ellipse cx="100" cy="99" rx="13" ry="5.5" fill="#D90429"/>
+  </svg>

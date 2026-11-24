@@ -15,6 +15,7 @@ import type {
   StaffRole,
   WorkspaceMode,
 } from '../types/cafe';
+import { getItemVariants } from '../utils/menuVariants';
 
 const STAFF_SCREENS = new Set<ScreenId>([
   'pos-terminal',
@@ -57,6 +58,16 @@ function getInitialFromUrl(): {
     } catch {}
   }
   const route = resolveCafeRoute(window.location.pathname, window.location.search);
+  // Returning customers should not briefly render the onboarding/splash route and
+  // then replace the entire viewport. Besides being faster, this prevents a large
+  // layout shift during normal page entry.
+  if (route.screen === 'splash') {
+    try {
+      if (window.localStorage.getItem('cafeos_onboarding_seen') === 'true') {
+        return { screen: 'home', mode: 'customer', table, trackedOrderId };
+      }
+    } catch {}
+  }
   return { ...route, table, trackedOrderId };
 }
 
@@ -84,11 +95,27 @@ function persistCustomerCart(cart: CartItem[]) {
   }
 }
 
-function upsertItem(list: CartItem[], item: MenuItem, quantity = 1): CartItem[] {
-  const existing = list.find((c) => c.menuItemId === item.id);
+function upsertItem(
+  list: CartItem[],
+  item: MenuItem,
+  quantity = 1,
+  size?: string
+): CartItem[] {
+  const variants = getItemVariants(item);
+  const selectedSize = size ?? variants[0]?.size ?? 'Regular';
+  const selectedVariant = variants.find(
+    (variant) => variant.size.trim().toLowerCase() === selectedSize.trim().toLowerCase()
+  );
+  const existing = list.find(
+    (cartItem) =>
+      cartItem.menuItemId === item.id &&
+      (cartItem.size ?? 'Regular').trim().toLowerCase() === selectedSize.trim().toLowerCase()
+  );
   if (existing) {
     return list.map((c) =>
-      c.menuItemId === item.id ? { ...c, quantity: c.quantity + quantity } : c
+      c.menuItemId === item.id && (c.size ?? 'Regular') === (existing.size ?? 'Regular')
+        ? { ...c, quantity: c.quantity + quantity }
+        : c
     );
   }
   return [
@@ -96,9 +123,10 @@ function upsertItem(list: CartItem[], item: MenuItem, quantity = 1): CartItem[] 
     {
       menuItemId: item.id,
       name: item.name,
-      price: item.price,
+      price: selectedVariant?.price ?? item.price,
       quantity,
       note: item.defaultNote,
+      size: selectedSize,
       imageUrl: item.imageUrl,
       station: item.station,
       checked: false,
@@ -106,9 +134,51 @@ function upsertItem(list: CartItem[], item: MenuItem, quantity = 1): CartItem[] 
   ];
 }
 
-function adjustQty(list: CartItem[], menuItemId: string, delta: number): CartItem[] {
+function upsertPosItem(
+  list: CartItem[],
+  item: MenuItem,
+  variant?: { size: string; price: number },
+  quantity = 1,
+  note?: string
+): CartItem[] {
+  const selectedSize = variant?.size;
+  const existing = list.find(
+    (cartItem) => cartItem.menuItemId === item.id && cartItem.size === selectedSize
+  );
+  if (existing) {
+    return list.map((cartItem) =>
+      cartItem.menuItemId === item.id && cartItem.size === selectedSize
+        ? {
+            ...cartItem,
+            quantity: cartItem.quantity + quantity,
+            note: note || cartItem.note,
+          }
+        : cartItem
+    );
+  }
+  return [
+    ...list,
+    {
+      menuItemId: item.id,
+      name: item.name,
+      price: variant?.price ?? item.price,
+      quantity,
+      size: selectedSize,
+      note: note || item.defaultNote,
+      imageUrl: item.imageUrl,
+      station: item.station,
+      checked: false,
+    },
+  ];
+}
+
+function adjustQty(list: CartItem[], menuItemId: string, delta: number, size = 'Regular'): CartItem[] {
   return list
-    .map((c) => (c.menuItemId === menuItemId ? { ...c, quantity: c.quantity + delta } : c))
+    .map((c) =>
+      c.menuItemId === menuItemId && (c.size ?? 'Regular') === size
+        ? { ...c, quantity: c.quantity + delta }
+        : c
+    )
     .filter((c) => c.quantity > 0);
 }
 
@@ -131,12 +201,17 @@ interface CafeClientState {
   setServiceMode: (mode: ServiceMode) => void;
   setSelectedTable: (table: string) => void;
   setMenuCategory: (cat: MenuCategory) => void;
-  addCustomerItem: (item: MenuItem, quantity?: number) => void;
-  updateCustomerQty: (menuItemId: string, delta: number) => void;
-  removeCustomerItem: (menuItemId: string) => void;
+  addCustomerItem: (item: MenuItem, quantity?: number, size?: string) => void;
+  updateCustomerQty: (menuItemId: string, delta: number, size?: string) => void;
+  removeCustomerItem: (menuItemId: string, size?: string) => void;
   clearCustomerCart: () => void;
-  addPosItem: (item: MenuItem) => void;
-  updatePosQty: (menuItemId: string, delta: number) => void;
+  addPosItem: (
+    item: MenuItem,
+    variant?: { size: string; price: number },
+    quantity?: number,
+    note?: string
+  ) => void;
+  updatePosQty: (menuItemId: string, delta: number, size?: string) => void;
   clearPosCart: () => void;
   setCouponCode: (code: string) => void;
   setCookingNote: (note: string) => void;
@@ -185,21 +260,23 @@ export const useCafeStore = create<CafeClientState>((set) => ({
   setSelectedTable: (selectedTable) => set({ selectedTable }),
   setMenuCategory: (menuCategory) => set({ menuCategory }),
 
-  addCustomerItem: (item, quantity = 1) =>
+  addCustomerItem: (item, quantity = 1, size) =>
     set((state) => {
-      const nextCart = upsertItem(state.customerCart, item, quantity);
+      const nextCart = upsertItem(state.customerCart, item, quantity, size);
       persistCustomerCart(nextCart);
       return { customerCart: nextCart };
     }),
-  updateCustomerQty: (menuItemId, delta) =>
+  updateCustomerQty: (menuItemId, delta, size = 'Regular') =>
     set((state) => {
-      const nextCart = adjustQty(state.customerCart, menuItemId, delta);
+      const nextCart = adjustQty(state.customerCart, menuItemId, delta, size);
       persistCustomerCart(nextCart);
       return { customerCart: nextCart };
     }),
-  removeCustomerItem: (menuItemId) =>
+  removeCustomerItem: (menuItemId, size = 'Regular') =>
     set((state) => {
-      const nextCart = state.customerCart.filter((c) => c.menuItemId !== menuItemId);
+      const nextCart = state.customerCart.filter(
+        (c) => c.menuItemId !== menuItemId || (c.size ?? 'Regular') !== size
+      );
       persistCustomerCart(nextCart);
       return { customerCart: nextCart };
     }),
@@ -208,9 +285,18 @@ export const useCafeStore = create<CafeClientState>((set) => ({
     set({ customerCart: [] });
   },
 
-  addPosItem: (item) => set((state) => ({ posCart: upsertItem(state.posCart, item) })),
-  updatePosQty: (menuItemId, delta) =>
-    set((state) => ({ posCart: adjustQty(state.posCart, menuItemId, delta) })),
+  addPosItem: (item, variant, quantity = 1, note) =>
+    set((state) => ({ posCart: upsertPosItem(state.posCart, item, variant, quantity, note) })),
+  updatePosQty: (menuItemId, delta, size) =>
+    set((state) => ({
+      posCart: state.posCart
+        .map((item) =>
+          item.menuItemId === menuItemId && item.size === size
+            ? { ...item, quantity: item.quantity + delta }
+            : item
+        )
+        .filter((item) => item.quantity > 0),
+    })),
   clearPosCart: () => set({ posCart: [] }),
 
   setCouponCode: (couponCode) => set({ couponCode }),

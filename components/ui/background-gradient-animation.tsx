@@ -40,10 +40,8 @@ export const BackgroundGradientAnimation: React.FC<BackgroundGradientAnimationPr
 }) => {
   const interactiveRef = useRef<HTMLDivElement>(null);
 
-  const [curX, setCurX] = useState(0);
-  const [curY, setCurY] = useState(0);
-  const [tgX, setTgX] = useState(0);
-  const [tgY, setTgY] = useState(0);
+  const currentPosition = useRef({ x: 0, y: 0 });
+  const targetPosition = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     document.body.style.setProperty(
@@ -79,23 +77,25 @@ export const BackgroundGradientAnimation: React.FC<BackgroundGradientAnimationPr
     let animationFrameId: number;
     function move() {
       if (!interactiveRef.current) return;
-      setCurX((prev) => prev + (tgX - prev) / 20);
-      setCurY((prev) => prev + (tgY - prev) / 20);
+      currentPosition.current.x +=
+        (targetPosition.current.x - currentPosition.current.x) / 20;
+      currentPosition.current.y +=
+        (targetPosition.current.y - currentPosition.current.y) / 20;
       interactiveRef.current.style.transform = `translate3d(${Math.round(
-        curX
-      )}px, ${Math.round(curY)}px, 0)`;
+        currentPosition.current.x
+      )}px, ${Math.round(currentPosition.current.y)}px, 0)`;
       animationFrameId = requestAnimationFrame(move);
     }
     animationFrameId = requestAnimationFrame(move);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [tgX, tgY, curX, curY]);
+  }, []);
 
   const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
     if (interactiveRef.current) {
       const rect = interactiveRef.current.parentElement?.getBoundingClientRect();
       if (rect) {
-        setTgX(event.clientX - rect.left);
-        setTgY(event.clientY - rect.top);
+        targetPosition.current.x = event.clientX - rect.left;
+        targetPosition.current.y = event.clientY - rect.top;
       }
     }
   };

@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
   INITIAL_CAMPAIGNS,
   INITIAL_CUSTOMERS,
@@ -31,6 +35,189 @@ import {
   convertRecipeAmountToInventoryUnit,
   calculateOrderStockDeduction,
 } from './cafeLogic';
+import { getCafeAssistantReply } from './cafeAssistant';
+import { CafeImage } from '../components/CafeImage';
+import { CustomerReviewsSection } from '../components/CustomerReviewsSection';
+import { getMenuProductPhoto, MENU_PRODUCT_PHOTOS } from '../data/menuProductPhotos';
+import { getItemVariants, isRegularOnlyMenuItem } from './menuVariants';
+
+test('every menu product maps to a distinct local Pexels photo', () => {
+  const productIds = MENU_ITEMS.map((item) => item.id);
+  assert.equal(Object.keys(MENU_PRODUCT_PHOTOS).length, MENU_ITEMS.length);
+
+  const photoIds = productIds.map((productId) => {
+    const photoId = MENU_PRODUCT_PHOTOS[productId];
+    assert.ok(photoId, `Missing photo assignment for ${productId}`);
+
+    const photoPath = getMenuProductPhoto(productId);
+    assert.ok(photoPath);
+    assert.ok(existsSync(resolve(process.cwd(), 'public', photoPath.slice(1))), `Missing ${photoPath}`);
+    return photoId;
+  });
+
+  assert.equal(new Set(photoIds).size, MENU_ITEMS.length);
+
+  const item = MENU_ITEMS[0];
+  const markup = renderToStaticMarkup(
+    createElement(CafeImage, {
+      src: item.imageUrl,
+      alt: item.name,
+      productId: item.id,
+    })
+  );
+  assert.match(markup, /src="\/images\/products\/aloo-tikki-burger\.jpg"/);
+});
+
+test('coffee and chai menu variants have the requested sizes and prices', () => {
+  const expectedVariants = {
+    'cold-coffee': [
+      { size: 'Normal', price: 30 },
+      { size: 'Medium', price: 50 },
+      { size: 'Large', price: 60 },
+    ],
+    'cold-coffee-with-ice-cream': [
+      { size: 'Normal', price: 40 },
+      { size: 'Medium', price: 60 },
+      { size: 'Large', price: 80 },
+    ],
+    chai: [
+      { size: 'Small', price: 10 },
+      { size: 'Large', price: 20 },
+    ],
+    'kulhad-chai': [
+      { size: 'Small', price: 20 },
+      { size: 'Large', price: 30 },
+    ],
+    'hot-coffee': [
+      { size: 'Small', price: 20 },
+      { size: 'Large', price: 30 },
+    ],
+  } as const;
+
+  for (const [id, variants] of Object.entries(expectedVariants)) {
+    const item = MENU_ITEMS.find((menuItem) => menuItem.id === id);
+    assert.ok(item, `Expected menu item ${id} to exist`);
+    assert.deepEqual(item.variants, variants, `Unexpected variants for ${id}`);
+  }
+});
+
+test('pizzas, Maggi, burgers, sandwiches, shakes, and black coffee only offer Regular', () => {
+  const regularOnlyCategories = new Set([
+    'Burger',
+    'Burgers',
+    'Maggi',
+    'Pizza',
+    'Sandwiches',
+    'Shakes',
+    'Special Bread Pizza',
+  ]);
+  const expectedItems = MENU_ITEMS.filter(
+    (item) => regularOnlyCategories.has(item.category) || item.id === 'black-coffee'
+  );
+  const regularOnlyItems = MENU_ITEMS.filter(isRegularOnlyMenuItem);
+  assert.deepEqual(
+    regularOnlyItems.map((item) => item.id).sort(),
+    expectedItems.map((item) => item.id).sort()
+  );
+
+  for (const item of regularOnlyItems) {
+    assert.deepEqual(getItemVariants(item), [
+      { size: 'Regular', price: item.price, label: 'Regular' },
+    ]);
+  }
+});
+
+test('Google review action opens the provided review page and keeps private feedback available', () => {
+  const markup = renderToStaticMarkup(
+    createElement(CustomerReviewsSection, {
+      menuItems: [],
+      onSubmitFeedback: async () => undefined,
+      onNotify: () => undefined,
+    })
+  ).replaceAll('&amp;', '&');
+
+  assert.match(
+    markup,
+    /href="https:\/\/search\.google\.com\/local\/writereview\?placeid=ChIJKdSBIaazbTkRbOW0-Yl-R00&source=g\.page\.m\.ia\._&utm_source=gbp&laa=nmx-review-solicitation-ia2"/
+  );
+  assert.match(markup, /target="_blank"/);
+  assert.match(markup, /rel="noopener noreferrer"/);
+  assert.match(markup, /Give Feedback/);
+  assert.match(markup, /No reviews yet/);
+});
+
+test('customer review cards use submitted reviews and display their actual average rating', () => {
+  const markup = renderToStaticMarkup(
+    createElement(CustomerReviewsSection, {
+      customerReviews: [
+        {
+          id: 'review-1',
+          customerName: 'Asha Patel',
+          initials: 'AP',
+          rating: 5,
+          comment: 'Loved the cold coffee.',
+          dateLabel: 'Today',
+        },
+        {
+          id: 'review-2',
+          customerName: 'Ravi Kumar',
+          rating: 3,
+          comment: 'Friendly staff.',
+          dateLabel: 'Yesterday',
+        },
+      ],
+      menuItems: [],
+      onSubmitFeedback: async () => undefined,
+      onNotify: () => undefined,
+    })
+  );
+
+  assert.match(markup, /Asha Patel/);
+  assert.match(markup, /Loved the cold coffee\./);
+  assert.match(markup, /Ravi Kumar/);
+  assert.match(markup, /Friendly staff\./);
+  assert.match(markup, /★ 4\.0/);
+  assert.match(markup, /animate-scroll-horizontal/);
+  assert.doesNotMatch(markup, /animate-marquee-vertical|review-marquee/);
+  assert.doesNotMatch(markup, /Sarah K\.|Michael B\.|Productivity Blogger|Efferd|Elon Musk/);
+});
+
+test('cafe assistant answers custom order, menu, and follow-up questions locally', () => {
+  const order = {
+    ...INITIAL_ORDERS[0],
+    kotNumber: 'KOT-42',
+    status: 'preparing' as const,
+    paymentStatus: 'paid' as const,
+    total: 420,
+  };
+  const coldCoffee = MENU_ITEMS.find((item) => item.id === 'cold-coffee');
+  assert.ok(coldCoffee);
+  const context = {
+    activeOrder: order,
+    menuItems: MENU_ITEMS,
+    availableBeans: 75,
+    lastMentionedMenuItem: coldCoffee,
+  };
+
+  assert.match(getCafeAssistantReply('What is happening with my order?', context), /preparing/i);
+  assert.match(getCafeAssistantReply('How much does it cost?', context), /Cold Coffee.*₹/);
+  assert.match(getCafeAssistantReply('Does it contain any allergens?', context), /confirm with a steward/i);
+  assert.match(getCafeAssistantReply('What is my payment status?', context), /payment is marked paid/i);
+  assert.match(getCafeAssistantReply('How many reward beans do I have?', context), /75 reward Beans/);
+  const vegetarianOption = MENU_ITEMS.find((item) => item.isAvailable !== false && item.isVeg);
+  assert.ok(vegetarianOption);
+  assert.ok(getCafeAssistantReply('Show vegetarian options', context).includes(vegetarianOption.name));
+});
+
+test('cafe assistant does not invent menu or order details', () => {
+  const context = {
+    menuItems: MENU_ITEMS,
+    availableBeans: 0,
+  };
+
+  assert.match(getCafeAssistantReply('What is my order status?', context), /active order selected/i);
+  assert.match(getCafeAssistantReply('Can I eat peanuts safely?', context), /confirm with a steward/i);
+});
 
 test('calculateCartTotals applies only configured active campaign codes', () => {
   const items = [
@@ -63,13 +250,133 @@ test('calculateCartTotals applies only configured active campaign codes', () => 
     },
   ];
 
-  const activeCampaign = INITIAL_CAMPAIGNS.find((campaign) => campaign.status === 'active')!;
+  const activeCampaign = {
+    ...INITIAL_CAMPAIGNS[0]!,
+    title: 'Cafe Special',
+    code: 'CAFE10',
+    offerType: 'percentage' as const,
+    discountPercentage: 10,
+    minimumOrderAmount: 0,
+  };
   const totals = calculateCartTotals(items, activeCampaign.code, 'dine-in', false, [activeCampaign]);
   assert.equal(totals.itemCount, 3);
   assert.equal(totals.subtotal, 377);
   assert.equal(totals.discount, 38);
   assert.equal(totals.couponApplied, true);
   assert.equal(totals.couponError, null);
+
+  const customDiscount = calculateCartTotals(
+    items,
+    activeCampaign.code,
+    'dine-in',
+    false,
+    [{ ...activeCampaign, discountPercentage: 20 }]
+  );
+  assert.equal(customDiscount.discount, 75);
+  assert.equal(customDiscount.discountLabel, `${activeCampaign.title} (20% off)`);
+});
+
+test('campaign coupons enforce offer requirements and do not invent discounts', () => {
+  const campaign = INITIAL_CAMPAIGNS.find((entry) => entry.code === 'BUY5GET1');
+  assert.ok(campaign);
+  const mediumCoffee = {
+    menuItemId: 'cold-coffee',
+    name: 'Cold Coffee',
+    price: 50,
+    quantity: 4,
+    size: 'Medium',
+    note: 'Medium',
+    imageUrl: '',
+    station: 'Barista' as const,
+  };
+
+  const fourCoffeeTotals = calculateCartTotals(
+    [mediumCoffee],
+    campaign.code,
+    'takeaway',
+    false,
+    [{ ...campaign, offerType: undefined }]
+  );
+  assert.equal(fourCoffeeTotals.couponApplied, false);
+  assert.equal(fourCoffeeTotals.discount, 0);
+  assert.match(fourCoffeeTotals.couponError ?? '', /Add 1 more Medium Cold Coffees/);
+
+  const fiveCoffeeTotals = calculateCartTotals(
+    [{ ...mediumCoffee, quantity: 5 }],
+    campaign.code,
+    'takeaway',
+    false,
+    [campaign]
+  );
+  assert.equal(fiveCoffeeTotals.couponApplied, true);
+  assert.equal(fiveCoffeeTotals.discount, 30);
+
+  const wrongVariantTotals = calculateCartTotals(
+    [{ ...mediumCoffee, size: 'Normal', quantity: 5 }],
+    campaign.code,
+    'takeaway',
+    false,
+    [campaign]
+  );
+  assert.equal(wrongVariantTotals.couponApplied, false);
+  assert.match(wrongVariantTotals.couponError ?? '', /Add 5 more Medium Cold Coffees/);
+
+  const manualCampaign = INITIAL_CAMPAIGNS.find((entry) => entry.code === 'BDAY800');
+  assert.ok(manualCampaign);
+  const manualTotals = calculateCartTotals(
+    [{ ...mediumCoffee, price: 900, quantity: 1 }],
+    manualCampaign.code,
+    'dine-in',
+    false,
+    [manualCampaign]
+  );
+  assert.equal(manualTotals.couponApplied, false);
+  assert.equal(manualTotals.discount, 0);
+  assert.match(manualTotals.couponError ?? '', /Book this birthday offer with cafe staff/);
+});
+
+test('first-order and minimum-order campaign rules are enforced', () => {
+  const firstBite = INITIAL_CAMPAIGNS.find((entry) => entry.code === 'FIRSTBITE');
+  assert.ok(firstBite);
+  const studentOffer = INITIAL_CAMPAIGNS.find((entry) => entry.code === 'CAMPUS15');
+  assert.ok(studentOffer);
+  const item = {
+    menuItemId: 'cold-coffee',
+    name: 'Cold Coffee',
+    price: 250,
+    quantity: 1,
+    size: 'Medium',
+    note: 'Medium',
+    imageUrl: '',
+    station: 'Barista' as const,
+  };
+
+  const eligible = calculateCartTotals([item], firstBite.code, 'takeaway', false, [firstBite], 0, true);
+  assert.equal(eligible.couponApplied, true);
+  assert.equal(eligible.discount, 50);
+  const ineligible = calculateCartTotals([item], firstBite.code, 'takeaway', false, [firstBite]);
+  assert.equal(ineligible.couponApplied, false);
+  assert.match(ineligible.couponError ?? '', /first order/);
+
+  const underMinimum = calculateCartTotals(
+    [{ ...item, price: 150 }],
+    studentOffer.code,
+    'takeaway',
+    false,
+    [{ ...studentOffer, offerType: 'percentage', status: 'active' }]
+  );
+  assert.equal(underMinimum.couponApplied, false);
+  assert.match(underMinimum.couponError ?? '', /minimum order of ₹199/);
+
+  const overMinimum = calculateCartTotals(
+    [item],
+    studentOffer.code,
+    'takeaway',
+    false,
+    [{ ...studentOffer, offerType: 'percentage', status: 'active' }]
+  );
+  assert.equal(overMinimum.couponApplied, true);
+  assert.equal(overMinimum.discount, 38);
 });
 
 test('calculateCartTotals automatically applies the first-order offer when eligible', () => {
@@ -150,13 +457,13 @@ test('getNextKotStatus advances tickets sequentially through lifecycle', () => {
 });
 
 test('filterMenuItems filters by category and search query', () => {
-  const beverages = filterMenuItems(MENU_ITEMS, 'Beverages', '');
-  assert.ok(beverages.length >= 5);
-  assert.ok(beverages.every((item) => item.category === 'Beverages'));
+  const burgers = filterMenuItems(MENU_ITEMS, 'Burgers', '');
+  assert.ok(burgers.length >= 6);
+  assert.ok(burgers.every((item) => item.category === 'Burgers'));
 
-  const latteSearch = filterMenuItems(MENU_ITEMS, 'All', 'latte');
-  assert.equal(latteSearch.length, 1);
-  assert.equal(latteSearch[0].id, 'iced-latte');
+  const coffeeSearch = filterMenuItems(MENU_ITEMS, 'All', 'black coffee');
+  assert.equal(coffeeSearch.length, 1);
+  assert.equal(coffeeSearch[0].id, 'black-coffee');
 
   const burgerSearch = filterMenuItems(MENU_ITEMS, 'All', 'burger');
   assert.ok(burgerSearch.length > 0);

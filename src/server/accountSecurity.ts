@@ -126,8 +126,8 @@ export async function initiateEmailChange(userId: string, oldEmail: string, newE
       toName: 'Cafe Account Holder',
       verificationCode: 'NOTICE',
     });
-  } catch (err) {
-    console.error('[Security Notice to Old Email Failed]', err);
+  } catch {
+    console.error('[Security] Email-change notification delivery failed.');
   }
 
   return { token: rawToken };

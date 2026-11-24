@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import type { CartItem, MenuCategory, MenuItem, ServiceMode } from '../types/cafe';
 import { filterMenuItems } from '../utils/cafeLogic';
 import { CafeImage } from './CafeImage';
+import { CustomerFooter } from './CustomerFooter';
 import { FoodDetailsModal } from './FoodDetailsModal';
 
 interface CustomerMenuScreenProps {
@@ -13,7 +14,7 @@ interface CustomerMenuScreenProps {
   cart: CartItem[];
   cartTotal: number;
   cartCount: number;
-  onAddToCart: (item: MenuItem, quantity?: number) => void;
+  onAddToCart: (item: MenuItem, quantity?: number, size?: string) => void;
   onUpdateQty: (menuItemId: string, delta: number) => void;
   onNavigateCart: () => void;
   onToggleServiceMode: () => void;
@@ -22,12 +23,16 @@ interface CustomerMenuScreenProps {
 
 const CATEGORY_TABS: MenuCategory[] = [
   'All',
+  'Burgers',
   'Pizza',
-  'Burger',
-  'Pasta',
-  'Salad',
-  'Drink',
-  'Dessert',
+  'Maggi',
+  'Sandwiches',
+  'Special Bread Pizza',
+  'Fries & Momos',
+  'Cold Coffee',
+  'Shakes',
+  'Hot Beverages',
+  'Combos',
 ];
 
 export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
@@ -51,7 +56,10 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
 
   // Filter items based on activeCategory and search query
   const visibleItems = useMemo(() => {
-    const filtered = filterMenuItems(items, activeCategory, searchQuery);
+    const cleanItems = items.filter(
+      (item) => !item.id.startsWith('test-') && !item.name.toLowerCase().includes('test')
+    );
+    const filtered = filterMenuItems(cleanItems, activeCategory, searchQuery);
     // When "All" is active and no search query, ensure the 6 showcase items from the design are featured prominently on top
     if (activeCategory === 'All' && !searchQuery.trim()) {
       const showcaseOrder = [
@@ -89,21 +97,26 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-4 pb-28 pt-1 text-[#1F1610]">
+    <div className="mx-auto w-full max-w-[1480px] space-y-4 pb-28 pt-1 text-on-surface sm:space-y-5 sm:pb-16 lg:space-y-6">
       {/* Top Header Row (Panel 5) */}
       <div className="flex items-center justify-between pb-1">
         <button
           type="button"
           onClick={_onNavigateHome || onNavigateCart}
           aria-label="Back"
-          className="w-9 h-9 rounded-full bg-white border border-[#EAE2D7] flex items-center justify-center text-[#1F1610] shadow-xs hover:bg-[#F5EFE8] transition-colors cursor-pointer"
+          className="w-9 h-9 rounded-full bg-surface-container-low border border-outline-variant flex items-center justify-center text-on-surface shadow-xs hover:bg-surface-container-high transition-colors cursor-pointer"
         >
           <span className="material-symbols-outlined text-[20px]">arrow_back</span>
         </button>
 
-        <h1 className="font-serif font-bold text-base sm:text-lg text-[#1F1610] tracking-tight">
-          Menu
-        </h1>
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full overflow-hidden border border-[#D4AF37]/60 shadow-xs bg-black p-0.5 shrink-0">
+            <img src="/images/tsc-logo.jpg" alt="The Sawariya Cafe" className="w-full h-full object-cover rounded-full" />
+          </div>
+          <h1 className="font-serif text-lg font-bold tracking-tight text-on-surface sm:text-2xl lg:text-3xl">
+            Menu
+          </h1>
+        </div>
 
         <button
           type="button"
@@ -112,15 +125,15 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
             input?.focus();
           }}
           aria-label="Search"
-          className="w-9 h-9 rounded-full bg-white border border-[#EAE2D7] flex items-center justify-center text-[#1F1610] shadow-xs hover:bg-[#F5EFE8] transition-colors cursor-pointer"
+          className="w-9 h-9 rounded-full bg-surface-container-low border border-outline-variant flex items-center justify-center text-on-surface shadow-xs hover:bg-surface-container-high transition-colors cursor-pointer"
         >
           <span className="material-symbols-outlined text-[19px]">search</span>
         </button>
       </div>
 
       {/* Full-Width Search Input */}
-      <div className="relative w-full">
-        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8C7E74] text-[20px] pointer-events-none">
+      <div className="relative w-full sm:ml-auto sm:max-w-xl lg:max-w-2xl">
+        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px] pointer-events-none">
           search
         </span>
         <input
@@ -129,13 +142,13 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search for dishes, coffee, drinks..."
-          className="w-full pl-10 pr-10 py-2.5 bg-white text-xs sm:text-sm text-[#1F1610] placeholder:text-[#8C7E74] rounded-2xl border border-[#EAE2D7] focus:outline-none focus:ring-1 focus:ring-[#382319] shadow-xs transition-all"
+          className="w-full pl-10 pr-10 py-2.5 bg-surface-container-low text-xs sm:text-sm text-on-surface placeholder:text-on-surface-variant rounded-2xl border border-outline-variant focus:outline-none focus:ring-1 focus:ring-primary shadow-xs transition-all"
         />
         {searchQuery && (
           <button
             type="button"
             onClick={() => setSearchQuery('')}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8C7E74] hover:text-[#1F1610] cursor-pointer"
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px]">close</span>
           </button>
@@ -143,24 +156,26 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
       </div>
 
       {/* Horizontal Filter Pills (Panel 5: All, Bestseller, Combos, New) */}
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-        {CATEGORY_TABS.map((cat) => {
-          const isActive = activeCategory === cat;
-          return (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => onCategoryChange(cat)}
-              className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                isActive
-                  ? 'bg-[#382319] text-white shadow-xs'
-                  : 'bg-white text-[#7A7067] border border-[#EAE2D7] hover:bg-[#FAF7F2]'
-              }`}
-            >
-              {cat}
-            </button>
-          );
-        })}
+      <div className="-mx-4 sm:mx-0">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth px-4 py-1 sm:gap-3 sm:px-0">
+          {CATEGORY_TABS.map((cat) => {
+            const isActive = activeCategory === cat;
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => onCategoryChange(cat)}
+                className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'bg-surface-container-low text-on-surface-variant border border-outline-variant hover:bg-surface-container'
+                }`}
+              >
+                {cat}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Empty State */}
@@ -195,7 +210,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
               return (
                 <div
                   key={`mobile-${item.id}`}
-                  className="liquid-glass-card rounded-2xl p-3.5 shadow-lg transition-all flex items-start justify-between gap-3 relative"
+                  className="liquid-glass-card relative flex items-start justify-between gap-3 rounded-2xl p-3 shadow-lg transition-all"
                 >
                   {/* Left Column: Veg badge, Title, Price, Description */}
                   <div
@@ -204,10 +219,10 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                   >
                     <div className="flex items-center gap-1.5 mb-1">
                       <span className="w-3.5 h-3.5 border border-emerald-500 p-0.5 rounded flex items-center justify-center shrink-0">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 block" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/100 block" />
                       </span>
                       {item.isBestSeller && (
-                        <span className="text-[10px] font-bold text-amber-400 bg-amber-500/15 px-1.5 py-0.2 rounded">
+                        <span className="text-[10px] font-bold text-amber-400 bg-amber-500/100/15 px-1.5 py-0.2 rounded">
                           Bestseller
                         </span>
                       )}
@@ -230,14 +245,22 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                   <div className="relative shrink-0 flex flex-col items-center pb-2.5">
                     <div
                       onClick={() => setDetailItem(item)}
-                      className="w-28 h-24 rounded-2xl overflow-hidden bg-surface-container border border-outline-variant/15 cursor-pointer"
+                      className="relative h-20 w-24 shrink-0 cursor-pointer overflow-hidden rounded-2xl border border-outline-variant/15 bg-surface-container min-[420px]:h-24 min-[420px]:w-28"
                     >
                       <CafeImage
                         src={item.imageUrl ?? ''}
                         alt={item.name}
-                        className="w-full h-full object-cover"
+                        productId={item.id}
+                        className={`w-full h-full object-cover ${item.isAvailable === false ? 'grayscale opacity-60' : ''}`}
                         fallbackIcon="restaurant"
                       />
+                      {item.isAvailable === false && (
+                        <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px] flex flex-col items-center justify-center p-1 text-center">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-rose-300 bg-rose-950/80 px-2 py-0.5 rounded-full border border-rose-500/40 shadow-xs">
+                            Sold Out
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Heart Favorite Button */}
@@ -262,10 +285,14 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
 
                     {/* + Add CTA or Quantity Stepper at the bottom of the photo */}
                     <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
-                      {qtyInCart === 0 ? (
+                      {item.isAvailable === false ? (
+                        <span className="px-2.5 py-0.5 rounded-xl bg-slate-800/90 text-slate-400 font-bold text-[10.5px] border border-slate-700 shadow-xs cursor-not-allowed whitespace-nowrap">
+                          Sold Out
+                        </span>
+                      ) : qtyInCart === 0 ? (
                         <button
                           type="button"
-                          onClick={() => onAddToCart(item, 1)}
+                          onClick={() => setDetailItem(item)}
                           className="px-3.5 py-1 rounded-xl bg-primary hover:brightness-110 text-on-primary font-bold text-xs flex items-center gap-1 shadow-sm transition-all active:scale-95 cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-[14px]">add</span>
@@ -299,8 +326,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
             })}
           </div>
 
-          {/* TABLET & DESKTOP 3-COLUMN GRID DESIGN (>= 640px) */}
-          <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+          <div className="hidden gap-4 sm:grid sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 lg:gap-6 2xl:grid-cols-4">
             {visibleItems.map((item) => {
               const isFav = favorites.has(item.id);
               const qtyInCart = getQuantityInCart(item.id);
@@ -318,9 +344,18 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                     <CafeImage
                       src={item.imageUrl ?? ''}
                       alt={item.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      productId={item.id}
+                      className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${item.isAvailable === false ? 'grayscale opacity-60' : ''}`}
                       fallbackIcon="restaurant"
                     />
+
+                    {item.isAvailable === false && (
+                      <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px] flex flex-col items-center justify-center p-2 text-center pointer-events-none">
+                        <span className="text-xs font-black uppercase tracking-wider text-rose-300 bg-rose-950/85 px-3 py-1 rounded-full border border-rose-500/40 shadow-sm">
+                          Sold Out
+                        </span>
+                      </div>
+                    )}
 
                     {/* Heart Favorite Button */}
                     <button
@@ -363,10 +398,14 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
                         ₹{item.price}
                       </span>
 
-                      {qtyInCart === 0 ? (
+                      {item.isAvailable === false ? (
+                        <span className="px-3.5 py-1.5 rounded-xl bg-slate-800/90 text-slate-400 font-bold text-xs border border-slate-700 cursor-not-allowed">
+                          Sold Out
+                        </span>
+                      ) : qtyInCart === 0 ? (
                         <button
                           type="button"
-                          onClick={() => onAddToCart(item, 1)}
+                          onClick={() => setDetailItem(item)}
                           className="px-4 py-1.5 rounded-xl bg-primary hover:brightness-110 text-on-primary font-semibold text-xs sm:text-sm flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs"
                         >
                           <span className="material-symbols-outlined text-[16px]">add</span>
@@ -404,6 +443,8 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
         </>
       )}
 
+      <CustomerFooter />
+
       {/* Modal for detailed food view */}
       {detailItem && (
         <FoodDetailsModal
@@ -411,7 +452,7 @@ export const CustomerMenuScreen: React.FC<CustomerMenuScreenProps> = ({
           isOpen={Boolean(detailItem)}
           onClose={() => setDetailItem(null)}
           onAddToCart={(item, options) => {
-            onAddToCart(item, options.quantity);
+            onAddToCart(item, options.quantity, options.size);
             setDetailItem(null);
           }}
           isFavorite={favorites.has(detailItem.id)}

@@ -11,6 +11,7 @@ const CUSTOMER_PATHS: Record<Exclude<ScreenId, 'splash' | StaffScreenId>, string
   login: '/customer/login',
   'privacy-policy': '/privacy-policy',
   'terms-and-conditions': '/terms-and-conditions',
+  akshat: '/akshat',
 };
 
 const ADMIN_PATHS: Record<StaffScreenId, string> = {
@@ -73,15 +74,19 @@ export function resolveCafeRoute(pathname: string, search = ''): CafeRoute {
 
   if (!screen && normalizedPath === '/') {
     const params = new URLSearchParams(search);
-    const legacyScreen = params.get('screen');
-    if (legacyScreen && CUSTOMER_SCREEN_IDS.has(legacyScreen as ScreenId)) {
-      screen = legacyScreen as ScreenId;
-    } else if (params.get('orderId')?.trim()) {
-      screen = 'tracking';
-    } else if (params.get('table')?.trim()) {
-      screen = 'menu';
-    } else if (params.get('autostart') === '1') {
-      screen = 'home';
+    if (params.get('brand') === 'akshat' || params.get('screen') === 'akshat') {
+      screen = 'akshat';
+    } else {
+      const legacyScreen = params.get('screen');
+      if (legacyScreen && CUSTOMER_SCREEN_IDS.has(legacyScreen as ScreenId)) {
+        screen = legacyScreen as ScreenId;
+      } else if (params.get('orderId')?.trim()) {
+        screen = 'tracking';
+      } else if (params.get('table')?.trim()) {
+        screen = 'menu';
+      } else if (params.get('autostart') === '1') {
+        screen = 'home';
+      }
     }
   }
 

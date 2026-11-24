@@ -36,7 +36,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
   onFinish,
 }) => {
   const [isFadingOut, setIsFadingOut] = useState(false);
-  const [view, setView] = useState<'brand' | 'onboarding'>('brand');
+  // The initial brand-only screen delayed the actual customer content, then replaced
+  // the whole viewport with onboarding. Start first-time visitors directly on the
+  // stable onboarding view so its image can become the LCP without a large shift.
+  const [view, setView] = useState<'brand' | 'onboarding'>('onboarding');
   const [activeSlide, setActiveSlide] = useState(0);
   const touchStartX = useRef<number | null>(null);
 
@@ -81,6 +84,22 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
     const slide = ONBOARDING_SLIDES[activeSlide];
     return (
       <main className="fixed inset-0 z-50 flex min-h-screen flex-col overflow-hidden bg-[#FAF7F2] px-5 pb-safe pt-safe text-[#1F1610]">
+        <div className="w-full max-w-sm mx-auto flex justify-end pt-3">
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                window.localStorage.setItem(ONBOARDING_SEEN_KEY, 'true');
+              } catch (e) {
+                console.warn(e);
+              }
+              onFinish?.('home');
+            }}
+            className="text-xs font-bold text-[#70645A] hover:text-[#1F1610] transition-colors px-2 py-1 cursor-pointer"
+          >
+            Skip to Cafe &rarr;
+          </button>
+        </div>
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center">
           <div
             className="w-full flex-1 flex flex-col items-center justify-center text-center"
@@ -107,7 +126,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                     <CafeImage
                       src={slide.image}
                       alt={slide.imageAlt}
-                      className="h-full w-full object-contain p-7"
+                      loading="eager"
+                      fetchPriority="high"
+                      sizes="224px"
+                      className="h-full w-full object-cover"
                       fallbackIcon="local_cafe"
                     />
                   ) : (
@@ -143,25 +165,29 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
               ))}
             </div>
 
-            <div className="w-full pb-5">
+            <div className="w-full pb-5 space-y-2.5">
               <button
                 type="button"
-                onClick={() => finishOnboarding('register')}
-                className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#382319] text-sm font-bold text-white shadow-[0_10px_24px_rgba(56,35,25,0.2)] transition-transform active:scale-[0.98]"
+                onClick={() => {
+                  try {
+                    window.localStorage.setItem(ONBOARDING_SEEN_KEY, 'true');
+                  } catch (e) {
+                    console.warn(e);
+                  }
+                  onFinish?.('home');
+                }}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#382319] text-sm font-bold text-white shadow-[0_10px_24px_rgba(56,35,25,0.2)] transition-transform active:scale-[0.98] cursor-pointer"
               >
-                Get Started
+                <span>Browse Menu &amp; Order</span>
                 <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
               </button>
-              <p className="mt-4 text-center text-xs text-[#70645A]">
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => finishOnboarding('login')}
-                  className="font-bold text-[#382319] underline-offset-2 hover:underline"
-                >
-                  Log in
-                </button>
-              </p>
+              <button
+                type="button"
+                onClick={() => finishOnboarding('login')}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-full border border-[#D8C8B8] bg-white text-xs font-bold text-[#382319] shadow-xs transition-colors hover:bg-[#FAF7F2] cursor-pointer"
+              >
+                <span>Sign in with Google</span>
+              </button>
             </div>
           </div>
         </div>
@@ -269,71 +295,18 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
       <div className="brand-silhouette" aria-hidden="true" />
 
       <div className={`brand-loader-container ${isFadingOut ? 'fade-out' : ''}`}>
-        {/* Arch Crest Emblem matching Panel 1 */}
-        <svg
-          className="brand-crest-svg"
-          viewBox="0 0 160 160"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden="true"
-        >
-          {/* Outer Arch */}
-          <path
-            d="M40 140V70C40 45 58 28 80 28C102 28 120 45 120 70V140"
-            stroke="#C67C4E"
-            strokeWidth="2.5"
-            strokeLinecap="round"
+        {/* The Sawariya Cafe Official Logo */}
+        <div className="w-32 h-32 mx-auto rounded-full overflow-hidden border-2 border-[#D4AF37]/70 shadow-2xl mb-4 bg-black p-0.5 animate-in zoom-in-95 duration-500">
+          <img
+            src="/images/tsc-logo.jpg"
+            alt="The Sawariya Cafe Logo"
+            className="w-full h-full object-cover rounded-full"
           />
-          {/* Inner Arch */}
-          <path
-            d="M48 140V72C48 52 62 38 80 38C98 38 112 52 112 72V140"
-            stroke="#EAE2D7"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-          {/* Arch Flag / Pinnacle on Top */}
-          <path d="M80 28V16L92 21L80 26" fill="#C67C4E" stroke="#C67C4E" strokeWidth="1" strokeLinejoin="round" />
-          
-          {/* Hanging Lamp */}
-          <line x1="80" y1="38" x2="80" y2="58" stroke="#382319" strokeWidth="1.5" />
-          <path d="M74 58H86L82 66H78L74 58Z" fill="#C67C4E" />
-          <circle cx="80" cy="70" r="3" fill="#EAE2D7" />
-
-          {/* Steaming Coffee Cup */}
-          <path
-            d="M62 94H98V108C98 118 90 126 80 126C70 126 62 118 62 108V94Z"
-            stroke="#382319"
-            strokeWidth="2.2"
-            fill="#FFFFFF"
-          />
-          {/* Cup Handle */}
-          <path
-            d="M98 98H104C107.5 98 110 100.5 110 104C110 107.5 107.5 110 104 110H98"
-            stroke="#382319"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          {/* Saucer */}
-          <path d="M54 130H106" stroke="#382319" strokeWidth="2.5" strokeLinecap="round" />
-
-          {/* Steam curves */}
-          <path d="M72 88C72 83 75 83 75 79" stroke="#C67C4E" strokeWidth="1.5" strokeLinecap="round" />
-          <path d="M80 86C80 81 83 81 83 77" stroke="#C67C4E" strokeWidth="1.5" strokeLinecap="round" />
-          <path d="M88 88C88 83 91 83 91 79" stroke="#C67C4E" strokeWidth="1.5" strokeLinecap="round" />
-
-          {/* Side Botanical Laurel Leaves */}
-          <path d="M28 100C30 92 36 86 40 85" stroke="#C67C4E" strokeWidth="1.5" strokeLinecap="round" />
-          <ellipse cx="29" cy="94" rx="3" ry="5" transform="rotate(-30 29 94)" fill="#EAE2D7" />
-          <ellipse cx="36" cy="87" rx="3" ry="5" transform="rotate(15 36 87)" fill="#EAE2D7" />
-          
-          <path d="M132 100C130 92 124 86 120 85" stroke="#C67C4E" strokeWidth="1.5" strokeLinecap="round" />
-          <ellipse cx="131" cy="94" rx="3" ry="5" transform="rotate(30 131 94)" fill="#EAE2D7" />
-          <ellipse cx="124" cy="87" rx="3" ry="5" transform="rotate(-15 124 87)" fill="#EAE2D7" />
-        </svg>
+        </div>
 
         <div className="brand-hero">
           <h1 className="brand-wordmark">{BRAND_NAME}</h1>
-          <p className="brand-subtitle">Cafe • Food • Delivery</p>
+          <p className="brand-subtitle">Good Food • Good Mood</p>
           <div className="brand-divider">✦</div>
         </div>
 

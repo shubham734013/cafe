@@ -7,14 +7,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ORDER_STATUS_META } from '../state/cafeStateMachines';
-import type { CafeOrder } from '../types/cafe';
+import type { CafeOrder, MenuItem } from '../types/cafe';
 import { deriveKotCardPhase, isKitchenActiveOrder } from '../utils/cafeLogic';
+import { MenuItemStockControlModal } from './MenuItemStockControlModal';
 
 interface KitchenOrdersScreenProps {
   orders: CafeOrder[];
+  menuItems?: MenuItem[];
   onAdvanceOrderStatus?: (orderId: string) => void | Promise<void>;
   onToggleKotItem?: (orderId: string, menuItemId: string) => void;
   onCancelKotItem?: (orderId: string, menuItemId: string, reason?: string, quantity?: number) => Promise<any>;
+  onToggleMenuAvailability?: (id: string) => Promise<void> | void;
   onRefresh?: () => void;
   onNotify?: (msg: string) => void;
 }
@@ -23,9 +26,11 @@ type KitchenTab = 'active' | 'preparing' | 'ready' | 'dine-in' | 'takeaway' | 'c
 
 export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
   orders,
+  menuItems = [],
   onAdvanceOrderStatus,
   onToggleKotItem,
   onCancelKotItem,
+  onToggleMenuAvailability,
   onRefresh,
   onNotify,
 }) => {
@@ -33,13 +38,20 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [advancingId, setAdvancingId] = useState<string | null>(null);
+  const [itemStockModalOpen, setItemStockModalOpen] = useState(false);
 
   // Cancellation state
   const [cancelTarget, setCancelTarget] = useState<{ order: CafeOrder; item: CafeOrder['items'][number] } | null>(null);
   const [cancelQty, setCancelQty] = useState(1);
   const [cancelReason, setCancelReason] = useState('Out of Stock / Ingredient Unavailable');
   const [cancelCustomReason, setCancelCustomReason] = useState('');
+  const [alsoMark86, setAlsoMark86] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+
+  const outOfStockItemsCount = useMemo(
+    () => menuItems.filter((i) => i.isAvailable === false).length,
+    [menuItems]
+  );
 
   useEffect(() => {
     const handleNewOrder = (e: Event) => {
@@ -139,7 +151,11 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
         finalReason,
         cancelQty
       );
+      if (alsoMark86 && onToggleMenuAvailability) {
+        void onToggleMenuAvailability(cancelTarget.item.menuItemId);
+      }
       setCancelTarget(null);
+      setAlsoMark86(false);
     } catch {
       // onNotify is called by mutation handler
     } finally {
@@ -165,6 +181,22 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
 
         {/* Counter Summary Pills */}
         <div className="flex items-center gap-2 shrink-0">
+          {onToggleMenuAvailability && (
+            <button
+              type="button"
+              onClick={() => setItemStockModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-all active:scale-95 cursor-pointer shrink-0"
+            >
+              <span className="material-symbols-outlined text-[17px]">remove_shopping_cart</span>
+              <span className="hidden sm:inline">86 / Item Stock</span>
+              {outOfStockItemsCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                  {outOfStockItemsCount}
+                </span>
+              )}
+            </button>
+          )}
+
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/20 text-amber-500 text-xs font-bold">
             <span>🍳</span>
             <span>{preparingCount} in Prep</span>
@@ -381,7 +413,7 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
                   </div>
                   <div className="flex flex-col">
                     <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Elapsed Time</span>
-                    <span className="text-xs sm:text-sm md:text-base text-[#f59e0b] dark:text-[#fbbf24] font-black tabular-nums tracking-tight">
+                    <span className="text-xs sm:text-sm md:text-base text-secondary font-black tabular-nums tracking-tight">
                       {order.elapsedMinutes} Mins
                     </span>
                   </div>
@@ -736,6 +768,19 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
                 </div>
               </div>
 
+              {/* Option to also 86 the item */}
+              {onToggleMenuAvailability && (
+                <label className="flex items-center gap-2.5 cursor-pointer p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-semibold select-none hover:bg-rose-500/15 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={alsoMark86}
+                    onChange={(e) => setAlsoMark86(e.target.checked)}
+                    className="rounded text-rose-500 focus:ring-rose-400 w-4 h-4 cursor-pointer"
+                  />
+                  <span>Also tag <strong>{cancelTarget.item.name}</strong> as <strong>Out of Stock (86)</strong> for future orders</span>
+                </label>
+              )}
+
               {/* Modal Action Buttons */}
               <div className="flex gap-2 pt-1">
                 <button
@@ -771,6 +816,17 @@ export const KitchenOrdersScreen: React.FC<KitchenOrdersScreenProps> = ({
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Menu Item Stock Control (86 / In Stock) Dialog */}
+      {onToggleMenuAvailability && (
+        <MenuItemStockControlModal
+          open={itemStockModalOpen}
+          onOpenChange={setItemStockModalOpen}
+          menuItems={menuItems}
+          onToggleAvailability={onToggleMenuAvailability}
+          roleLabel="Kitchen Orders"
+        />
+      )}
     </section>
   );
 };

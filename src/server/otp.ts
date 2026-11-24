@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { sendBrevoConfirmationEmail } from './brevo';
+import { isBrevoConfigured, sendBrevoConfirmationEmail } from './brevo';
 
 interface StoredOtp {
   hashedCode: string;
@@ -51,12 +51,21 @@ export interface RequestOtpResult {
   success: boolean;
   message: string;
   retryAfterSeconds?: number;
+  unavailable?: boolean;
 }
 
 export async function requestOtp(params: RequestOtpParams): Promise<RequestOtpResult> {
   const { identifier, ip, name = 'Customer', email, phone } = params;
   const cleanId = identifier.trim().toLowerCase();
   const cleanIp = ip.trim();
+  const isTestMode = process.env.NODE_ENV === 'test';
+  if (!isTestMode && (!email || !isBrevoConfigured())) {
+    return {
+      success: false,
+      unavailable: true,
+      message: 'OTP delivery is unavailable because email is not configured.',
+    };
+  }
 
   // Rate limit: max 3 sends per 15 min per identifier AND per IP
   const idCheck = checkSendRateLimit(`id:${cleanId}`);
@@ -91,22 +100,30 @@ export async function requestOtp(params: RequestOtpParams): Promise<RequestOtpRe
     used: false,
   });
 
-  // Issue 2: Never return the OTP in API response or log in production
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`[Dev Only Auth OTP] Verification code for ${cleanId}: ${code}`);
-  }
-
   // Dispatch email if email provided
-  if (email) {
+  if (!isTestMode) {
     try {
-      await sendBrevoConfirmationEmail({
-        toEmail: email,
+      const delivery = await sendBrevoConfirmationEmail({
+        toEmail: email!,
         toName: name,
         phone,
         verificationCode: code,
       });
-    } catch (err) {
-      console.error('[OTP Email Dispatch Error]', err instanceof Error ? err.message : err);
+      if (!delivery.success) {
+        otpStore.delete(cleanId);
+        return {
+          success: false,
+          unavailable: true,
+          message: 'OTP delivery is currently unavailable.',
+        };
+      }
+    } catch {
+      otpStore.delete(cleanId);
+      return {
+        success: false,
+        unavailable: true,
+        message: 'OTP delivery is currently unavailable.',
+      };
     }
   }
 

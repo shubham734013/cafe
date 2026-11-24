@@ -467,7 +467,7 @@ export const TableLayoutScreen: React.FC<TableLayoutScreenProps> = ({
                   </div>
                   <div className="flex flex-col">
                     <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Active Bill</span>
-                    <span className="text-xs sm:text-sm md:text-base text-[#f59e0b] dark:text-[#fbbf24] font-black tabular-nums tracking-tight">
+                    <span className="text-xs sm:text-sm md:text-base text-secondary font-black tabular-nums tracking-tight">
                       {isOccupied && activeOrder ? `₹${activeOrder.total}` : isOccupied ? '₹228' : '₹0'}
                     </span>
                   </div>

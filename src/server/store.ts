@@ -36,6 +36,7 @@ import {
   computeInventoryStatus,
   convertRecipeAmountToInventoryUnit,
 } from '../utils/cafeLogic';
+import { getItemVariants } from '../utils/menuVariants';
 import {
   InvalidDomainTransitionError,
   assertCanCheckInTable,
@@ -50,6 +51,7 @@ import type {
   addIngredientSchema,
   addLoyaltyRuleSchema,
   addMenuItemSchema,
+  updateMenuItemSchema,
   addStaffSchema,
   addTableSchema,
   cafeSettingsSchema,
@@ -314,6 +316,22 @@ export class CafeStore {
         console.info(
           `[CafeStore] Loaded normalized cafe state from MongoDB database "${databaseName}".`
         );
+        const hasActualMenu = this.state.menuItems.some((m) => m.id === 'aloo-tikki-burger');
+        if (!hasActualMenu) {
+          console.info(
+            `[CafeStore] Upgrading demo menu to actual printed menu in "${databaseName}"...`
+          );
+          this.state.menuItems = clone(MENU_ITEMS);
+          this.state.cafeSettings = { ...this.state.cafeSettings, ...INITIAL_CAFE_SETTINGS };
+          this.rebuildIndexes();
+          const upgradeRevision = crypto.randomUUID();
+          await this.writeNormalizedSnapshot(database, this.state, upgradeRevision);
+          await metadataCollection.updateOne(
+            { _id: MONGO_STATE_ID },
+            { $set: { activeRevision: upgradeRevision } }
+          );
+          this.mongoRevision = upgradeRevision;
+        }
       } else {
         const legacyState = await stateCollection.findOne({ _id: MONGO_STATE_ID });
         if (legacyState) {
@@ -370,37 +388,46 @@ export class CafeStore {
   public async closeMongo(): Promise<void> {
     if (!this.mongoClient) return;
     const client = this.mongoClient;
+    let shutdownError: unknown;
     try {
       await this.flushToPersistence();
-    } catch (flushErr) {
-      console.warn('[CafeStore] Could not flush to persistence during shutdown:', flushErr instanceof Error ? flushErr.message : flushErr);
+    } catch (error) {
+      shutdownError = error;
+    }
+    if (this.pendingWriteTimer) {
+      clearTimeout(this.pendingWriteTimer);
+      this.pendingWriteTimer = null;
+    }
+    if (this.mongoLeaseTimer) {
+      clearInterval(this.mongoLeaseTimer);
+      this.mongoLeaseTimer = null;
+    }
+    try {
+      if (this.mongoLeaseCollection && this.mongoLeaseOwner) {
+        await this.mongoLeaseCollection.deleteOne({
+          _id: MONGO_LEASE_ID,
+          ownerId: this.mongoLeaseOwner,
+        });
+      }
+    } catch (error) {
+      shutdownError ??= error;
+    }
+    try {
+      await client.close();
+    } catch (error) {
+      shutdownError ??= error;
     } finally {
-      if (this.pendingWriteTimer) {
-        clearTimeout(this.pendingWriteTimer);
-        this.pendingWriteTimer = null;
-      }
-      if (this.mongoLeaseTimer) {
-        clearInterval(this.mongoLeaseTimer);
-        this.mongoLeaseTimer = null;
-      }
-      try {
-        if (this.mongoLeaseCollection && this.mongoLeaseOwner) {
-          await this.mongoLeaseCollection.deleteOne({
-            _id: MONGO_LEASE_ID,
-            ownerId: this.mongoLeaseOwner,
-          });
-        }
-      } finally {
-        await client.close();
-        this.mongoClient = null;
-        this.mongoDatabase = null;
-        this.mongoStateCollection = null;
-        this.mongoMetadataCollection = null;
-        this.mongoAuditCollection = null;
-        this.mongoRevision = null;
-        this.mongoLeaseCollection = null;
-        this.mongoLeaseOwner = null;
-      }
+      this.mongoClient = null;
+      this.mongoDatabase = null;
+      this.mongoStateCollection = null;
+      this.mongoMetadataCollection = null;
+      this.mongoAuditCollection = null;
+      this.mongoRevision = null;
+      this.mongoLeaseCollection = null;
+      this.mongoLeaseOwner = null;
+    }
+    if (shutdownError) {
+      throw new Error('MongoDB shutdown did not complete cleanly.', { cause: shutdownError });
     }
   }
 
@@ -619,11 +646,9 @@ export class CafeStore {
         return;
       }
       this.persistenceHealthy = true;
-    } catch (error) {
-      console.warn(
-        '[CafeStore] Transient issue renewing MongoDB writer lease (will retry):',
-        error instanceof Error ? error.message : error
-      );
+    } catch {
+      this.persistenceHealthy = false;
+      console.warn('[CafeStore] MongoDB writer lease renewal failed; API writes are disabled.');
     }
   }
 
@@ -635,8 +660,8 @@ export class CafeStore {
     if (!this.mongoAuditCollection) return;
     try {
       await this.mongoAuditCollection.insertOne(event);
-    } catch (error) {
-      console.error('[CafeStore] Failed to record audit event:', error);
+    } catch {
+      console.error('[CafeStore] Failed to record an audit event.');
     }
   }
 
@@ -901,7 +926,7 @@ export class CafeStore {
           );
           const cleanupError = cleanupResults.find((result) => result.status === 'rejected');
           if (cleanupError?.status === 'rejected') {
-            console.error('[CafeStore] Old MongoDB snapshot cleanup failed:', cleanupError.reason);
+            console.error('[CafeStore] Old MongoDB snapshot cleanup failed.');
           }
         } else if (persistPath) {
           await fs.promises.mkdir(path.dirname(persistPath), { recursive: true });
@@ -913,7 +938,10 @@ export class CafeStore {
       } catch (err) {
         this.lastPersistError = err;
         this.writeDirty = true;
-        console.error('[CafeStore] Async persistence write failed:', err);
+        console.error(
+          '[CafeStore] Async persistence write failed:',
+          err instanceof Error ? err.name : 'unknown error'
+        );
       }
     })();
     this.writeInFlight = write;
@@ -1018,7 +1046,9 @@ export class CafeStore {
     // Customer / guest view: strictly scope PII & foreign order data
     const allowedOrderIds = new Set(customerSession?.orderIds ?? []);
     const scopedOrders = publicState.orders.filter((o) => allowedOrderIds.has(o.id));
-    const publicMenuItems = publicState.menuItems.map((item) => ({ ...item, unitsSold: 0 }));
+    const publicMenuItems = publicState.menuItems
+      .filter((item) => !item.id.startsWith('test-') && !item.name.toLowerCase().includes('test'))
+      .map((item) => ({ ...item, unitsSold: 0 }));
     const customerSegment = publicState.customers.find(
       (customer) => customer.id === customerSession?.crmCustomerId
     )?.segment;
@@ -1054,10 +1084,10 @@ export class CafeStore {
       ),
       cafeSettings: {
         ...publicState.cafeSettings,
-        address: '',
-        phone: '',
-        email: '',
-        operatingHours: '',
+        address: publicState.cafeSettings.address || '',
+        phone: publicState.cafeSettings.phone || '',
+        email: publicState.cafeSettings.email || '',
+        operatingHours: publicState.cafeSettings.operatingHours || '10:00 AM – 11:00 PM',
         gstin: '',
         serviceChargePct: 0,
         qrOrderingEnabled: true,
@@ -1208,7 +1238,8 @@ export class CafeStore {
     orderId: string,
     gatewayOrderId: string,
     status: CafeOrder['paymentStatus'],
-    utr?: string
+    utr?: string,
+    customerPhone?: string
   ): CafeOrder | null {
     const order = this.ordersById.get(orderId);
     if (!order) return null;
@@ -1219,6 +1250,9 @@ export class CafeStore {
     order.paymentMode = 'upi';
     order.paymentStatus = status ?? 'pending';
     order.paymentChannelLabel = 'UPI Gateway';
+    if (customerPhone?.trim()) {
+      order.customerPhone = customerPhone.trim();
+    }
     if (status === 'paid') {
       order.paymentRef = utr ? `UPI UTR ${utr}` : 'Payment confirmed by UPI Gateway';
     } else if (status === 'expired' || status === 'failed' || status === 'manual_review') {
@@ -1228,6 +1262,24 @@ export class CafeStore {
           : `UPI payment ${status}`;
     }
 
+    this.touch();
+    return clone(order);
+  }
+
+  public markOrderPaidEmailSent(orderId: string, email?: string): CafeOrder | null {
+    const order = this.ordersById.get(orderId);
+    if (!order) return null;
+    order.paidEmailSentAt = new Date().toISOString();
+    if (email && !order.customerEmail) {
+      order.customerEmail = email;
+    }
+    const stateOrder = this.state.orders.find((o) => o.id === orderId);
+    if (stateOrder) {
+      stateOrder.paidEmailSentAt = order.paidEmailSentAt;
+      if (email && !stateOrder.customerEmail) {
+        stateOrder.customerEmail = email;
+      }
+    }
     this.touch();
     return clone(order);
   }
@@ -1626,13 +1678,17 @@ export class CafeStore {
           httpStatus: 400,
         });
       }
-      const sizeMultiplier = item.size === 'Small' ? 0.85 : item.size === 'Large' ? 1.25 : 1.0;
-      const effectivePrice = Math.round(catalogItem.price * sizeMultiplier);
+      const selectedVariant = item.size
+        ? getItemVariants(catalogItem).find(
+            (variant) => variant.size.trim().toLowerCase() === item.size?.trim().toLowerCase()
+          )
+        : undefined;
+      const effectivePrice = selectedVariant?.price ?? catalogItem.price;
       return {
         ...item,
         name: catalogItem.name,
         price: effectivePrice,
-        size: item.size || 'Medium',
+        size: item.size || 'Regular',
         station: catalogItem.station,
         imageUrl: catalogItem.imageUrl,
         checked: false,
@@ -1743,6 +1799,11 @@ export class CafeStore {
       isPosTerminal: Boolean(input.isPosTerminal),
       serviceMode: input.serviceMode,
       tableNumber: input.serviceMode === 'dine-in' ? input.tableNumber : undefined,
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      customerPhone: input.customerPhone,
+      deliveryAddress:
+        input.serviceMode === 'delivery' ? input.deliveryAddress : undefined,
       deliveryPartner:
         input.serviceMode === 'delivery'
           ? input.deliveryPartner || 'Direct Delivery'
@@ -2029,6 +2090,62 @@ export class CafeStore {
     });
     this.touch();
     return clone(newItem);
+  }
+
+  public updateMenuItem(id: string, updates: z.infer<typeof updateMenuItemSchema>): MenuItem | null {
+    const existing = this.menuById.get(id);
+    if (!existing) return null;
+
+    const updated: MenuItem = {
+      ...existing,
+      name: updates.name !== undefined ? updates.name.trim() : existing.name,
+      description: updates.description !== undefined ? updates.description.trim() : existing.description,
+      price: updates.price !== undefined ? Math.round(updates.price) : existing.price,
+      category: updates.category !== undefined ? updates.category : existing.category,
+      isVeg: updates.isVeg !== undefined ? updates.isVeg : existing.isVeg,
+      isBestSeller: updates.isBestSeller !== undefined ? updates.isBestSeller : existing.isBestSeller,
+      isAvailable: updates.isAvailable !== undefined ? updates.isAvailable : existing.isAvailable,
+      station: updates.station !== undefined ? updates.station : existing.station,
+      defaultNote: updates.defaultNote !== undefined ? updates.defaultNote.trim() : existing.defaultNote,
+      imageUrl: updates.imageUrl !== undefined ? updates.imageUrl.trim() : existing.imageUrl,
+      variants: updates.variants !== undefined ? updates.variants : (existing.variants || []),
+    };
+
+    if (updates.recipe && updates.recipe.length > 0) {
+      const validRecipe = updates.recipe
+        .filter((line) => this.state.inventory.some((ingredient) => ingredient.id === line.ingredientId))
+        .map((line) => {
+          const ing = this.state.inventory.find((i) => i.id === line.ingredientId)!;
+          const normalizedAmount = convertRecipeAmountToInventoryUnit(line.amount, line.amountUnit, ing.unit);
+          return {
+            ingredientId: line.ingredientId,
+            amount: normalizedAmount,
+            amountUnit: line.amountUnit,
+          };
+        });
+      if (validRecipe.length > 0) {
+        this.state.recipes = {
+          ...(this.state.recipes || INITIAL_RECIPES),
+          [id]: validRecipe,
+        };
+        updated.recipe = validRecipe;
+      }
+    }
+
+    this.menuById.set(id, updated);
+    this.state.menuItems = this.state.menuItems.map((item) => (item.id === id ? updated : item));
+
+    this.recordActivity({
+      type: 'stock_updated',
+      title: `Product Updated: ${updated.name}`,
+      description: `Menu item updated (₹${updated.price}, ${updated.category}, ${updated.station})`,
+      actorName: 'Admin',
+      actorRole: 'admin',
+      severity: 'info',
+    });
+
+    this.touch();
+    return clone(updated);
   }
 
   public toggleMenuItemAvailability(menuItemId: string): MenuItem | null {
@@ -2676,6 +2793,126 @@ export class CafeStore {
     return clone(created);
   }
 
+  public upsertGoogleCustomer(data: {
+    id: string;
+    name: string;
+    email: string;
+    avatarUrl?: string;
+    phone?: string;
+    googleSubjectId?: string;
+    emailVerified?: boolean;
+    phoneVerified?: boolean;
+    createdAt?: string;
+  }): CustomerProfile {
+    const normalizedEmail = data.email.trim().toLowerCase();
+    const normalizedPhone = data.phone ? normalizePhone(data.phone) : '';
+
+    // Check if customer already exists by id, email, or phone
+    let existing = this.customersById.get(data.id);
+    if (!existing) {
+      existing = this.state.customers.find(
+        (c) =>
+          c.id === data.id ||
+          (c.email && c.email.trim().toLowerCase() === normalizedEmail) ||
+          (Boolean(normalizedPhone) && Boolean(c.phone) && normalizePhone(c.phone) === normalizedPhone)
+      );
+    }
+
+    if (existing) {
+      if (data.name) existing.name = data.name;
+      existing.email = normalizedEmail;
+      if (data.avatarUrl) existing.avatarUrl = data.avatarUrl;
+      if (data.phone) existing.phone = data.phone;
+      existing.provider = 'google';
+      existing.googleSubjectId = data.googleSubjectId || data.id.replace(/^google:/, '');
+      existing.emailVerified = data.emailVerified ?? true;
+      existing.phoneVerified = data.phoneVerified ?? existing.phoneVerified ?? false;
+      if (data.createdAt) existing.createdAt = existing.createdAt || data.createdAt;
+      existing.lastVisit = 'Just now';
+      existing.visits = Math.max(1, (existing.visits || 0) + 1);
+      this.customersById.set(existing.id, existing);
+      this.touch();
+      return clone(existing);
+    }
+
+    const parts = (data.name || 'Customer').trim().split(/\s+/);
+    const initials = (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase();
+    const newCustomer: CustomerProfile = {
+      id: data.id,
+      initials,
+      name: data.name || 'Valued Customer',
+      phone: data.phone || '',
+      email: normalizedEmail,
+      avatarUrl: data.avatarUrl,
+      provider: 'google',
+      googleSubjectId: data.googleSubjectId || data.id.replace(/^google:/, ''),
+      emailVerified: data.emailVerified ?? true,
+      phoneVerified: data.phoneVerified ?? false,
+      createdAt: data.createdAt,
+      segment: 'new',
+      visits: 1,
+      totalSpent: 0,
+      avgTicket: 0,
+      favorites: 'Roastery Member',
+      lastVisit: 'Just joined',
+      note: 'Verified Google Account',
+      loyaltyPoints: 50,
+    };
+
+    this.customersById.set(newCustomer.id, newCustomer);
+    this.state.customers = [newCustomer, ...this.state.customers];
+    this.recordActivity({
+      type: 'customer_signed_up',
+      title: `New Customer: ${newCustomer.name}`,
+      description: 'Google Sign-In created a customer account.',
+      actorName: newCustomer.name,
+      actorRole: 'Customer',
+      severity: 'info',
+    });
+    this.touch();
+    return clone(newCustomer);
+  }
+
+  public syncCustomerProfile(
+    customerId: string,
+    updates: {
+      name?: string;
+      phone?: string;
+      email?: string;
+      note?: string;
+    }
+  ): CustomerProfile | null {
+    let customer = this.customersById.get(customerId);
+    if (!customer) {
+      customer = this.state.customers.find((c) => c.id === customerId);
+    }
+    if (!customer && updates.email) {
+      const normalizedEmail = updates.email.trim().toLowerCase();
+      customer = this.state.customers.find(
+        (c) => c.email && c.email.trim().toLowerCase() === normalizedEmail
+      );
+    }
+    if (!customer) return null;
+
+    if (updates.name?.trim()) customer.name = updates.name.trim();
+    if (updates.phone?.trim()) {
+      const normalizedPhone = normalizePhone(updates.phone);
+      if (!/^\d{10}$/.test(normalizedPhone)) {
+        throw new Error('Customer mobile number must contain exactly 10 digits.');
+      }
+      if (normalizePhone(customer.phone) !== normalizedPhone) {
+        customer.phoneVerified = false;
+      }
+      customer.phone = normalizedPhone;
+    }
+    if (updates.email?.trim()) customer.email = updates.email.trim().toLowerCase();
+    if (updates.note?.trim()) customer.note = updates.note.trim();
+
+    this.customersById.set(customer.id, customer);
+    this.touch();
+    return clone(customer);
+  }
+
   public findCustomerIdByPhone(phone: string): string | null {
     const normalizedPhone = normalizePhone(phone);
     if (!normalizedPhone) return null;
@@ -2683,6 +2920,25 @@ export class CafeStore {
       (customer) => normalizePhone(customer.phone) === normalizedPhone
     );
     return matches.length === 1 ? matches[0].id : null;
+  }
+
+  public getCustomers(): CustomerProfile[] {
+    return clone(this.state.customers);
+  }
+
+  public deleteCustomer(id: string): boolean {
+    const idx = this.state.customers.findIndex((c) => c.id === id);
+    if (idx === -1) return false;
+    this.state.customers.splice(idx, 1);
+    this.customersById.delete(id);
+    this.touch();
+    return true;
+  }
+
+  public clearCustomers(): void {
+    this.state.customers = [];
+    this.customersById.clear();
+    this.touch();
   }
 
   public getCustomerSegment(customerId?: string): CustomerSegment | undefined {
@@ -2721,6 +2977,9 @@ export class CafeStore {
       id: shortId('camp'),
       title: input.title,
       code: input.code,
+      discountPercentage: input.discountPercentage,
+      offerType: input.discountPercentage > 0 ? 'percentage' : 'manual',
+      minimumOrderAmount: input.minimumOrderAmount,
       status: 'active',
       validityLabel: input.validityLabel,
       description: input.description,

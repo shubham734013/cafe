@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import http from 'node:http';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
@@ -10,6 +12,7 @@ import {
   addIngredientSchema,
   addLoyaltyRuleSchema,
   addMenuItemSchema,
+  updateMenuItemSchema,
   addStaffSchema,
   addTableSchema,
   cafeSettingsSchema,
@@ -33,13 +36,22 @@ import {
   purchaseOrderSchema,
   receivePurchaseOrderSchema,
   brevoConfirmationSchema,
+  broadcastEmailSchema,
+  sendBillEmailSchema,
 } from '../shared/schemas';
-import { sendBrevoConfirmationEmail } from './brevo';
+import {
+  isBrevoConfigured,
+  sendBrevoConfirmationEmail,
+  broadcastBrevoMarketingEmail,
+  sendBrevoOrderBillEmail,
+  sendBrevoOrderPaidEmail,
+} from './brevo';
 import {
   assertAuthSecretConfigured,
   authenticateStaffPin,
   canCustomerAccessCustomer,
   canCustomerAccessOrder,
+  clearCustomerSessionCookie,
   clearStaffSessionCookie,
   getCustomerSession,
   getCustomerSessionFromCookieHeader,
@@ -60,9 +72,7 @@ import {
 } from './auth';
 import { requestOtp, verifyOtp } from './otp';
 import {
-  generatePasswordResetToken,
   consumePasswordResetToken,
-  initiateEmailChange,
   verifyAndApplyEmailChange,
   generateOAuthChallenge,
   verifyOAuthCallbackState,
@@ -139,6 +149,14 @@ interface AuthCheckResult {
 }
 
 export function resolvePaymentGateway(): UpiGatewayClient {
+  if (process.env.NODE_ENV === 'test') {
+    return new UpiGateway({
+      baseUrl: '',
+      apiKey: '',
+      apiSecret: '',
+      isProduction: false,
+    });
+  }
   if (process.env.CASHFREE_APP_ID && process.env.CASHFREE_SECRET_KEY) {
     return new CashfreeGateway();
   }
@@ -152,9 +170,19 @@ export function createCafeServer(
   assertAuthSecretConfigured();
 
   const app = express();
+  const configuredProxyHops = process.env.TRUST_PROXY_HOPS;
+  const trustProxyHops =
+    configuredProxyHops === undefined && process.env.TRUST_PROXY === 'true'
+      ? 1
+      : Number(configuredProxyHops ?? 0);
+  if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0) {
+    throw new Error('TRUST_PROXY_HOPS must be a non-negative integer.');
+  }
+  app.set('trust proxy', trustProxyHops);
   const httpServer = http.createServer(app);
+  const isProduction = process.env.NODE_ENV === 'production';
   const allowedOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
+    ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
     : [
         'http://localhost:3000',
         'http://localhost:3002',
@@ -162,19 +190,28 @@ export function createCafeServer(
         'http://127.0.0.1:3002',
         'http://localhost:5173',
       ];
+  const isOriginAllowed = (origin: string): boolean => {
+    if (allowedOrigins.includes(origin)) return true;
+    if (isProduction) return false;
+    try {
+      const { protocol, hostname } = new URL(origin);
+      return (
+        (protocol === 'http:' && ['localhost', '127.0.0.1'].includes(hostname)) ||
+        (protocol === 'https:' && hostname.endsWith('.trycloudflare.com'))
+      );
+    } catch {
+      return false;
+    }
+  };
 
   const io = new SocketIOServer(httpServer, {
     cors: {
       origin: (requestOrigin, callback) => {
         if (!requestOrigin) return callback(null, true);
-        if (
-          process.env.NODE_ENV !== 'production' ||
-          allowedOrigins.includes(requestOrigin) ||
-          /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(requestOrigin)
-        ) {
+        if (isOriginAllowed(requestOrigin)) {
           return callback(null, requestOrigin);
         }
-        return callback(new Error(`CORS origin not allowed: ${requestOrigin}`), false);
+        return callback(new Error('CORS origin not allowed.'), false);
       },
       credentials: true,
     },
@@ -412,17 +449,84 @@ export function createCafeServer(
     }
   };
 
+  async function triggerOrderPaidEmailIfEligible(orderId: string) {
+    const order = store.getOrder(orderId);
+    if (!order) return;
+    if (order.paymentStatus !== 'paid') return;
+    if (order.paidEmailSentAt) return;
+
+    let email = order.customerEmail?.trim();
+    if (!email || !email.includes('@')) {
+      if (order.customerId) {
+        const crmCustomer = store.getBootstrap().customers.find((c) => c.id === order.customerId);
+        if (crmCustomer?.email) {
+          email = crmCustomer.email.trim();
+          order.customerEmail = email;
+        }
+      }
+    }
+
+    if (!email || !email.includes('@') || !isBrevoConfigured()) return;
+
+    try {
+      const state = store.getBootstrap();
+      const result = await sendBrevoOrderPaidEmail({
+        order,
+        toEmail: email,
+        toName: order.customerName || 'Valued Guest',
+        cafeSettings: state.cafeSettings,
+        appUrl: process.env.APP_PUBLIC_URL || process.env.APP_URL || 'http://localhost:3002',
+      });
+      if (result.success) {
+        const updated = store.markOrderPaidEmailSent(order.id, email);
+        await store.flushToPersistence();
+        if (updated) {
+          emitSync('order:updated', { order: updated });
+        }
+      }
+    } catch {
+      console.error('[Brevo] Paid-order email dispatch failed.');
+    }
+  }
+
   const syncGatewayOrder = async (orderId: string, gatewayOrder: UpiGatewayOrder) => {
     const order = store.getOrder(orderId);
     if (!order) return null;
     assertGatewayOrderMatchesCafeOrder(gatewayOrder, order);
+    const rawPayerPhone = gatewayOrder.customerPhone ? gatewayOrder.customerPhone.replace(/\D/g, '').slice(-10) : '';
+    const payerPhone = rawPayerPhone.length === 10 && rawPayerPhone !== '9999999999' ? rawPayerPhone : undefined;
     const updated = store.attachGatewayPayment(
       orderId,
       gatewayOrder.orderId,
       mapGatewayStatus(gatewayOrder.status),
-      gatewayOrder.utr
+      gatewayOrder.utr,
+      payerPhone
     );
-    if (updated) emitSync('order:updated', { order: updated });
+    if (updated) {
+      // 🌟 Industry-Standard Payment Gateway Phone Capture:
+      if (payerPhone) {
+        if (updated.customerId) {
+          const c = store.syncCustomerProfile(updated.customerId, {
+            phone: payerPhone,
+            name: updated.customerName,
+            email: updated.customerEmail,
+          });
+          if (c) emitSync('customer:updated', { customer: c });
+        } else if (updated.customerEmail) {
+          const existingCust = store.getCustomers().find(
+            (c) => c.email && c.email.toLowerCase() === updated.customerEmail?.toLowerCase()
+          );
+          if (existingCust) {
+            const c = store.syncCustomerProfile(existingCust.id, { phone: payerPhone });
+            if (c) emitSync('customer:updated', { customer: c });
+          }
+        }
+      }
+      emitSync('order:updated', { order: updated });
+      if (updated.paymentStatus === 'paid') {
+        void triggerOrderPaidEmailIfEligible(updated.id);
+      }
+    }
     return updated;
   };
 
@@ -490,10 +594,7 @@ export function createCafeServer(
         await store.flushToPersistence();
         res.status(200).json({ received: true });
       } catch (error) {
-        console.error(
-          '[CafeOS] Could not verify UPI gateway webhook against gateway status:',
-          error instanceof Error ? error.message : 'Gateway verification failed'
-        );
+        console.error('[CafeOS] UPI gateway webhook verification failed.');
         res.status(503).json({ error: 'Could not verify the payment; retry the webhook.' });
       }
     }
@@ -594,10 +695,41 @@ export function createCafeServer(
             'paid',
             utr
           );
+
+          // 🌟 Auto-sync payer phone from Cashfree webhook payload
+          const rawWebhookPhone =
+            (p?.data as Record<string, unknown> | undefined)?.customer_details &&
+            typeof (p?.data as Record<string, unknown>).customer_details === 'object'
+              ? ((p?.data as Record<string, unknown>).customer_details as Record<string, unknown>).customer_phone
+              : undefined;
+          const cleanWebhookPhone = rawWebhookPhone
+            ? String(rawWebhookPhone).replace(/\D/g, '').slice(-10)
+            : '';
+          if (cleanWebhookPhone.length === 10 && cleanWebhookPhone !== '9999999999') {
+            existingOrder.customerPhone = cleanWebhookPhone;
+            if (existingOrder.customerId) {
+              const c = store.syncCustomerProfile(existingOrder.customerId, {
+                phone: cleanWebhookPhone,
+                name: existingOrder.customerName,
+                email: existingOrder.customerEmail,
+              });
+              if (c) emitSync('customer:updated', { customer: c });
+            } else if (existingOrder.customerEmail) {
+              const existingCust = store.getCustomers().find(
+                (cust) => cust.email && cust.email.toLowerCase() === existingOrder.customerEmail?.toLowerCase()
+              );
+              if (existingCust) {
+                const c = store.syncCustomerProfile(existingCust.id, { phone: cleanWebhookPhone });
+                if (c) emitSync('customer:updated', { customer: c });
+              }
+            }
+          }
+
           await store.flushToPersistence();
           const updated = store.getOrder(existingOrder.id);
           if (updated) {
             emitSync('order:updated', { order: updated });
+            void triggerOrderPaidEmailIfEligible(updated.id);
           }
         } else {
           const gatewayOrder = await upiGateway.getOrder(
@@ -774,6 +906,10 @@ export function createCafeServer(
         <form method="POST" action="/api/cashfree-mock/pay">
           <input type="hidden" name="orderId" value="${gatewayReference}">
           <input type="hidden" name="session" value="${session}">
+          <div class="mb-3 text-left">
+            <label class="block text-xs font-semibold text-slate-500 mb-1">UPI Phone Number (Linked to GPay / PhonePe)</label>
+            <input type="tel" name="payerPhone" value="${order.customerPhone || '9876543210'}" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-semibold text-slate-800" />
+          </div>
           <button type="submit" class="w-full py-3.5 px-4 bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-semibold rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer">
             <span>Pay ₹${order.total.toFixed(2)} via UPI (Simulate Bank Success)</span>
           </button>
@@ -794,9 +930,10 @@ export function createCafeServer(
       return;
     }
     const gatewayReference = String(req.body.orderId || '');
+    const payerPhone = req.body.payerPhone ? String(req.body.payerPhone).replace(/\D/g, '').slice(-10) : '';
     const order = getCafeOrderByGatewayReference(gatewayReference);
     if (upiGateway instanceof CashfreeGateway && order) {
-      upiGateway.simulateMockPayment(gatewayReference, 'CF' + Date.now());
+      upiGateway.simulateMockPayment(gatewayReference, 'CF' + Date.now(), payerPhone || undefined);
       const gatewayOrder = await upiGateway.getOrder(gatewayReference);
       if (gatewayOrder) {
         await syncGatewayOrder(order.id, gatewayOrder);
@@ -808,12 +945,13 @@ export function createCafeServer(
 
   app.use((req, res, next) => {
     // 1. HTTPS redirect in production if behind a reverse proxy
-    if (
-      process.env.NODE_ENV === 'production' &&
-      req.headers['x-forwarded-proto'] &&
-      req.headers['x-forwarded-proto'] !== 'https'
-    ) {
-      return res.redirect(301, `https://${req.hostname}${req.originalUrl}`);
+    if (isProduction && !req.secure) {
+      const publicUrl = process.env.APP_PUBLIC_URL || process.env.APP_URL;
+      if (!publicUrl) {
+        res.status(503).send('HTTPS public URL is not configured.');
+        return;
+      }
+      return res.redirect(301, `${new URL(publicUrl).origin}${req.originalUrl}`);
     }
 
     // 2. Strict Transport Security (HSTS) in production
@@ -827,26 +965,25 @@ export function createCafeServer(
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
 
-    // 4. Content Security Policy (Report-Only)
-    res.setHeader(
-      'Content-Security-Policy-Report-Only',
-      "default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://cdn.tailwindcss.com https://sdk.cashfree.com https://accounts.google.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' ws: wss: https: https://accounts.google.com https://oauth2.googleapis.com https://play.google.com https://*.supabase.co; frame-src 'self' https://accounts.google.com https://*.google.com https://*.supabase.co; frame-ancestors 'self';"
-    );
+    // 4. Content Security Policy (Enforced in production, Report-Only in dev/test)
+    const cspDirectives =
+      "default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://cdn.tailwindcss.com https://sdk.cashfree.com https://accounts.google.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' ws: wss: https: https://accounts.google.com https://oauth2.googleapis.com https://play.google.com https://*.supabase.co; frame-src 'self' https://accounts.google.com https://*.google.com https://*.supabase.co; frame-ancestors 'self';";
+    if (process.env.NODE_ENV === 'production') {
+      res.setHeader('Content-Security-Policy', cspDirectives);
+    } else {
+      res.setHeader('Content-Security-Policy-Report-Only', cspDirectives);
+    }
 
     // 5. Cross-Origin Resource Sharing (CORS) & Anti-CSRF Origin Validation
     const origin = req.headers.origin;
     if (origin) {
-      const isAllowed =
-        allowedOrigins.includes(origin) ||
-        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-
-      if (isAllowed) {
+      if (isOriginAllowed(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
         res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With');
       } else if (!req.path.startsWith('/api/webhooks/')) {
-        res.status(403).json({ error: `Cross-site origin forbidden: ${origin}` });
+        res.status(403).json({ error: 'Cross-site origin forbidden.' });
         return;
       }
     }
@@ -859,7 +996,15 @@ export function createCafeServer(
     next();
   });
 
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '15mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+  const uploadsStaticDir = path.resolve(process.cwd(), 'public', 'images', 'uploads');
+  if (!fs.existsSync(uploadsStaticDir)) {
+    try {
+      fs.mkdirSync(uploadsStaticDir, { recursive: true });
+    } catch {}
+  }
+  app.use('/images/uploads', express.static(uploadsStaticDir));
   app.use(noSqlInjectionSanitizer);
 
   app.use('/api', (req, res, next) => {
@@ -1009,20 +1154,10 @@ export function createCafeServer(
         typeof req.body?.credential === 'string' ? req.body.credential.trim() : '';
       const accessToken =
         typeof req.body?.accessToken === 'string' ? req.body.accessToken.trim() : '';
-      const googleClientId = (
-        process.env.VITE_GOOGLE_CLIENT_ID ||
-        process.env.GOOGLE_CLIENT_ID ||
-        ''
-      ).trim();
-
-      if (!googleClientId) {
-        res.status(503).json({ error: 'Google Sign-In is not configured in .env (VITE_GOOGLE_CLIENT_ID).' });
-        return;
-      }
 
       if (!credential && !accessToken) {
-        // If in development mode and local test session is requested:
-        if (process.env.NODE_ENV !== 'production' && req.body?.demo) {
+        // If demo session is requested (e.g. bypass or quick testing):
+        if (req.body?.demo) {
           const demoUser = {
             id: 'google:demo-google-user',
             name: (typeof req.body?.name === 'string' && req.body.name.trim()) || 'Google Customer',
@@ -1034,11 +1169,36 @@ export function createCafeServer(
             avatarUrl: 'https://lh3.googleusercontent.com/a/default-user',
             createdAt: new Date().toISOString(),
           };
-          updateCustomerCrmIdentityCookie(req, res, demoUser.id);
-          res.json({ session: demoUser });
+          const customer = store.upsertGoogleCustomer({
+            id: demoUser.id,
+            name: demoUser.name,
+            email: demoUser.email,
+            avatarUrl: demoUser.avatarUrl,
+            phone: demoUser.phone,
+            googleSubjectId: 'demo-google-user',
+            emailVerified: true,
+            phoneVerified: false,
+            createdAt: demoUser.createdAt,
+          });
+          await store.flushToPersistence();
+          emitSync('customer:updated', { customer });
+          emitSync('activity:updated', {});
+          updateCustomerCrmIdentityCookie(req, res, demoUser.id, customer.id);
+          res.json({ session: { ...demoUser, phone: customer.phone } });
           return;
         }
         res.status(400).json({ error: 'Google credential or access token is required.' });
+        return;
+      }
+
+      const googleClientId = (
+        process.env.VITE_GOOGLE_CLIENT_ID ||
+        process.env.GOOGLE_CLIENT_ID ||
+        ''
+      ).trim();
+
+      if (!googleClientId) {
+        res.status(503).json({ error: 'Google Sign-In is not configured in .env (VITE_GOOGLE_CLIENT_ID).' });
         return;
       }
 
@@ -1047,7 +1207,10 @@ export function createCafeServer(
         email?: string;
         name?: string;
         picture?: string;
+        email_verified?: boolean | string;
       } | null = null;
+
+      let googleExtractedPhone = '';
 
       if (credential) {
         const googleResponse = await fetch(
@@ -1077,9 +1240,15 @@ export function createCafeServer(
         }
       } else if (accessToken) {
         // Verify access token via Google userinfo endpoint
-        const googleResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
+        const [googleResponse, peopleResponse] = await Promise.all([
+          fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+          fetch('https://people.googleapis.com/v1/people/me?personFields=phoneNumbers', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }).catch(() => null),
+        ]);
+
         const userinfoPayload = (await googleResponse.json().catch(() => null)) as {
           sub?: string;
           email?: string;
@@ -1091,6 +1260,20 @@ export function createCafeServer(
         if (googleResponse.ok && userinfoPayload?.sub && userinfoPayload.email) {
           payload = userinfoPayload;
         }
+
+        if (peopleResponse && peopleResponse.ok) {
+          const peopleData = (await peopleResponse.json().catch(() => null)) as {
+            phoneNumbers?: Array<{ value?: string; canonicalForm?: string; type?: string }>;
+          } | null;
+          const rawPhone =
+            peopleData?.phoneNumbers?.[0]?.canonicalForm ||
+            peopleData?.phoneNumbers?.[0]?.value ||
+            '';
+          if (rawPhone) {
+            const digits = rawPhone.replace(/\D/g, '');
+            googleExtractedPhone = digits.length >= 10 ? digits.slice(-10) : digits;
+          }
+        }
       }
 
       if (!payload?.sub || !payload.email) {
@@ -1098,22 +1281,114 @@ export function createCafeServer(
         return;
       }
 
-      updateCustomerCrmIdentityCookie(req, res, `google:${payload.sub}`);
+      const customer = store.upsertGoogleCustomer({
+        id: `google:${payload.sub}`,
+        name: payload.name || payload.email.split('@')[0] || 'Customer',
+        email: payload.email,
+        avatarUrl: payload.picture,
+        phone: googleExtractedPhone || '',
+        googleSubjectId: payload.sub,
+        emailVerified:
+          payload.email_verified === true || payload.email_verified === 'true',
+        phoneVerified: Boolean(googleExtractedPhone),
+        createdAt: new Date().toISOString(),
+      });
+      await store.flushToPersistence();
+      emitSync('customer:updated', { customer });
+      emitSync('activity:updated', {});
+
+      updateCustomerCrmIdentityCookie(req, res, `google:${payload.sub}`, customer.id);
       res.json({
         session: {
-          id: `google:${payload.sub}`,
-          name: payload.name || payload.email.split('@')[0] || 'Customer',
-          email: payload.email,
-          phone: '',
+          id: customer.id,
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone,
           provider: 'google',
           confirmed: true,
           phoneVerified: false,
-          avatarUrl: payload.picture,
+          avatarUrl: customer.avatarUrl,
           createdAt: new Date().toISOString(),
         },
       });
     } catch (error) {
       next(error);
+    }
+  });
+
+  app.post('/api/customer/profile', async (req, res, next) => {
+    try {
+      const { customerId, name, phone, email, note } = parseBody(
+        z.object({
+          customerId: z.string().trim().min(1).max(64),
+          name: z.string().trim().max(120).optional(),
+          phone: z.string().trim().max(30).optional(),
+          email: z.string().trim().email().max(254).optional(),
+          note: z.string().trim().max(500).optional(),
+        }),
+        req.body
+      );
+      if (phone !== undefined && !/^\d{10}$/.test(phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, ''))) {
+        res.status(400).json({ error: 'Customer mobile number must contain exactly 10 digits.' });
+        return;
+      }
+      const staffAuth = checkStaffRoles(req, ['admin']);
+      const customerSession = getCustomerSession(req);
+      if (!staffAuth.allowed && !customerSession) {
+        res.status(staffAuth.httpStatus ?? 401).json({ error: staffAuth.error || 'Authentication required.' });
+        return;
+      }
+      if (
+        customerSession &&
+        !staffAuth.allowed &&
+        customerSession.customerId !== customerId &&
+        customerSession.crmCustomerId !== customerId
+      ) {
+        res.status(403).json({ error: 'You do not have access to this customer profile.' });
+        return;
+      }
+      let customer = store.syncCustomerProfile(customerId, { name, phone, email, note });
+      if (!customer) {
+        customer = store.upsertGoogleCustomer({
+          id: customerId,
+          name: name || 'Valued Customer',
+          email: email || '',
+          phone: phone || '',
+        });
+      }
+      await store.flushToPersistence();
+      emitSync('customer:updated', { customer });
+      res.json({ customer });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/admin/customers/:id', async (req, res, next) => {
+    try {
+      const deleted = store.deleteCustomer(req.params.id);
+      if (!deleted) {
+        res.status(404).json({ error: 'Customer not found' });
+        return;
+      }
+      await store.flushToPersistence();
+      emitSync('customer:updated', { customerId: req.params.id, deleted: true });
+      emitSync('activity:updated', {});
+      res.json({ ok: true, deletedId: req.params.id });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.delete('/api/admin/customers', async (_req, res, next) => {
+    try {
+      store.clearCustomers();
+      await store.flushToPersistence();
+      emitSync('customers:cleared', {});
+      emitSync('activity:updated', {});
+      res.json({ ok: true, message: 'All customers cleared from CRM' });
+    } catch (err) {
+      next(err);
     }
   });
 
@@ -1266,6 +1541,10 @@ export function createCafeServer(
         phone,
       });
       if (!result.success) {
+        if (result.unavailable) {
+          res.status(503).json({ error: result.message });
+          return;
+        }
         res.status(429).json({ error: result.message, retryAfterSeconds: result.retryAfterSeconds });
         return;
       }
@@ -1310,16 +1589,7 @@ export function createCafeServer(
       res.status(400).json({ error: 'Account identifier is required.' });
       return;
     }
-    try {
-      const { rawToken } = generatePasswordResetToken(identifier);
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`[Dev Only Reset Link] Token for ${identifier}: ${rawToken}`);
-      }
-      // Issue 4: Generic message
-      res.json({ success: true, message: "If an account exists, a reset link has been dispatched." });
-    } catch (err) {
-      res.status(429).json({ error: err instanceof Error ? err.message : 'Too many reset requests.' });
-    }
+    res.status(503).json({ error: 'Password reset delivery is unavailable.' });
   });
 
   app.post('/api/auth/reset/confirm', (req, res) => {
@@ -1357,11 +1627,7 @@ export function createCafeServer(
         res.status(401).json({ error: 'Re-authentication failed. Incorrect PIN.' });
         return;
       }
-      const { token } = await initiateEmailChange(session.staffId || session.role, 'staff@sethsawariya.com', newEmail);
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`[Dev Only Email Change Token]: ${token}`);
-      }
-      res.json({ success: true, message: 'Verification link sent to new email; notification dispatched to old email.' });
+      res.status(503).json({ error: 'Email change verification delivery is unavailable.' });
     } catch (err) {
       next(err);
     }
@@ -1452,13 +1718,113 @@ export function createCafeServer(
         toEmail: input.email,
         phone: input.phone,
         verificationCode: input.code,
+        appUrl: process.env.APP_PUBLIC_URL || process.env.APP_URL || 'http://localhost:3002',
       });
+      if (!result.success) {
+        res.status(503).json({ error: result.error || 'Email delivery is unavailable.' });
+        return;
+      }
+      res.json({
+        ok: true,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Admin Brevo Email Broadcast endpoint (for marketing, announcements & campaigns)
+  app.post('/api/admin/broadcast-email', async (req, res, next) => {
+    try {
+      const auth = checkStaffRoles(req, ['admin']);
+      if (!auth.allowed) {
+        res.status(auth.httpStatus ?? 401).json({ error: auth.error });
+        return;
+      }
+      const input = parseBody(broadcastEmailSchema, req.body);
+      const state = store.getBootstrap();
+
+      let recipients: Array<{ email: string; name: string }> = [];
+      if (input.testEmail) {
+        recipients = [{ email: input.testEmail, name: 'Admin Test' }];
+      } else {
+        const target = input.targetSegment;
+        recipients = state.customers
+          .filter((c) => (target === 'all' || c.segment === target) && Boolean(c.email))
+          .map((c) => ({ email: c.email!, name: c.name }));
+      }
+
+      const result = await broadcastBrevoMarketingEmail({
+        recipients,
+        subject: input.subject,
+        heading: input.heading,
+        message: input.message,
+        promoCode: input.promoCode,
+        discountBadge: input.discountBadge,
+      });
+      if (!result.success && result.sentCount === 0) {
+        res.status(503).json({ ok: false, error: result.error || 'Email delivery is unavailable.' });
+        return;
+      }
+
       res.json({
         ok: result.success,
+        totalRecipients: result.totalRecipients,
+        sentCount: result.sentCount,
+        failedCount: result.failedCount,
         simulated: result.simulated ?? false,
-        messageId: result.messageId,
-        code: process.env.NODE_ENV === 'production' ? undefined : result.code,
-        error: result.error,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Brevo Order Bill / Tax Invoice email delivery
+  app.post('/api/orders/:orderId/send-bill-email', async (req, res, next) => {
+    try {
+      const staffAuth = checkStaffRoles(req, ['admin']);
+      const customerSession = getCustomerSession(req);
+      if (!staffAuth.allowed && !customerSession) {
+        res.status(staffAuth.httpStatus ?? 401).json({ error: staffAuth.error || 'Authentication required.' });
+        return;
+      }
+      if (
+        customerSession &&
+        !staffAuth.allowed &&
+        !canCustomerAccessOrder(customerSession, req.params.orderId)
+      ) {
+        res.status(403).json({ error: 'You do not have access to this order.' });
+        return;
+      }
+      const order = store.getOrder(req.params.orderId);
+      if (!order) {
+        res.status(404).json({ error: `Order "${req.params.orderId}" not found.` });
+        return;
+      }
+      const input = parseBody(sendBillEmailSchema, req.body);
+      const state = store.getBootstrap();
+
+      const result = await sendBrevoOrderBillEmail({
+        order,
+        toEmail: input.email,
+        toName: input.name || order.customerName,
+        cafeSettings: state.cafeSettings,
+        appUrl: process.env.APP_PUBLIC_URL || process.env.APP_URL || 'http://localhost:3002',
+      });
+
+      if (!result.success) {
+        res.status(503).json({ error: result.error || 'Email delivery is unavailable.' });
+        return;
+      }
+
+      const updated = store.markOrderPaidEmailSent(order.id, input.email);
+      await store.flushToPersistence();
+      if (updated) {
+        emitSync('order:updated', { order: updated });
+      }
+
+      res.json({
+        ok: true,
+        orderId: order.id,
       });
     } catch (err) {
       next(err);
@@ -1546,6 +1912,9 @@ export function createCafeServer(
           emitSync('table:updated', { table: result.tableUpdated });
         }
         emitSync('inventory:updated', { inventory: store.getInventory() });
+        if (result.order.paymentStatus === 'paid') {
+          void triggerOrderPaidEmailIfEligible(result.order.id);
+        }
       }
       res.status(result.duplicate ? 200 : 201).json(result);
     } catch (err) {
@@ -1604,6 +1973,8 @@ export function createCafeServer(
             clientOrderId,
             amountPaise,
             note: `CafeOS ${order.id}`,
+            customerName: order.customerName,
+            customerPhone: order.customerPhone,
           });
         } catch (error) {
           if (!(error instanceof UpiGatewayRequestError) || error.statusCode !== 422) {
@@ -1702,6 +2073,7 @@ export function createCafeServer(
         }
         await store.flushToPersistence();
         emitSync('order:updated', { order });
+        void triggerOrderPaidEmailIfEligible(order.id);
         res.status(200).json({ ok: true, order });
       } catch (err) {
         next(err);
@@ -1817,6 +2189,9 @@ export function createCafeServer(
           emitSync('stock:low', { items: lowStockAlerts });
           emitSync('inventory:updated', { inventory: store.getInventory() });
         }
+        if (order.paymentStatus === 'paid') {
+          void triggerOrderPaidEmailIfEligible(order.id);
+        }
         await store.flushToPersistence();
         res.status(200).json({ ok: true, order, lowStockAlerts });
       } catch (err) {
@@ -1854,6 +2229,9 @@ export function createCafeServer(
           emitSync('stock:low', { items: lowStockAlerts });
           emitSync('inventory:updated', { inventory: store.getInventory() });
         }
+        if (order.paymentStatus === 'paid') {
+          void triggerOrderPaidEmailIfEligible(order.id);
+        }
         await store.flushToPersistence();
         res.status(200).json({ ok: true, order, lowStockAlerts });
       } catch (err) {
@@ -1875,6 +2253,9 @@ export function createCafeServer(
         emitSync('order:updated', { order: updated });
         emitSync('inventory:updated', { inventory: store.getInventory() });
         emitSync('activity:updated', {});
+        if (updated.paymentStatus === 'paid') {
+          void triggerOrderPaidEmailIfEligible(updated.id);
+        }
         await store.flushToPersistence();
         res.json({ order: updated });
       } catch (err) {
@@ -1962,6 +2343,89 @@ export function createCafeServer(
     }
   });
 
+  app.post('/api/ai/vishal', async (req, res, next) => {
+    try {
+      const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+      const mode = req.body?.mode === 'staff' ? 'staff' : 'customer';
+      const state = store.getBootstrap();
+      const menu = state.menuItems || [];
+      const orders = state.orders || [];
+      const settings = state.cafeSettings;
+
+      // Check if Gemini API is available
+      const geminiApiKey = process.env.GEMINI_API_KEY;
+      if (geminiApiKey && message) {
+        try {
+          const { GoogleGenAI } = await import('@google/genai');
+          const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+          const systemInstruction = `You are Vishal, the AI Assistant & Cafe Operations Copilot for "The Sawariya Cafe" (TSC), a premium pure-vegetarian cafe in Jaipur.
+Current mode: ${mode}.
+Cafe Name: ${settings?.cafeName || 'The Sawariya Cafe'}
+Tagline: Good Food • Good Mood
+Total Menu items: ${menu.length}. Available: ${menu.filter((m) => m.isAvailable !== false).map((m) => `${m.name} (₹${m.price})`).join(', ')}.
+Total orders today: ${orders.length}.
+Special offers: Birthday Party celebration for ₹800 (1.5 hrs), Buy 5 get 1 free Cold Coffee, Free ice cream for Google review + Instagram follow, Free delivery under 1km on orders > ₹249.
+Wi-Fi: Airtel_The sawariya cafe / Password: Sawariya@1177. Phone: 01414611071, WhatsApp: 7300348070.
+Tone: Warm, helpful, polite, and energetic. Reply in friendly Hinglish or Hindi. Keep answers concise, appetizing, and actionable.`;
+
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: message,
+            config: {
+              systemInstruction,
+              temperature: 0.7,
+            },
+          });
+
+          const replyText = response.text || '';
+          if (replyText) {
+            res.json({
+              ok: true,
+              text: replyText,
+              provider: 'gemini',
+              mode,
+            });
+            return;
+          }
+        } catch (geminiError) {
+          console.warn('[Vishal AI] Gemini call fallback to local engine:', geminiError);
+        }
+      }
+
+      // Local intelligence fallback
+      const activeKitchen = (orders || []).filter((o) => ['order_received', 'preparing'].includes(o.status));
+      const today = new Date().toDateString();
+      const todayOrders = (orders || []).filter((o) => o?.createdAt && new Date(o.createdAt).toDateString() === today);
+      const todayRevenue = todayOrders
+        .filter((o) => o.paymentStatus === 'paid')
+        .reduce((sum, o) => sum + (o.total || 0), 0);
+
+      if (mode === 'staff') {
+        res.json({
+          ok: true,
+          provider: 'local',
+          mode: 'staff',
+          text: `👨‍🍳 Vishal Cafe Copilot Report:\n• Active Cooking KOTs: ${activeKitchen.length}\n• Today's Total Sales: ₹${todayRevenue.toLocaleString('en-IN')} across ${todayOrders.length} orders.\n• Menu Items Available: ${(menu || []).filter((m) => m.isAvailable !== false).length}/${menu.length}`,
+          insights: [
+            { label: 'Active KOT', value: activeKitchen.length },
+            { label: "Today's Sales", value: `₹${todayRevenue}` },
+          ],
+        });
+        return;
+      }
+
+      res.json({
+        ok: true,
+        provider: 'local',
+        mode: 'customer',
+        text: `Namaste! Main Vishal hoon, The Sawariya Cafe ka AI Assistant. Aap mujhse delicious food recommendations, special offers, order status ya Wi-Fi details pooch sakte hain!`,
+      });
+    } catch (err) {
+      console.error('[Vishal AI Error]:', err);
+      next(err);
+    }
+  });
+
   app.post(
     '/api/menu/:id/toggle-availability',
     requireRoles(['admin', 'kitchen']),
@@ -1992,6 +2456,70 @@ export function createCafeServer(
         emitSync('menu:item-created', { item });
         emitSync('menu:availability-toggled', { item });
         res.status(201).json({ ok: true, item });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.put(
+    '/api/menu/items/:id',
+    requireRoles(['admin']),
+    async (req, res, next) => {
+      try {
+        const input = parseBody(updateMenuItemSchema, req.body);
+        const item = store.updateMenuItem(String(req.params.id), input);
+        if (!item) {
+          res.status(404).json({ error: 'Menu item not found' });
+          return;
+        }
+        await store.flushToPersistence();
+        emitSync('menu:item-updated', { item });
+        emitSync('menu:availability-toggled', { item });
+        res.status(200).json({ ok: true, item });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  app.post(
+    '/api/menu/upload-image',
+    requireRoles(['admin']),
+    async (req, res, next) => {
+      try {
+        const { data, fileName } = req.body as { data?: string; fileName?: string };
+        if (!data || typeof data !== 'string' || data.length < 10) {
+          res.status(400).json({ error: 'Valid image data is required' });
+          return;
+        }
+
+        let base64Content = data;
+        let ext = 'jpg';
+        if (data.startsWith('data:image/')) {
+          const match = data.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,/);
+          if (match) {
+            ext = match[1].toLowerCase() === 'jpeg' ? 'jpg' : match[1].toLowerCase();
+            base64Content = data.slice(match[0].length);
+          }
+        } else if (fileName && fileName.includes('.')) {
+          const rawExt = fileName.split('.').pop()?.toLowerCase();
+          if (rawExt && ['jpg', 'jpeg', 'png', 'webp', 'svg'].includes(rawExt)) {
+            ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
+          }
+        }
+
+        const safeExt = ['jpg', 'png', 'webp', 'svg'].includes(ext) ? ext : 'jpg';
+        const uploadsDir = path.resolve(process.cwd(), 'public', 'images', 'uploads');
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+
+        const uniqueFileName = `product-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${safeExt}`;
+        const filePath = path.join(uploadsDir, uniqueFileName);
+        fs.writeFileSync(filePath, Buffer.from(base64Content, 'base64'));
+        const imageUrl = `/images/uploads/${uniqueFileName}`;
+        res.status(200).json({ ok: true, imageUrl });
       } catch (err) {
         next(err);
       }
@@ -2324,6 +2852,72 @@ export function createCafeServer(
     res.json(exported);
   });
 
+  // DPDP Act 2023: Right to Data Portability (Current Authenticated Customer)
+  app.get('/api/customer/export', (req, res) => {
+    const customer = getCustomerSession(req);
+    if (!customer || !customer.customerId) {
+      res.status(401).json({ error: 'Customer authentication required to export personal data' });
+      return;
+    }
+    const exported = store.exportCustomerPii(customer.customerId);
+    if (!exported) {
+      res.status(404).json({ error: 'Customer record not found' });
+      return;
+    }
+    res.json(exported);
+  });
+
+  // DPDP Act 2023: Right to Erasure / Account Deletion (Self-Service)
+  app.delete('/api/customer/account', async (req, res, next) => {
+    try {
+      const customerSession = getCustomerSession(req);
+      if (!customerSession || !customerSession.customerId) {
+        res.status(401).json({ error: 'Customer authentication required to delete account' });
+        return;
+      }
+      const customerId = customerSession.customerId;
+      const deleted = store.deleteCustomer(customerId);
+      await store.flushToPersistence();
+      clearCustomerSessionCookie(res);
+      emitSync('customer:updated', { customerId, deleted: true });
+      emitSync('activity:updated', {});
+      res.json({
+        ok: true,
+        deleted,
+        message: 'Account and personal CRM data erased under Section 12 of the DPDP Act 2023.',
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // DPDP Act 2023: Delete Customer by ID (Admin or Verified Customer)
+  app.delete('/api/customers/:id', async (req, res, next) => {
+    try {
+      const customerId = String(req.params.id);
+      const auth = checkCustomerAccess(req, customerId);
+      if (!auth.allowed) {
+        res.status(auth.httpStatus ?? 401).json({ error: auth.error });
+        return;
+      }
+      const deleted = store.deleteCustomer(customerId);
+      await store.flushToPersistence();
+      const customerSession = getCustomerSession(req);
+      if (customerSession?.customerId === customerId) {
+        clearCustomerSessionCookie(res);
+      }
+      emitSync('customer:updated', { customerId, deleted: true });
+      emitSync('activity:updated', {});
+      res.json({
+        ok: true,
+        deleted,
+        message: 'Customer record erased in compliance with DPDP Act 2023.',
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // Loyalty
   app.post('/api/loyalty/rules', requireRoles(['admin']), (req, res, next) => {
     try {
@@ -2427,7 +3021,6 @@ export function createCafeServer(
       const message = firstIssue?.message || 'Invalid request payload';
       res.status(400).json({
         error: `${fieldPath}${message}`.trim(),
-        issues: err.issues,
       });
       return;
     }
@@ -2441,13 +3034,11 @@ export function createCafeServer(
       });
       return;
     }
-    if (process.env.NODE_ENV === 'production') {
-      console.error('[Production Server Error]', err);
-      res.status(500).json({ error: 'An unexpected internal error occurred. Please try again later.' });
-      return;
-    }
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    res.status(500).json({ error: message });
+    console.error(
+      '[CafeOS] Request failed:',
+      err instanceof Error ? `${err.name}: ${err.message}\n${err.stack}` : 'unknown error'
+    );
+    res.status(500).json({ error: 'An unexpected internal error occurred. Please try again later.' });
   });
 
   return { app, httpServer, io, store };

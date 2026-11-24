@@ -1,34 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { CAFE_ASSETS } from '../data/cafeSeedData';
 import { cafeSettingsSchema } from '../shared/schemas';
 import { CafeSettings } from '../types/cafe';
-import { CafeImage } from './CafeImage';
-
-export type SettingsTab =
-  | 'Cafe Profile'
-  | 'Taxes & Charges'
-  | 'Roles'
-  | 'Alerts'
-  | 'Integrations';
 
 interface SettingsProfileScreenProps {
   settings: CafeSettings;
-  initialTab?: SettingsTab;
   onSaveSettings: (next: CafeSettings) => Promise<boolean> | boolean | void;
   onResetDefaults: () => Promise<boolean> | boolean | void;
   onNotify: (msg: string) => void;
 }
-
-const TABS: { id: SettingsTab; icon: string }[] = [
-  { id: 'Cafe Profile', icon: 'storefront' },
-  { id: 'Taxes & Charges', icon: 'percent' },
-  { id: 'Roles', icon: 'badge' },
-  { id: 'Alerts', icon: 'notifications' },
-  { id: 'Integrations', icon: 'hub' },
-];
 
 type SettingsFormValues = z.input<typeof cafeSettingsSchema>;
 
@@ -40,25 +22,21 @@ type SavePhase =
 
 export const SettingsProfileScreen: React.FC<SettingsProfileScreenProps> = ({
   settings,
-  initialTab = 'Cafe Profile',
   onSaveSettings,
   onResetDefaults,
   onNotify,
 }) => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [savePhase, setSavePhase] = useState<SavePhase>({ status: 'idle' });
-
-  useEffect(() => {
-    setActiveTab(initialTab);
-  }, [initialTab]);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(cafeSettingsSchema),
-    defaultValues: settings,
+    defaultValues: { ...settings, logoUrl: settings.logoUrl || '/images/tsc-logo.jpg' },
   });
 
   useEffect(() => {
-    form.reset(settings);
+    form.reset({ ...settings, logoUrl: settings.logoUrl || '/images/tsc-logo.jpg' });
   }, [form, settings]);
 
   const draft = form.watch();
@@ -83,7 +61,7 @@ export const SettingsProfileScreen: React.FC<SettingsProfileScreenProps> = ({
   });
 
   const handleReset = async () => {
-    if (savePhase.status === 'saving') return;
+    if (savePhase.status === 'saving' || logoUploading) return;
     setSavePhase({ status: 'saving' });
     try {
       const ok = await onResetDefaults();
@@ -100,66 +78,88 @@ export const SettingsProfileScreen: React.FC<SettingsProfileScreenProps> = ({
     }
   };
 
+  const handleLogoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      onNotify('Choose a JPG, PNG, or WebP image for the cafe logo.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      onNotify('Cafe logos must be 5 MB or smaller.');
+      return;
+    }
+
+    setLogoUploading(true);
+    try {
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') resolve(reader.result);
+          else reject(new Error('Could not read the selected logo image.'));
+        };
+        reader.onerror = () => reject(new Error('Could not read the selected logo image.'));
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch('/api/menu/upload-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data, fileName: file.name }),
+      });
+      const result = (await response.json()) as { imageUrl?: string; error?: string };
+      if (!response.ok || !result.imageUrl) {
+        throw new Error(result.error || 'Could not upload the cafe logo.');
+      }
+
+      form.setValue('logoUrl', result.imageUrl, { shouldDirty: true, shouldValidate: true });
+      setSavePhase({ status: 'idle' });
+      onNotify('Logo uploaded. Save Changes to apply it.');
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : 'Could not upload the cafe logo.');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
   return (
     <form onSubmit={handleSave} className="flex flex-col w-full pb-8 space-y-4">
       {/* Header Row */}
-      <div className="flex items-center justify-between pt-1">
-        <div>
-          <h1 className="text-xl font-bold text-on-surface tracking-tight">Settings</h1>
-          <p className="text-xs text-on-surface-variant">
-            Cafe Profile &amp; System Configuration
-          </p>
-        </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-high text-tertiary">
-          <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
-          <span className="text-[11px] font-medium">All synced</span>
-        </div>
+      <div className="pt-1">
+        <h1 className="text-xl font-bold text-on-surface tracking-tight">Settings</h1>
       </div>
 
-      {/* Category Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-        {TABS.map((tab) => {
-          const active = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs transition-all cursor-pointer ${
-                active
-                  ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
-                  : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface font-medium'
-              }`}
-            >
-              <span className={`material-symbols-outlined text-[17px] ${active ? 'icon-filled' : ''}`}>
-                {tab.icon}
-              </span>
-              <span>{tab.id}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Main 2-column responsive layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+      <div className="w-full max-w-3xl mx-auto space-y-4">
         {/* Cafe Identity & Core Profile Card */}
-        <div className="lg:col-span-7 rounded-xl bg-surface-container-low p-4 shadow-md space-y-4">
+        <div className="rounded-xl bg-surface-container-low p-4 shadow-md space-y-4">
           <div className="flex items-center gap-3.5">
             <div className="relative shrink-0">
-              <div className="w-16 h-16 rounded-full bg-surface-container-highest flex items-center justify-center shadow-inner overflow-hidden">
-                <CafeImage
-                  src={CAFE_ASSETS.loyaltySyncRef}
-                  alt="Seth Sawariya Cafe Visual Emblem"
-                  className="w-full h-full object-cover opacity-90"
+              <div className="w-16 h-16 rounded-full bg-black flex items-center justify-center shadow-md overflow-hidden border-2 border-[#D4AF37]/60 p-0.5">
+                <img
+                  src={draft.logoUrl || '/images/tsc-logo.jpg'}
+                  alt="The Sawariya Cafe Logo"
+                  className="w-full h-full object-cover rounded-full"
                 />
               </div>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                aria-label="Upload cafe logo"
+                onChange={(event) => void handleLogoChange(event)}
+                className="sr-only"
+              />
               <button
                 type="button"
-                aria-label="Edit cafe avatar"
-                onClick={() => onNotify('Brand emblem verified in CafeOS Media Library')}
-                className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center shadow-md cursor-pointer"
+                aria-label="Change cafe logo"
+                title="Change cafe logo"
+                disabled={logoUploading || savePhase.status === 'saving'}
+                onClick={() => logoInputRef.current?.click()}
+                className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center shadow-md cursor-pointer disabled:cursor-wait disabled:opacity-60"
               >
-                <span className="material-symbols-outlined text-[14px]">edit</span>
+                <span className="material-symbols-outlined text-[14px]">
+                  {logoUploading ? 'progress_activity' : 'edit'}
+                </span>
               </button>
             </div>
             <div className="min-w-0 flex-1">
@@ -175,6 +175,9 @@ export const SettingsProfileScreen: React.FC<SettingsProfileScreenProps> = ({
               </span>
             </div>
           </div>
+          <p className="pl-[78px] text-[11px] text-on-surface-variant">
+            Upload a JPG, PNG, or WebP (max 5 MB), then save changes.
+          </p>
 
           <div className="space-y-3 pt-1">
             <div>
@@ -321,128 +324,52 @@ export const SettingsProfileScreen: React.FC<SettingsProfileScreenProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Operations, Tax, Hardware & Save Actions */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="rounded-xl bg-surface-container-low p-4 shadow-md space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-[20px]">
-                  receipt_long
-                </span>
-                <h3 className="text-sm font-bold text-on-surface">Store Operations &amp; Tax</h3>
-              </div>
-              <span className="text-xs text-primary font-medium">{activeTab}</span>
+        {/* Primary Save / Reset Actions */}
+        <div className="space-y-2.5">
+          {savePhase.status === 'error' && (
+            <div className="rounded-lg bg-error-container/25 border border-error/40 px-3 py-2 text-xs text-error">
+              {savePhase.message}
             </div>
+          )}
 
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between p-3 rounded-lg bg-surface-container-high">
-                <div>
-                  <span className="block text-[11px] text-on-surface-variant">GSTIN Number</span>
-                  <span className="text-sm font-semibold text-on-surface tracking-wider">
-                    {draft.gstin}
-                  </span>
-                </div>
-                <span className="px-2 py-0.5 rounded bg-surface-container-highest text-secondary text-xs">
-                  5% Composite
-                </span>
-              </div>
-
-                <div className="flex items-center justify-between p-3 rounded-lg bg-surface-container-high">
-                  <div>
-                    <span className="block text-[11px] text-on-surface-variant">
-                      Service Charge (%)
-                    </span>
-                    <span className="text-sm font-medium text-on-surface">
-                      {Number(draft.serviceChargePct ?? 0)}% (Optional)
-                    </span>
-                  </div>
-                  <span className="text-xs text-on-surface-variant">Standard</span>
-                </div>
-
-                <div className="flex items-center justify-between p-3 rounded-lg bg-surface-container-high">
-                  <div>
-                    <span className="block text-[11px] text-on-surface-variant">
-                      QR Table Dine-In Ordering
-                    </span>
-                    <span
-                      className={`text-xs font-semibold flex items-center gap-1.5 mt-0.5 ${
-                        draft.qrOrderingEnabled ? 'text-tertiary' : 'text-outline'
-                      }`}
-                    >
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          draft.qrOrderingEnabled ? 'bg-tertiary' : 'bg-outline'
-                        }`}
-                      />
-                      {draft.qrOrderingEnabled ? 'Enabled (Live)' : 'Paused'}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={draft.qrOrderingEnabled}
-                    aria-label="Toggle Table Ordering"
-                    onClick={() => form.setValue('qrOrderingEnabled', !draft.qrOrderingEnabled)}
-                    className={`w-11 h-6 rounded-full flex items-center px-0.5 transition-colors cursor-pointer ${
-                      draft.qrOrderingEnabled
-                        ? 'bg-tertiary justify-end'
-                        : 'bg-surface-variant justify-start'
-                    }`}
-                  >
-                    <span className="w-5 h-5 rounded-full bg-on-tertiary shadow-sm" />
-                  </button>
-                </div>
-            </div>
-          </div>
-
-
-          {/* Primary Save / Reset Actions */}
-          <div className="space-y-2.5">
-            {savePhase.status === 'error' && (
-              <div className="rounded-lg bg-error-container/25 border border-error/40 px-3 py-2 text-xs text-error">
-                {savePhase.message}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={savePhase.status === 'saving'}
-              className="w-full h-12 rounded-lg bg-primary-container hover:bg-primary text-on-primary-container text-sm font-bold flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.99] cursor-pointer disabled:opacity-60"
+          <button
+            type="submit"
+            disabled={savePhase.status === 'saving' || logoUploading}
+            className="w-full h-12 rounded-lg bg-primary-container hover:bg-primary text-on-primary-container text-sm font-bold flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.99] cursor-pointer disabled:opacity-60"
+          >
+            <span
+              className={`material-symbols-outlined text-[20px] ${
+                savePhase.status === 'saving' ? 'animate-spin' : ''
+              }`}
             >
-              <span
-                className={`material-symbols-outlined text-[20px] ${
-                  savePhase.status === 'saving' ? 'animate-spin' : ''
-                }`}
-              >
-                {savePhase.status === 'saving'
-                  ? 'sync'
-                  : savePhase.status === 'saved'
-                    ? 'done_all'
-                    : savePhase.status === 'error'
-                      ? 'error'
-                      : 'check_circle'}
-              </span>
-              <span>
-                {savePhase.status === 'saving'
-                  ? 'Saving Profile...'
-                  : savePhase.status === 'saved'
-                    ? 'Profile Updated!'
-                    : savePhase.status === 'error'
-                      ? 'Retry Save'
-                      : 'Save Changes'}
-              </span>
-            </button>
+              {savePhase.status === 'saving'
+                ? 'sync'
+                : savePhase.status === 'saved'
+                  ? 'done_all'
+                  : savePhase.status === 'error'
+                    ? 'error'
+                    : 'check_circle'}
+            </span>
+            <span>
+              {savePhase.status === 'saving'
+                ? 'Saving Profile...'
+                : savePhase.status === 'saved'
+                  ? 'Profile Updated!'
+                  : savePhase.status === 'error'
+                    ? 'Retry Save'
+                    : 'Save Changes'}
+            </span>
+          </button>
 
-            <button
-              type="button"
-              disabled={savePhase.status === 'saving'}
-              onClick={() => void handleReset()}
-              className="w-full h-11 rounded-lg bg-surface-container text-on-surface-variant hover:text-on-surface text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-[18px]">restart_alt</span>
-              <span>Reset Defaults</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={savePhase.status === 'saving'}
+            onClick={() => void handleReset()}
+            className="w-full h-11 rounded-lg bg-surface-container text-on-surface-variant hover:text-on-surface text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-[18px]">restart_alt</span>
+            <span>Reset Defaults</span>
+          </button>
         </div>
       </div>
     </form>

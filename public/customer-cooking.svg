@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 200" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="60" y1="16" x2="296" y2="192" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF9F1"/>
+      <stop offset="1" stop-color="#F3E2D1"/>
+    </linearGradient>
+    <linearGradient id="pan" x1="104" y1="99" x2="258" y2="164" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#594136"/>
+      <stop offset="1" stop-color="#2D211C"/>
+    </linearGradient>
+    <linearGradient id="sauce" x1="116" y1="99" x2="239" y2="128" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E78145"/>
+      <stop offset="1" stop-color="#C85335"/>
+    </linearGradient>
+    <filter id="shadow" x="66" y="137" width="230" height="50" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+    <style>
+      .steam { transform-box: fill-box; transform-origin: center; animation: steam 1.8s ease-in-out infinite; }
+      .steam.two { animation-delay: .45s; }
+      .steam.three { animation-delay: .9s; }
+      .bubble { transform-box: fill-box; transform-origin: center; animation: bubble 1.4s ease-in-out infinite; }
+      .bubble.two { animation-delay: .55s; }
+      .leaf { transform-box: fill-box; transform-origin: center; animation: sizzle 1.8s ease-in-out infinite; }
+      .leaf.two { animation-delay: -.6s; }
+      .flame { transform-box: fill-box; transform-origin: center bottom; animation: flame .7s ease-in-out infinite alternate; }
+      @keyframes steam { 0% { opacity: 0; transform: translateY(8px) scale(.8); } 45% { opacity: .8; } 100% { opacity: 0; transform: translateY(-17px) scale(1.12); } }
+      @keyframes bubble { 0%, 100% { transform: translateY(1px) scale(.8); opacity: .55; } 50% { transform: translateY(-3px) scale(1.15); opacity: 1; } }
+      @keyframes sizzle { 0%, 100% { transform: rotate(-7deg) translateY(0); } 50% { transform: rotate(9deg) translateY(-3px); } }
+      @keyframes flame { from { transform: scaleY(.86); opacity: .78; } to { transform: scaleY(1.08); opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
+    </style>
+  </defs>
+
+  <ellipse cx="181" cy="163" rx="99" ry="13" fill="#805B42" opacity=".18" filter="url(#shadow)"/>
+  <circle cx="180" cy="99" r="87" fill="url(#bg)"/>
+  <circle cx="180" cy="99" r="77" stroke="#E9D5C2" stroke-dasharray="2 7" stroke-linecap="round"/>
+
+  <g class="steam" stroke="#B98A69" stroke-linecap="round" stroke-width="4" opacity=".7">
+    <path d="M139 83c-10-10 8-14 0-25-5-7 1-12 5-16"/>
+  </g>
+  <g class="steam two" stroke="#B98A69" stroke-linecap="round" stroke-width="4" opacity=".7">
+    <path d="M177 75c-10-10 8-14 0-25-5-7 1-12 5-16"/>
+  </g>
+  <g class="steam three" stroke="#B98A69" stroke-linecap="round" stroke-width="4" opacity=".7">
+    <path d="M215 83c-10-10 8-14 0-25-5-7 1-12 5-16"/>
+  </g>
+
+  <g class="flame" fill="#E88B43">
+    <path d="M119 157c-9-13 9-17 4-28 14 9 15 21 7 28h-11Z"/>
+    <path d="M139 160c-7-10 7-14 3-23 11 8 12 17 6 23h-9Z" fill="#F2B84B"/>
+    <path d="M220 160c-7-10 7-14 3-23 11 8 12 17 6 23h-9Z" fill="#F2B84B"/>
+    <path d="M239 157c-9-13 9-17 4-28 14 9 15 21 7 28h-11Z"/>
+  </g>
+
+  <path d="M225 91h72c7 0 11 8 6 13l-30 29h-46V91Z" fill="#3C2D26"/>
+  <path d="M105 91h145l-12 48c-2 9-10 15-19 15h-83c-9 0-17-6-19-15l-12-48Z" fill="url(#pan)" stroke="#2D211C" stroke-width="3"/>
+  <ellipse cx="177.5" cy="94" rx="72.5" ry="16" fill="#261B17"/>
+  <ellipse cx="177.5" cy="92" rx="65" ry="12" fill="url(#sauce)"/>
+  <path d="M120 91c15-7 31-4 42 2 14 7 26 5 38 0 13-6 28-5 38 0" stroke="#F5B565" stroke-width="3" stroke-linecap="round" opacity=".75"/>
+
+  <g class="bubble">
+    <circle cx="146" cy="91" r="4" fill="#FFD18B"/>
+    <circle cx="146" cy="91" r="2" fill="#F5A857"/>
+  </g>
+  <g class="bubble two">
+    <circle cx="201" cy="88" r="3.5" fill="#FFD18B"/>
+    <circle cx="201" cy="88" r="1.7" fill="#F5A857"/>
+  </g>
+
+  <g class="leaf">
+    <path d="M168 91c-10-15-23-14-26-12 2 12 13 19 26 12Z" fill="#6E9A59"/>
+    <path d="m145 80 21 11" stroke="#D4E1A1" stroke-width="1.5"/>
+  </g>
+  <g class="leaf two">
+    <path d="M187 89c9-16 22-16 26-13-2 12-12 20-26 13Z" fill="#547F49"/>
+    <path d="m210 77-20 13" stroke="#D4E1A1" stroke-width="1.5"/>
+  </g>
+  <circle cx="181" cy="97" r="6" fill="#F4D78C" stroke="#FFF0C4" stroke-width="2"/>
+  <circle cx="182" cy="97" r="2" fill="#F5F0E7"/>
+
+  <path d="M106 122c5 16 15 24 31 27" stroke="#816453" stroke-width="2" stroke-linecap="round" opacity=".6"/>
+  <path d="M241 70c9 3 16 10 18 18" stroke="#C67C4E" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+  <path d="m256 68 2 5m5 3 5-1m-4 9 4 3" stroke="#D9A46E" stroke-width="2" stroke-linecap="round"/>
+</svg>

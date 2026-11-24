@@ -1,151 +1,62 @@
-# CafeOS PostgreSQL Database Setup & Operations Guide
+# CafeOS database setup
 
-This guide explains how to set up, migrate, seed, and verify the relational PostgreSQL database for your multi-cafe SaaS system.
+## Runtime storage
 
----
+MongoDB is the authoritative operational store for orders, inventory, tables, customer/loyalty data, and CafeOS state. The server connects to MongoDB during startup and exits if the primary connection cannot be established. PostgreSQL is optional and is not the source of truth for live operations.
 
-## 1. Quick Start Commands
-
-All commands run using your project's npm scripts:
-
-| Goal | Command | What it does |
-| :--- | :--- | :--- |
-| **Run Migrations (UP)** | `npm run db:migrate` | Applies all pending migrations, creating/updating tables, enums, FKs, and indexes. |
-| **Seed Sample Data** | `npm run db:seed` | Populates 1 cafe, 5 QR tables, 2 categories, 8 items, 6 ingredients, recipes, Admin and Kitchen staff (hashed passwords), and 3 orders. |
-| **Reset Database** | `npm run db:reset` | Tears down all tables (DOWN migration), re-applies schema, and re-seeds fresh data. |
-| **Run Test Suite** | `npm test` | Runs all 49 automated unit and integration tests across the database and APIs. |
-
----
-
-## 2. PostgreSQL Connection Configuration
-
-In your `.env` file, set your connection string:
+Set `MONGODB_URI` and `MONGODB_DB_NAME` in `.env` for local development or in the deployment secret manager for production. The application defaults to `mongodb://127.0.0.1:27017` and database `cafeos` only outside production. Production requires both values explicitly. Use TLS and a least-privilege MongoDB user in deployed environments. See [ENVIRONMENT.md](./ENVIRONMENT.md) for all settings.
 
 ```bash
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/cafeos"
+# Local development only; ensure the MongoDB service is already running.
+npm run dev
 ```
 
-If creating the database from scratch in PostgreSQL:
+The application has a MongoDB writer lease. Run one CafeOS process per database; a second concurrent writer is rejected. Readiness is available at `GET /health/ready` and `/api/health/ready`; `/health/live` reports process liveness only. Readiness can return `503` when CafeOS persistence is degraded.
+
+## MongoDB backup and restore
+
+Install MongoDB Database Tools (`mongodump` and `mongorestore`) on the operator host. The scripts use `MONGODB_URI` and `MONGODB_DB_NAME`; inspect the active deployment target before every operation.
+
 ```bash
-createdb cafeos
+# Writes to .data/backups/<timestamp> by default.
+npm run db:backup
+
+# Restore a specific dump folder. This is destructive for matching collections.
+npm run db:restore -- .data/backups/<timestamp> --confirm --drop
 ```
-Then run:
+
+The restore command deliberately requires both `--confirm` and `--drop`. Stop CafeOS before restoring, verify the target database and backup contents, and take a fresh backup of the current target first. After restore, start the app and check readiness, staff/customer flows, orders, inventory, and provider-independent operations. A restore can lose writes made after the backup.
+
+The scripts do not provide scheduled backups, encryption, off-site storage, retention, checksum validation, or point-in-time recovery. Establish those protections with the MongoDB operator and regularly rehearse restores in an isolated non-production database. The application-level backup script should not be treated as a complete disaster-recovery service.
+
+## MongoDB persistence integration test
+
+The normal test suite skips the MongoDB persistence test unless `CAFE_TEST_MONGODB_URI` is supplied. The test only accepts loopback MongoDB URIs and creates and drops a unique test database:
+
+```bash
+CAFE_TEST_MONGODB_URI=mongodb://127.0.0.1:27017 \
+  npx tsx --test src/server/store.mongo.test.ts
+```
+
+Run this only against an isolated, non-production local MongoDB service. A passing unit suite without this variable is not live MongoDB integration verification.
+
+## Optional PostgreSQL tools
+
+PostgreSQL is optional and separate from runtime MongoDB. `DATABASE_URL` is canonical for the scripts; `POSTGRES_URL` is a compatibility fallback. These commands do not migrate or seed MongoDB:
+
 ```bash
 npm run db:migrate
 npm run db:seed
 ```
 
----
+The SQL schema is for optional relational/analytics/archive tooling. Seed data is sample data and is blocked when `NODE_ENV=production`. Do not run `npm run db:reset` against production; it tears down the PostgreSQL schema before reseeding. The CafeOS server can operate without PostgreSQL, and a PostgreSQL outage does not make PostgreSQL a replacement or recovery source for MongoDB.
 
-## 3. Database Architecture & Rules
+## Operational checks
 
-1. **Multi-Tenant SaaS**: Every table has `cafe_id` with foreign key indexes for lightning-fast queries per cafe.
-2. **Financial Data Protection (`ON DELETE`)**:
-   * Deleting a table, customer, or staff sets `orders.table_id = NULL` (`ON DELETE SET NULL`), so financial records and bills are never deleted.
-   * `order_items` cascade if the parent order is deleted, but `menu_items` cannot be deleted if past orders reference them (`ON DELETE RESTRICT`).
-3. **Strict Money Values**: All price, total, and payment amount columns use `NUMERIC(10, 2)` (never floating point).
-4. **Atomic Transactions**: Orders, line items, and recipe-based ingredient stock deductions run inside a single `BEGIN ... COMMIT` block.
-
----
-
-## 4. 5 Verification Queries
-
-Run these queries in `psql` or any database GUI (pgAdmin, DBeaver, TablePlus) to confirm the system works:
-
-### Query 1: List Today's Orders with Table, Customer, Staff & Items
-Shows all orders with their assigned table, ordering customer, attending staff, line items, and unit prices.
-
-```sql
-SELECT
-  o.id AS order_id,
-  t.label AS table_label,
-  c.phone AS customer_phone,
-  s.name AS staff_name,
-  o.status,
-  o.total,
-  oi.qty,
-  m.name AS item_name,
-  oi.unit_price,
-  oi.notes
-FROM orders o
-LEFT JOIN cafe_tables t ON o.table_id = t.id
-LEFT JOIN customers c ON o.customer_id = c.id
-LEFT JOIN staff s ON o.staff_id = s.id
-JOIN order_items oi ON oi.order_id = o.id
-JOIN menu_items m ON oi.menu_item_id = m.id
-WHERE o.cafe_id = 'cafe_main'
-ORDER BY o.created_at DESC, oi.id;
+```bash
+curl -i https://<cafe-host>/health/live
+curl -i https://<cafe-host>/health/ready
+curl -i https://<cafe-host>/api/health
 ```
 
----
-
-### Query 2: Low-Stock Ingredients Alert
-Finds raw ingredients where the current stock has dropped below the threshold and needs reordering.
-
-```sql
-SELECT
-  id,
-  name,
-  stock_qty,
-  low_stock_level,
-  unit,
-  (low_stock_level - stock_qty) AS deficit_needed
-FROM ingredients
-WHERE cafe_id = 'cafe_main'
-  AND stock_qty <= low_stock_level
-ORDER BY deficit_needed DESC;
-```
-*(Expected: Full Cream Milk and Fresh Malai Paneer appear as critical).*
-
----
-
-### Query 3: Recipe Bill of Materials for a Menu Item
-Inspects which raw ingredients and exact quantities are burned when an item (e.g. Signature Cappuccino) is accepted.
-
-```sql
-SELECT
-  m.name AS menu_item,
-  m.price,
-  i.name AS ingredient_used,
-  r.qty_used,
-  i.unit
-FROM recipes r
-JOIN menu_items m ON r.menu_item_id = m.id
-JOIN ingredients i ON r.ingredient_id = i.id
-WHERE r.cafe_id = 'cafe_main'
-  AND r.menu_item_id = 'item_cappuccino'
-ORDER BY i.name;
-```
-
----
-
-### Query 4: Daily Settled Revenue by Payment Method
-Aggregates paid orders by method (Cash, UPI, Card) for the daily financial report.
-
-```sql
-SELECT
-  p.method,
-  COUNT(p.id) AS total_successful_payments,
-  SUM(p.amount) AS total_settled_amount
-FROM payments p
-WHERE p.cafe_id = 'cafe_main'
-  AND p.status = 'success'
-GROUP BY p.method;
-```
-
----
-
-### Query 5: Resolve Table & Cafe from Customer QR Token
-Simulates what happens when a guest scans a QR code: resolves the table and cafe without requiring login.
-
-```sql
-SELECT
-  t.id AS table_id,
-  t.label,
-  c.name AS cafe_name,
-  c.gst_number,
-  t.qr_token
-FROM cafe_tables t
-JOIN cafes c ON t.cafe_id = c.id
-WHERE t.qr_token = 'qr_tok_8f9a2c1d3e4b5a6f';
-```
+Expect HTTP 200 from live and ready probes when the process and persistence are healthy. `/api/health` includes the MongoDB persistence health state; do not expose its response or operational logs beyond the intended monitoring audience. See [RUNBOOK_DISASTER_RECOVERY.md](./RUNBOOK_DISASTER_RECOVERY.md) for recovery and rollback procedures.

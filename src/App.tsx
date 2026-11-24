@@ -1,5 +1,4 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -31,18 +30,13 @@ import type { z } from 'zod';
 import type { addMenuItemSchema, createOrderSchema, CustomerFeedbackInput } from './shared/schemas';
 import { calculateCartTotals, formatOrderCsv, isKitchenActiveOrder } from './utils/cafeLogic';
 import { triggerBlobDownload } from './utils/download';
+import { notify } from './lib/notifications';
 import {
   canStaffRoleAccessScreen,
   formatStaffRoleLabel,
   getDefaultStaffScreenForRole,
 } from './utils/rbac';
-import {
-  getLocalCustomerSession,
-  syncCustomerIdentityWithCafe,
-  syncSupabaseCustomerSession,
-  subscribeToSupabaseAuth,
-  type CustomerAuthSession,
-} from './lib/supabaseClient';
+import type { CustomerAuthSession } from './lib/supabaseClient';
 
 const PosTerminalScreen = lazy(() =>
   import('./components/PosTerminalScreen').then((m) => ({ default: m.PosTerminalScreen }))
@@ -88,9 +82,6 @@ const KitchenPosOrdersScreen = lazy(() =>
 const StaffWorkspaceHome = lazy(() =>
   import('./components/StaffWorkspaceHome').then((m) => ({ default: m.StaffWorkspaceHome }))
 );
-const SplashScreen = lazy(() =>
-  import('./components/SplashScreen').then((m) => ({ default: m.SplashScreen }))
-);
 const KitchenDisplayScreen = lazy(() =>
   import('./components/KitchenDisplayScreen').then((m) => ({ default: m.KitchenDisplayScreen }))
 );
@@ -126,8 +117,8 @@ const StaffRolesScreen = lazy(() =>
 const SettingsProfileScreen = lazy(() =>
   import('./components/SettingsProfileScreen').then((m) => ({ default: m.SettingsProfileScreen }))
 );
-import { ThermalReceiptModal } from './components/ThermalReceiptModal';
 import { CoffeeBrewLoader } from './components/CoffeeBrewLoader';
+import { SplashScreen } from './components/SplashScreen';
 import {
   AdminDashboardSkeleton,
   CustomerCartSkeleton,
@@ -140,6 +131,13 @@ import {
   ScreenSkeleton,
   TableLayoutSkeleton,
 } from './components/SkeletonLoaders';
+
+const AkshatRitualUI = lazy(() =>
+  import('./components/AkshatRitualUI').then((m) => ({ default: m.AkshatRitualUI }))
+);
+const ThermalReceiptModal = lazy(() =>
+  import('./components/ThermalReceiptModal').then((m) => ({ default: m.ThermalReceiptModal }))
+);
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -198,6 +196,7 @@ export default function App() {
     toggleKotItemMutation,
     toggleMenuAvailabilityMutation,
     addMenuItemMutation,
+    updateMenuItemMutation,
     submitOrderFeedbackMutation,
     submitCustomerFeedbackMutation,
     checkInTableMutation,
@@ -206,11 +205,6 @@ export default function App() {
     transferTableMutation,
     mergeTablesMutation,
     restockItemMutation,
-    receiveStockMutation,
-    recordWasteMutation,
-    transferStockMutation,
-    createStockCountMutation,
-    approveStockCountMutation,
     createPurchaseOrderMutation,
     receivePurchaseOrderMutation,
     requestReorderMutation,
@@ -236,29 +230,69 @@ export default function App() {
   const customerAttemptKeyRef = useRef<{ signature: string; key: string } | null>(null);
   const posAttemptKeyRef = useRef<{ signature: string; key: string } | null>(null);
   const pendingStaffScreenRef = useRef<StaffScreenId | null>(null);
-  const [customerSession, setCustomerSession] = useState<CustomerAuthSession | null>(getLocalCustomerSession);
+  const [customerSession, setCustomerSession] = useState<CustomerAuthSession | null>(null);
+  const [deliveryAddress, setDeliveryAddress] = useState(() => {
+    try {
+      return window.localStorage.getItem('cafeos_delivery_address') || '';
+    } catch (error) {
+      console.warn('Could not read the saved delivery address:', error);
+      return '';
+    }
+  });
+  const [deliveryLocationOpen, setDeliveryLocationOpen] = useState(false);
   const [customerRewardsTab, setCustomerRewardsTab] = useState<'offers' | 'rewards'>('offers');
-  const [trackingInitialView, setTrackingInitialView] = useState<'track' | 'orders'>('orders');
+  const [trackingInitialView, setTrackingInitialView] = useState<'track' | 'orders'>('track');
+  const needsCustomerAuth = ['login', 'profile', 'rewards', 'tracking', 'cart'].includes(activeScreen);
 
   useEffect(() => {
-    void syncSupabaseCustomerSession().then((session) => {
-      if (session) setCustomerSession(session);
-      return syncCustomerIdentityWithCafe();
-    }).then(() => refetch()).catch((error: unknown) => {
-      console.error('Could not sync verified customer identity:', error);
-    });
-    const unsubscribe = subscribeToSupabaseAuth((session) => {
-      setCustomerSession(session);
-      void syncCustomerIdentityWithCafe()
-        .then(() => refetch())
-        .catch((error: unknown) => {
+    // Account state is not needed for an anonymous landing page. Avoid placing the
+    // Supabase client on the first-paint network path.
+    if (!needsCustomerAuth) return;
+
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
+
+    void import('./lib/supabaseClient')
+      .then(async ({
+        getLocalCustomerSession,
+        subscribeToSupabaseAuth,
+        syncCustomerIdentityWithCafe,
+        syncSupabaseCustomerSession,
+      }) => {
+        if (!active) return;
+        setCustomerSession(getLocalCustomerSession());
+
+        const syncIdentity = async () => {
+          const session = await syncSupabaseCustomerSession();
+          if (!active) return;
+          if (session) setCustomerSession(session);
+          await syncCustomerIdentityWithCafe();
+          if (active) await refetch();
+        };
+
+        void syncIdentity().catch((error: unknown) => {
           console.error('Could not sync verified customer identity:', error);
         });
-    });
+
+        unsubscribe = subscribeToSupabaseAuth((session) => {
+          if (!active) return;
+          setCustomerSession(session);
+          void syncCustomerIdentityWithCafe()
+            .then(() => refetch())
+            .catch((error: unknown) => {
+              console.error('Could not sync verified customer identity:', error);
+            });
+        });
+      })
+      .catch((error: unknown) => {
+        if (active) console.error('Could not load customer authentication:', error);
+      });
+
     return () => {
-      unsubscribe();
+      active = false;
+      unsubscribe?.();
     };
-  }, [refetch]);
+  }, [needsCustomerAuth, refetch]);
 
   const {
     orders,
@@ -274,10 +308,7 @@ export default function App() {
     menuItems,
     customerReviews,
     activityLog,
-    stockMovements,
-    inventoryBatches,
     purchaseOrders,
-    stockCounts,
   } = data;
 
   // Thermal Receipt Modal & Feedback State
@@ -294,13 +325,29 @@ export default function App() {
   );
 
   const showToast = useCallback((msg: string) => {
-    toast.success(msg);
+    notify('success', msg);
   }, []);
 
   const showErrorToast = useCallback((err: unknown, fallback: string) => {
     const message = err instanceof Error ? err.message : fallback;
-    toast.error(message);
+    notify('error', message);
   }, []);
+
+  const handleSaveDeliveryAddress = useCallback(
+    (address: string) => {
+      try {
+        window.localStorage.setItem('cafeos_delivery_address', address);
+      } catch (error) {
+        console.error('Could not save the delivery address:', error);
+        showErrorToast(error, 'Could not save your delivery address.');
+        return;
+      }
+      setDeliveryAddress(address);
+      setDeliveryLocationOpen(false);
+      showToast('Delivery address saved.');
+    },
+    [showErrorToast, showToast]
+  );
 
   const [cartAddedNotice, setCartAddedNotice] = useState<{
     itemName: string;
@@ -308,8 +355,8 @@ export default function App() {
   } | null>(null);
 
   const handleAddCustomerItem = useCallback(
-    (item: MenuItem, quantity = 1) => {
-      addCustomerItem(item, quantity);
+    (item: MenuItem, quantity = 1, size?: string) => {
+      addCustomerItem(item, quantity, size);
       setCartAddedNotice({ itemName: item.name, quantity });
     },
     [addCustomerItem]
@@ -318,52 +365,6 @@ export default function App() {
   const dismissCartAddedNotice = useCallback(() => {
     setCartAddedNotice(null);
   }, []);
-
-  const handleStartPayment = useCallback(
-    async (orderId: string) => {
-      const isMobile =
-        typeof navigator !== 'undefined' &&
-        /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      let checkoutWindow: Window | null = null;
-      if (!isMobile) {
-        checkoutWindow = window.open('about:blank', '_blank');
-        if (checkoutWindow) checkoutWindow.opener = null;
-      }
-      try {
-        const result = await createPaymentSessionMutation.mutateAsync(orderId);
-        if (result.checkoutUrl) {
-          if (checkoutWindow) {
-            checkoutWindow.location.assign(result.checkoutUrl);
-          } else {
-            window.location.assign(result.checkoutUrl);
-          }
-          return;
-        }
-        checkoutWindow?.close();
-        if (result.paymentStatus === 'paid') showToast('Payment is already confirmed.');
-      } catch (error) {
-        checkoutWindow?.close();
-        throw error;
-      }
-    },
-    [createPaymentSessionMutation, showToast]
-  );
-
-  const handleRefreshPaymentStatus = useCallback(
-    async (orderId: string) => {
-      await refreshPaymentStatusMutation.mutateAsync(orderId);
-    },
-    [refreshPaymentStatusMutation]
-  );
-
-  const handleReserveTable = useCallback(
-    async (payload: { guestName: string; guestPhone?: string; partySize: number; timeSlot: string }) => {
-      const { table } = await reserveTableMutation.mutateAsync(payload);
-      setSelectedTable(table.id);
-      return table.id;
-    },
-    [reserveTableMutation, setSelectedTable]
-  );
 
   const handleNavigate = useCallback(
     (screen: ScreenId, mode?: WorkspaceMode) => {
@@ -378,7 +379,8 @@ export default function App() {
           return;
         } else if (!canStaffRoleAccessScreen(authSession.session?.role, screen as StaffScreenId)) {
           const fallbackScreen = getDefaultStaffScreenForRole(authSession.session?.role);
-          toast.error(
+          notify(
+            'error',
             `${formatStaffRoleLabel(authSession.session?.role)} access does not permit that module.`
           );
           navigate(fallbackScreen, 'staff', {
@@ -398,6 +400,43 @@ export default function App() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
     [authSession.authenticated, authSession.session?.role, navigate]
+  );
+
+  const handleStartPayment = useCallback(
+    async (orderId: string) => {
+      try {
+        const result = await createPaymentSessionMutation.mutateAsync(orderId);
+        if (result.checkoutUrl) {
+          window.location.assign(result.checkoutUrl);
+          return;
+        }
+        if (result.paymentStatus === 'paid') {
+          showToast('Payment is already confirmed.');
+          setTrackedOrderId(orderId);
+          setTrackingInitialView('track');
+          handleNavigate('tracking', 'customer');
+        }
+      } catch (error) {
+        throw error;
+      }
+    },
+    [createPaymentSessionMutation, showToast, setTrackedOrderId, handleNavigate]
+  );
+
+  const handleRefreshPaymentStatus = useCallback(
+    async (orderId: string) => {
+      await refreshPaymentStatusMutation.mutateAsync(orderId);
+    },
+    [refreshPaymentStatusMutation]
+  );
+
+  const handleReserveTable = useCallback(
+    async (payload: { guestName: string; guestPhone?: string; partySize: number; timeSlot: string }) => {
+      const { table } = await reserveTableMutation.mutateAsync(payload);
+      setSelectedTable(table.id);
+      return table.id;
+    },
+    [reserveTableMutation, setSelectedTable]
   );
 
   useEffect(() => {
@@ -490,10 +529,15 @@ export default function App() {
       if (customerCart.length === 0 || checkoutInFlightRef.current) return;
       checkoutInFlightRef.current = true;
       try {
+        if (serviceMode === 'delivery' && deliveryAddress.trim().length < 5) {
+          setDeliveryLocationOpen(true);
+          throw new Error('Add a delivery address before placing a delivery order.');
+        }
         const table = serviceMode === 'dine-in' ? (selectedTable?.trim() || 'T1') : undefined;
         const signature = JSON.stringify({
           serviceMode,
           selectedTable: table,
+          deliveryAddress: serviceMode === 'delivery' ? deliveryAddress.trim() : '',
           couponCode,
           paymentMode: selectedPaymentMode,
           redeemPoints,
@@ -505,10 +549,14 @@ export default function App() {
           outletId: data.outletId,
           serviceMode,
           tableNumber: table,
+          deliveryAddress: serviceMode === 'delivery' ? deliveryAddress.trim() : undefined,
           deliveryPartner: serviceMode === 'delivery' ? 'Direct Delivery' : undefined,
           items: customerCart,
           couponCode: couponCode.trim(),
           cookingNote: cookingNote.trim(),
+          customerName: customerSession.name,
+          customerEmail: customerSession.email,
+          customerPhone: customerSession.phone,
           isPosTerminal: false,
           paymentMode: selectedPaymentMode,
           redeemPoints,
@@ -546,6 +594,7 @@ export default function App() {
       customerCart,
       customerSession,
       data.outletId,
+      deliveryAddress,
       handleNavigate,
       handleStartPayment,
       navigate,
@@ -562,7 +611,9 @@ export default function App() {
     async (
       selectedPaymentMode: PaymentMode = 'cash',
       customerId?: string,
-      cookingNote = ''
+      cookingNote = '',
+      customerEmail?: string,
+      customerPhone?: string
     ) => {
       if (posCart.length === 0 || checkoutInFlightRef.current) return;
       checkoutInFlightRef.current = true;
@@ -573,6 +624,8 @@ export default function App() {
           selectedTable: table,
           paymentMode: selectedPaymentMode,
           customerId,
+          customerEmail,
+          customerPhone,
           items: posCart.map((i) => `${i.menuItemId}:${i.quantity}`),
         });
         const idempotencyKey = getStableAttemptKey(posAttemptKeyRef, 'pos', signature);
@@ -584,6 +637,8 @@ export default function App() {
           items: posCart,
           couponCode: '',
           cookingNote: cookingNote.trim(),
+          customerEmail,
+          customerPhone,
           isPosTerminal: true,
           paymentMode: selectedPaymentMode,
           customerId,
@@ -638,6 +693,19 @@ export default function App() {
       }
     },
     [addMenuItemMutation, showErrorToast, showToast]
+  );
+
+  const handleUpdateMenuItem = useCallback(
+    async (id: string, updates: Partial<MenuItem>) => {
+      try {
+        const res = await updateMenuItemMutation.mutateAsync({ id, updates });
+        showToast(`Updated ${res.item.name}!`);
+      } catch (err) {
+        showErrorToast(err, 'Could not update product');
+        throw err;
+      }
+    },
+    [showErrorToast, showToast, updateMenuItemMutation]
   );
 
   const handleCreateCounterOrder = useCallback(
@@ -953,86 +1021,10 @@ export default function App() {
         showToast(`Added ingredient "${payload.name}" to inventory`);
       } catch (err) {
         showErrorToast(err, 'Failed to add ingredient');
+        throw err;
       }
     },
     [addIngredientMutation, showErrorToast, showToast]
-  );
-
-  const handleReceiveStock = useCallback(
-    async (payload: {
-      ingredientId: string;
-      quantity: number;
-      unitCost?: number;
-      supplier?: string;
-      batchNumber?: string;
-      expiryDate?: string;
-      note?: string;
-    }) => {
-      try {
-        await receiveStockMutation.mutateAsync(payload);
-        showToast('Stock receipt recorded');
-      } catch (err) {
-        showErrorToast(err, 'Failed to record stock receipt');
-      }
-    },
-    [receiveStockMutation, showErrorToast, showToast]
-  );
-
-  const handleRecordWaste = useCallback(
-    async (payload: { ingredientId: string; quantity: number; reason: string; batchId?: string }) => {
-      try {
-        await recordWasteMutation.mutateAsync(payload);
-        showToast('Waste recorded and stock adjusted');
-      } catch (err) {
-        showErrorToast(err, 'Failed to record waste');
-      }
-    },
-    [recordWasteMutation, showErrorToast, showToast]
-  );
-
-  const handleTransferStock = useCallback(
-    async (payload: {
-      ingredientId: string;
-      quantity: number;
-      fromLocation: string;
-      toLocation: string;
-      note?: string;
-    }) => {
-      try {
-        await transferStockMutation.mutateAsync(payload);
-        showToast('Stock transfer recorded');
-      } catch (err) {
-        showErrorToast(err, 'Failed to record stock transfer');
-      }
-    },
-    [transferStockMutation, showErrorToast, showToast]
-  );
-
-  const handleCreateStockCount = useCallback(
-    async (payload: {
-      physicalCounts: Array<{ ingredientId: string; physicalQuantity: number; note?: string }>;
-      note?: string;
-    }) => {
-      try {
-        await createStockCountMutation.mutateAsync(payload);
-        showToast('Physical stock count saved as draft');
-      } catch (err) {
-        showErrorToast(err, 'Failed to create stock count');
-      }
-    },
-    [createStockCountMutation, showErrorToast, showToast]
-  );
-
-  const handleApproveStockCount = useCallback(
-    async (countId: string) => {
-      try {
-        await approveStockCountMutation.mutateAsync(countId);
-        showToast('Stock count approved and variance adjusted');
-      } catch (err) {
-        showErrorToast(err, 'Failed to approve stock count');
-      }
-    },
-    [approveStockCountMutation, showErrorToast, showToast]
   );
 
   const handleCreatePurchaseOrder = useCallback(
@@ -1166,6 +1158,8 @@ export default function App() {
         await createCampaignMutation.mutateAsync({
           title: campaign.title,
           code: campaign.code,
+          discountPercentage: campaign.discountPercentage ?? 0,
+          minimumOrderAmount: campaign.minimumOrderAmount ?? 0,
           validityLabel: campaign.validityLabel,
           description: campaign.description,
           targetSegment: campaign.targetSegment ?? 'all',
@@ -1298,14 +1292,24 @@ export default function App() {
       !canStaffRoleAccessScreen(authSession.session.role, activeScreen as StaffScreenId));
 
   const [splashFinished, setSplashFinished] = useState(false);
-  const finishSplash = useCallback(() => setSplashFinished(true), []);
+  const [splashDestination, setSplashDestination] = useState<'home' | 'login'>('home');
+  const [customerLoginInitialTab, setCustomerLoginInitialTab] = useState<'register' | 'login'>('register');
+  const finishSplash = useCallback(
+    (destination: 'home' | 'login' = 'home', initialTab: 'register' | 'login' = 'register') => {
+      setSplashDestination(destination);
+      setCustomerLoginInitialTab(initialTab);
+      setSplashFinished(true);
+    },
+    []
+  );
   const refreshedHomeAfterSplash = useRef(false);
 
   useEffect(() => {
     if (activeScreen === 'splash' && splashFinished && !isError) {
-      navigate('home', 'customer', { replace: true });
+      setSplashFinished(false);
+      navigate(splashDestination, 'customer', { replace: true });
     }
-  }, [activeScreen, isError, navigate, splashFinished]);
+  }, [activeScreen, isError, navigate, splashDestination, splashFinished]);
 
   useEffect(() => {
     if (activeScreen !== 'home' || !splashFinished || refreshedHomeAfterSplash.current) return;
@@ -1315,12 +1319,18 @@ export default function App() {
 
   if (activeScreen === 'splash') {
     return (
+      <SplashScreen
+        errorMessage={isError ? errorMessage : undefined}
+        onRetry={() => void refetch()}
+        onFinish={finishSplash}
+      />
+    );
+  }
+
+  if (activeScreen === 'akshat') {
+    return (
       <Suspense fallback={<ScreenSkeleton screen={activeScreen} />}>
-        <SplashScreen
-          errorMessage={isError ? errorMessage : undefined}
-          onRetry={() => void refetch()}
-          onFinish={finishSplash}
-        />
+        <AkshatRitualUI onSwitchToCafe={() => handleNavigate('home', 'customer')} />
       </Suspense>
     );
   }
@@ -1334,7 +1344,24 @@ export default function App() {
       onDismissCartAddedNotice={dismissCartAddedNotice}
       liveKotCount={liveKotCount}
       cafeName={cafeSettings.cafeName}
+      cafeLogoUrl={cafeSettings.logoUrl || '/images/tsc-logo.jpg'}
       authSession={authSession}
+      deliveryAddress={deliveryAddress}
+      deliveryLocationOpen={deliveryLocationOpen}
+      onOpenDeliveryLocation={() => setDeliveryLocationOpen(true)}
+      onCloseDeliveryLocation={() => setDeliveryLocationOpen(false)}
+      onSaveDeliveryLocation={handleSaveDeliveryAddress}
+      assistantContext={{
+        activeOrder: activeTrackedOrder,
+        menuItems,
+        availableBeans: rewardPoints,
+        cafeSettings,
+        campaigns,
+        orders,
+        tables,
+        inventory,
+        authSession,
+      }}
       isSyncError={isError}
       syncErrorMessage={errorMessage}
       onRetrySync={() => void refetch()}
@@ -1360,7 +1387,7 @@ export default function App() {
             firstOrderEligible={Boolean(data.firstOrderEligible)}
             showFirstOrderOffer={!customerSession || Boolean(data.firstOrderEligible)}
             onNavigateMenu={(cat) => {
-              if (cat) setMenuCategory(cat);
+              setMenuCategory(cat ?? 'All');
               handleNavigate('menu', 'customer');
             }}
             onNavigateCart={() => handleNavigate('cart', 'customer')}
@@ -1411,15 +1438,17 @@ export default function App() {
             couponCode={couponCode}
             cookingNote={cookingNote}
             customerSession={customerSession}
+            deliveryAddress={deliveryAddress}
+            onOpenDeliveryLocation={() => setDeliveryLocationOpen(true)}
             onNavigateLogin={() => handleNavigate('login', 'customer')}
             onServiceModeChange={setServiceMode}
             onTableChange={setSelectedTable}
-            onReserveTable={({ date, time, guests }) =>
+            onReserveTable={({ guests }) =>
               handleReserveTable({
                 guestName: customerSession?.name || 'Cafe Guest',
                 ...(customerSession?.phone ? { guestPhone: customerSession.phone } : {}),
                 partySize: Number.parseInt(guests, 10) || 2,
-                timeSlot: `${date} ${time}`,
+                timeSlot: 'Walk-in - Now',
               })
             }
             onUpdateQty={updateCustomerQty}
@@ -1439,6 +1468,9 @@ export default function App() {
             activeOrder={activeTrackedOrder}
             allOrders={orders}
             availableBeans={rewardPoints}
+            menuItems={menuItems}
+            cafeSettings={cafeSettings}
+            campaigns={campaigns}
             onSelectOrder={setTrackedOrderId}
             onDownloadInvoicePdf={handleDownloadInvoicePdf}
             onStartPayment={handleStartPayment}
@@ -1483,10 +1515,16 @@ export default function App() {
             }}
             onNavigateOffers={() => handleNavigate('rewards', 'customer')}
             onSessionChange={setCustomerSession}
-            onIdentityUpdated={() => void refetch()}
             onNavigateLogin={() => handleNavigate('login', 'customer')}
             onNavigatePrivacyPolicy={() => handleNavigate('privacy-policy', 'customer')}
             onNavigateTerms={() => handleNavigate('terms-and-conditions', 'customer')}
+            assistantContext={{
+              activeOrder: activeTrackedOrder,
+              menuItems,
+              availableBeans: rewardPoints,
+              cafeSettings,
+              campaigns,
+            }}
           />
         </Suspense>
       )}
@@ -1494,6 +1532,7 @@ export default function App() {
       {activeScreen === 'login' && (
         <Suspense fallback={<ScreenSkeleton screen={activeScreen} />}>
           <CustomerLoginScreen
+            initialTab={customerLoginInitialTab}
             onNotify={showToast}
             hasCartItems={customerCart.length > 0}
             onLocalTestSessionChange={setCustomerSession}
@@ -1580,12 +1619,14 @@ export default function App() {
           <KitchenDisplayScreen
             orders={orders}
             inventory={inventory}
+            menuItems={menuItems}
             isConnected={socketConnected}
             onRefresh={() => void refetch()}
             onToggleKotItem={handleToggleKotItem}
             onCancelKotItem={handleCancelKotItem}
             onAdvanceOrderStatus={handleAdvanceOrderStatus}
             onRequestReorder={handleRequestIngredientReorder}
+            onToggleMenuAvailability={handleToggleMenuAvailability}
             onNotify={showToast}
           />
         )}
@@ -1614,6 +1655,7 @@ export default function App() {
             onNavigateStaff={(screen) => handleNavigate(screen, 'staff')}
             onExportCsv={handleExportOrdersExcel}
             onAddMenuItem={handleAddMenuItem}
+            onUpdateMenuItem={handleUpdateMenuItem}
             onToggleMenuAvailability={handleToggleMenuAvailability}
             onCreateCounterOrder={handleCreateCounterOrder}
             onPayCounterOrder={handlePayCounterOrder}
@@ -1623,9 +1665,11 @@ export default function App() {
         {activeScreen === 'order-management' && isKitchenRoute && (
           <KitchenOrdersScreen
             orders={orders}
+            menuItems={menuItems}
             onAdvanceOrderStatus={handleAdvanceOrderStatus}
             onToggleKotItem={handleToggleKotItem}
             onCancelKotItem={handleCancelKotItem}
+            onToggleMenuAvailability={handleToggleMenuAvailability}
             onRefresh={() => void refetch()}
             onNotify={showToast}
           />
@@ -1695,17 +1739,17 @@ export default function App() {
         {activeScreen === 'inventory-stock' && (
           <InventoryStockScreen
             items={inventory}
-            stockMovements={stockMovements}
-            inventoryBatches={inventoryBatches}
             purchaseOrders={purchaseOrders}
-            stockCounts={stockCounts}
             onRestockItem={handleRestockItem}
             onAddIngredient={handleAddIngredient}
-            onReceiveStock={handleReceiveStock}
-            onRecordWaste={handleRecordWaste}
-            onTransferStock={handleTransferStock}
-            onCreateStockCount={handleCreateStockCount}
-            onApproveStockCount={handleApproveStockCount}
+            onRefresh={async () => {
+              const result = await refetch();
+              if (result.error) {
+                showErrorToast(result.error, 'Failed to refresh inventory');
+                return;
+              }
+              showToast('Inventory refreshed');
+            }}
             onCreatePurchaseOrder={handleCreatePurchaseOrder}
             onReceivePurchaseOrder={handleReceivePurchaseOrder}
             onExportExcel={handleExportInventoryExcel}
@@ -1716,6 +1760,7 @@ export default function App() {
         {activeScreen === 'crm-customers' && (
           <CrmCustomersScreen
             customers={customers}
+            orders={orders}
             onAddCustomer={handleAddCustomer}
             onExportCsv={handleExportCustomersExcel}
             onExportExcel={handleExportCustomersExcel}
@@ -1963,12 +2008,16 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      <ThermalReceiptModal
-        open={thermalModalOpen}
-        onOpenChange={setThermalModalOpen}
-        order={thermalModalOrder}
-        settings={cafeSettings}
-      />
+      {thermalModalOpen && (
+        <Suspense fallback={null}>
+          <ThermalReceiptModal
+            open={thermalModalOpen}
+            onOpenChange={setThermalModalOpen}
+            order={thermalModalOrder}
+            settings={cafeSettings}
+          />
+        </Suspense>
+      )}
 
     </AppShell>
   );

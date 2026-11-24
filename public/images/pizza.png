@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+    <defs>
+      <radialGradient id="pizzaBg" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#FFF8F0"/>
+        <stop offset="100%" stop-color="#F5EBE1"/>
+      </radialGradient>
+      <linearGradient id="crust" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#E76F51"/>
+        <stop offset="100%" stop-color="#C65135"/>
+      </linearGradient>
+    </defs>
+    <circle cx="100" cy="100" r="92" fill="url(#pizzaBg)"/>
+    <!-- Wooden board -->
+    <ellipse cx="100" cy="106" rx="80" ry="74" fill="#DDBEA9"/>
+    <rect x="94" y="172" width="12" height="20" rx="3" fill="#DDBEA9"/>
+    <!-- Pizza Crust -->
+    <circle cx="100" cy="104" r="68" fill="url(#crust)"/>
+    <!-- Sauce & Cheese -->
+    <circle cx="100" cy="104" r="58" fill="#F4A261"/>
+    <circle cx="100" cy="104" r="54" fill="#FFD166"/>
+    <!-- Cheese highlights -->
+    <ellipse cx="85" cy="90" rx="14" ry="10" fill="#FFE3A8" opacity="0.8"/>
+    <ellipse cx="120" cy="115" rx="16" ry="12" fill="#FFE3A8" opacity="0.8"/>
+    <ellipse cx="98" cy="125" rx="12" ry="8" fill="#FFE3A8" opacity="0.8"/>
+    <!-- Toppings: Capsicum (Green) -->
+    <path d="M 80 80 Q 90 75 95 86" stroke="#2B9348" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+    <path d="M 125 90 Q 135 88 132 102" stroke="#2B9348" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+    <path d="M 75 118 Q 85 125 90 115" stroke="#2B9348" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+    <!-- Toppings: Sweet Corn (Golden Yellow) -->
+    <circle cx="88" cy="98" r="4.5" fill="#FFB703"/>
+    <circle cx="112" cy="85" r="4.5" fill="#FFB703"/>
+    <circle cx="120" cy="118" r="4.5" fill="#FFB703"/>
+    <circle cx="104" cy="110" r="4.5" fill="#FFB703"/>
+    <circle cx="70" cy="105" r="4.5" fill="#FFB703"/>
+    <circle cx="105" cy="132" r="4.5" fill="#FFB703"/>
+    <!-- Toppings: Onions / Paneer (Red/White cubes) -->
+    <rect x="74" y="85" width="8" height="7" rx="1.5" fill="#FFF" stroke="#E63946" stroke-width="1.2"/>
+    <rect x="114" y="98" width="8" height="7" rx="1.5" fill="#FFF" stroke="#E63946" stroke-width="1.2"/>
+    <rect x="94" y="78" width="8" height="7" rx="1.5" fill="#FFF" stroke="#E63946" stroke-width="1.2"/>
+    <rect x="85" y="128" width="8" height="7" rx="1.5" fill="#FFF" stroke="#E63946" stroke-width="1.2"/>
+    <!-- Oregano flecks -->
+    <circle cx="95" cy="92" r="1.5" fill="#2D6A4F"/>
+    <circle cx="106" cy="98" r="1.5" fill="#2D6A4F"/>
+    <circle cx="118" cy="108" r="1.5" fill="#2D6A4F"/>
+    <circle cx="82" cy="112" r="1.5" fill="#2D6A4F"/>
+  </svg>

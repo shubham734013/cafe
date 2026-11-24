@@ -321,11 +321,11 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
       </div>
 
       {/* Core Metric Highlights Banner */}
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
         <div className="p-3.5 rounded-lg bg-surface-container-low flex flex-col justify-between shadow-sm min-w-0">
           <div className="flex items-center justify-between gap-1">
             <span className="text-[11px] text-on-surface-variant uppercase tracking-wider font-medium truncate">
-              Total Revenue
+              Net Revenue
             </span>
           </div>
           <div className="mt-2">
@@ -333,12 +333,31 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
               {formatINR(metrics.totalRevenue)}
             </span>
             <p className="text-[11px] text-on-surface-variant mt-0.5 tabular-nums">
-              {metrics.totalOrders.toLocaleString('en-IN')} orders
+              {metrics.totalOrders.toLocaleString('en-IN')} orders · {formatINR(metrics.grossSales)} gross
             </p>
           </div>
         </div>
 
-        <div className="p-3.5 rounded-lg bg-surface-container-low flex flex-col justify-between shadow-sm min-w-0">
+        <div className="p-3.5 rounded-lg bg-surface-container-low flex flex-col justify-between shadow-sm min-w-0 border border-rose-500/20 bg-rose-500/5">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] text-rose-400 uppercase tracking-wider font-bold truncate">
+              Total Refunds
+            </span>
+            <span className="text-[10px] text-rose-400 font-semibold">
+              {metrics.refundedCount} {metrics.refundedCount === 1 ? 'order' : 'orders'}
+            </span>
+          </div>
+          <div className="mt-2">
+            <span className="text-xl sm:text-2xl text-rose-300 font-bold tabular-nums">
+              {formatINR(metrics.refundedAmount)}
+            </span>
+            <p className="text-[11px] text-on-surface-variant mt-0.5">
+              Deducted from sales
+            </p>
+          </div>
+        </div>
+
+        <div className="p-3.5 rounded-lg bg-surface-container-low flex flex-col justify-between shadow-sm min-w-0 col-span-2 sm:col-span-1">
           <div className="flex items-center justify-between gap-1">
             <span className="text-[11px] text-on-surface-variant uppercase tracking-wider font-medium truncate">
               Avg Order Value
@@ -349,7 +368,7 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
               {formatINR(metrics.avgOrderValue)}
             </span>
             <p className="text-[11px] text-on-surface-variant mt-0.5">
-              Average for the selected period
+              Average for selected period
             </p>
           </div>
         </div>
@@ -562,7 +581,13 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
             >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg overflow-hidden">
-                  {topMenuItem.imageUrl && <CafeImage src={topMenuItem.imageUrl} alt={topMenuItem.name} />}
+                  {topMenuItem.imageUrl && (
+                    <CafeImage
+                      src={topMenuItem.imageUrl}
+                      alt={topMenuItem.name}
+                      productId={topMenuItem.id}
+                    />
+                  )}
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-on-surface">{topMenuItem.name}</p>
@@ -657,7 +682,13 @@ export const ReportsAnalyticsScreen: React.FC<ReportsAnalyticsScreenProps> = ({
         <div className="p-3.5 rounded-xl bg-surface-container-low shadow-sm flex items-center justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-12 h-12 rounded-lg bg-surface-container-highest overflow-hidden shrink-0">
-              {topMenuItem.imageUrl && <CafeImage src={topMenuItem.imageUrl} alt={topMenuItem.name} />}
+              {topMenuItem.imageUrl && (
+                <CafeImage
+                  src={topMenuItem.imageUrl}
+                  alt={topMenuItem.name}
+                  productId={topMenuItem.id}
+                />
+              )}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">

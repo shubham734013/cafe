@@ -22,10 +22,10 @@ export function isPostgresConfigured(): boolean {
 
 export function getDbPool(): Pool {
   if (!poolInstance) {
-    const connectionString =
-      process.env.DATABASE_URL ||
-      process.env.POSTGRES_URL ||
-      'postgresql://postgres:postgres@localhost:5432/cafeos';
+    const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+    if (!connectionString) {
+      throw new Error('PostgreSQL is optional and is not configured.');
+    }
 
     poolInstance = new Pool({
       connectionString,
@@ -34,8 +34,8 @@ export function getDbPool(): Pool {
       connectionTimeoutMillis: 3000,
     });
 
-    poolInstance.on('error', (err) => {
-      console.error('[PostgreSQL Pool Error]', err);
+    poolInstance.on('error', () => {
+      console.error('[PostgreSQL] Connection pool error.');
       postgresHealthy = false;
     });
   }
@@ -52,10 +52,9 @@ export async function checkPostgresHealth(): Promise<{ configured: boolean; conn
     const res = await pool.query('SELECT 1 AS check_alive');
     postgresHealthy = res.rows.length > 0;
     return { configured: true, connected: true };
-  } catch (err) {
+  } catch {
     postgresHealthy = false;
-    const msg = err instanceof Error ? err.message : String(err);
-    return { configured: true, connected: false, error: msg };
+    return { configured: true, connected: false, error: 'PostgreSQL connection failed.' };
   }
 }
 

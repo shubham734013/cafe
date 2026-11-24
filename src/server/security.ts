@@ -61,7 +61,7 @@ export function noSqlInjectionSanitizer(req: Request, res: Response, next: NextF
 
 /**
  * Server-side CAPTCHA verification behind an environment flag.
- * If ENABLE_CAPTCHA_VERIFICATION is not set or false, validation passes.
+ * If verification is enabled, missing credentials or provider failures fail closed.
  */
 export async function verifyCaptchaToken(token?: string): Promise<{ valid: boolean; error?: string }> {
   const isEnabled = process.env.ENABLE_CAPTCHA_VERIFICATION === 'true';
@@ -75,8 +75,7 @@ export async function verifyCaptchaToken(token?: string): Promise<{ valid: boole
 
   const secretKey = process.env.CAPTCHA_SECRET_KEY;
   if (!secretKey) {
-    console.warn('[Security] ENABLE_CAPTCHA_VERIFICATION is enabled but CAPTCHA_SECRET_KEY is missing.');
-    return { valid: true };
+    return { valid: false, error: 'CAPTCHA verification is unavailable.' };
   }
 
   try {
@@ -89,10 +88,12 @@ export async function verifyCaptchaToken(token?: string): Promise<{ valid: boole
         response: token.trim(),
       }),
     });
+    if (!response.ok) {
+      return { valid: false, error: 'Could not contact CAPTCHA verification service.' };
+    }
     const result = (await response.json()) as { success?: boolean };
     return { valid: Boolean(result?.success), error: result?.success ? undefined : 'CAPTCHA verification failed.' };
-  } catch (error) {
-    console.error('[Security] CAPTCHA verification service error:', error);
+  } catch {
     return { valid: false, error: 'Could not contact CAPTCHA verification service.' };
   }
 }

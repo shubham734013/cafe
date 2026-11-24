@@ -61,6 +61,7 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
       name: '',
       role: 'Kitchen',
       shiftLabel: '10 AM – 6 PM',
+      phone: '',
     },
   });
 
@@ -99,7 +100,7 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
   );
 
   const handleOpenAddStaff = () => {
-    staffForm.reset({ name: '', role: 'Kitchen', shiftLabel: '10 AM – 6 PM' });
+    staffForm.reset({ name: '', role: 'Kitchen', shiftLabel: '10 AM – 6 PM', phone: '' });
     setAddModalOpen(true);
   };
 
@@ -113,6 +114,7 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
       role: parsed.role,
       roleIcon: parsed.role === 'Admin' ? 'shield_person' : 'skillet',
       shiftLabel: parsed.shiftLabel,
+      phone: parsed.phone,
       shiftBucket: 'afternoon',
       isOnDuty: true,
       statLeft: '4.8 Efficiency',
@@ -263,7 +265,8 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
             visibleRoster.map((staff) => {
               const onDuty = getStaffDutyStatus(staff) === 'on_duty';
               const isAdmin = staff.role === 'Admin';
-              const staffPhone = staff.phone || '9876543210';
+              const digits = staff.phone?.replace(/\D/g, '') || '';
+              const staffPhone = digits.length >= 10 ? digits.slice(-10) : undefined;
 
               return (
                 <div
@@ -318,7 +321,9 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
                             call
                           </span>
                           <span className="tabular-nums font-medium tracking-wide">
-                            +91 {staffPhone}
+                            {staffPhone
+                              ? `+91 ${staffPhone.slice(0, 5)} ${staffPhone.slice(5)}`
+                              : 'Phone not added'}
                           </span>
                         </div>
                       </div>
@@ -344,9 +349,12 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
                       <button
                         type="button"
                         aria-label={`Call ${staff.name}`}
-                        onClick={() => onNotify(`Calling ${staff.name} (+91 ${staffPhone})`)}
-                        className="w-10 h-10 rounded-2xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-95 transition-all cursor-pointer shadow-sm hover:border-white/20"
-                        title="Call Staff"
+                        onClick={() =>
+                          staffPhone && onNotify(`Calling ${staff.name} (+91 ${staffPhone})`)
+                        }
+                        disabled={!staffPhone}
+                        className="w-10 h-10 rounded-2xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-95 transition-all cursor-pointer shadow-sm hover:border-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        title={staffPhone ? 'Call Staff' : 'Phone number not added'}
                       >
                         <span className="material-symbols-outlined text-[18px]">call</span>
                       </button>
@@ -372,7 +380,7 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[11px] text-on-surface-variant/70 font-semibold mb-0.5">Performance</span>
-                      <span className="text-xs sm:text-sm md:text-base text-[#f59e0b] dark:text-[#fbbf24] font-black tabular-nums tracking-tight">
+                      <span className="text-xs sm:text-sm md:text-base text-secondary font-black tabular-nums tracking-tight">
                         {staff.statRight || '98% On Time'}
                       </span>
                     </div>
@@ -456,6 +464,24 @@ export const StaffRolesScreen: React.FC<StaffRolesScreenProps> = ({
                 {staffForm.formState.errors.name && (
                   <p className="text-[11px] text-error mt-1">
                     {staffForm.formState.errors.name.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                  Mobile Number
+                </label>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  {...staffForm.register('phone')}
+                  placeholder="98765 43210"
+                  className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                {staffForm.formState.errors.phone && (
+                  <p className="text-[11px] text-error mt-1">
+                    {staffForm.formState.errors.phone.message}
                   </p>
                 )}
               </div>

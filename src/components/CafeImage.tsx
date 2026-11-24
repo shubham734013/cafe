@@ -1,25 +1,44 @@
 import React, { useEffect, useState } from 'react';
+import { hasMenuProductArtwork, MenuProductArtwork } from './MenuProductArtwork';
+import { getMenuProductPhoto } from '../data/menuProductPhotos';
 
 interface CafeImageProps {
   src: string;
   alt: string;
+  productId?: string;
   className?: string;
   fallbackIcon?: string;
+  loading?: 'eager' | 'lazy';
+  fetchPriority?: 'high' | 'low' | 'auto';
+  sizes?: string;
 }
 
 export const CafeImage: React.FC<CafeImageProps> = ({
   src,
   alt,
+  productId,
   className = 'w-full h-full object-cover',
   fallbackIcon = 'local_cafe',
+  loading = 'lazy',
+  fetchPriority = 'auto',
+  sizes,
 }) => {
   const [failed, setFailed] = useState(false);
+  const isDefaultArtwork =
+    /^\/images\/[^/]+\.(?:svg|png)$/i.test(src) && hasMenuProductArtwork(src);
+  const productPhoto =
+    (!src || isDefaultArtwork) && productId ? getMenuProductPhoto(productId) : undefined;
+  const imageSrc = productPhoto ?? src;
 
   useEffect(() => {
     setFailed(false);
-  }, [src]);
+  }, [src, productId]);
 
-  if (failed || !src) {
+  if ((failed || !productPhoto) && isDefaultArtwork) {
+    return <MenuProductArtwork src={src} name={alt} className={className} />;
+  }
+
+  if (failed || !imageSrc) {
     return (
       <div
         aria-label={alt}
@@ -33,10 +52,12 @@ export const CafeImage: React.FC<CafeImageProps> = ({
 
   return (
     <img
-      src={src}
+      src={imageSrc}
       alt={alt}
       referrerPolicy="no-referrer"
-      loading="lazy"
+      loading={loading}
+      fetchPriority={fetchPriority}
+      sizes={sizes}
       decoding="async"
       onError={() => setFailed(true)}
       className={className}

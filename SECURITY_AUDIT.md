@@ -1,5 +1,7 @@
 # Security Audit Report — CafeOS SaaS Platform
 
+> **Historical snapshot, not a current audit result.** This report predates later repository changes; findings, routes, and implementation details may be stale. Reassess the current source and regression tests before using it for security or deployment decisions.
+
 **Date:** 2026-11-20  
 **Branch:** `security-hardening`  
 **Auditor:** Senior Application Security Engineer  

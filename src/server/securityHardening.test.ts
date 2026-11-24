@@ -3,8 +3,82 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { createCafeServer } from './app';
 import { CafeStore } from './store';
-import { signStaffSession, revokeToken } from './auth';
+import { signStaffSession, signCustomerSession, revokeToken } from './auth';
 import type { UpiGatewayClient, UpiGatewayOrder } from './upiGateway';
+import { getTrustedClientIp } from './rateLimit';
+import { verifyCaptchaToken } from './security';
+import { validateEnv } from './env';
+import { MENU_ITEMS } from '../data/cafeSeedData';
+
+const TEST_MENU_ITEM = MENU_ITEMS.find((item) => item.id === 'cold-coffee') ?? MENU_ITEMS[0];
+assert.ok(TEST_MENU_ITEM);
+
+test('production environment validation requires safe deployment configuration without echoing values', () => {
+  const authSecret = 'test-only-production-auth-secret-0123456789';
+  const validated = validateEnv({
+    NODE_ENV: 'production',
+    MONGODB_URI: 'mongodb+srv://test-user:test-password@cluster.example.test',
+    MONGODB_DB_NAME: 'cafeos',
+    CAFE_AUTH_SECRET: authSecret,
+    CAFE_ADMIN_PIN: '2468',
+    CAFE_KITCHEN_PIN: '1357',
+    APP_PUBLIC_URL: 'https://cafe.example.test',
+    CORS_ORIGIN: 'https://cafe.example.test',
+  });
+  assert.equal(validated.NODE_ENV, 'production');
+
+  assert.throws(
+    () =>
+      validateEnv({
+        NODE_ENV: 'production',
+        CAFE_AUTH_SECRET: authSecret,
+        CAFE_ADMIN_PIN: '2468',
+        CAFE_KITCHEN_PIN: '1357',
+        APP_PUBLIC_URL: 'https://cafe.example.test',
+        CORS_ORIGIN: 'https://cafe.example.test',
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /MONGODB_URI/);
+      assert.equal(error.message.includes(authSecret), false);
+      return true;
+    }
+  );
+});
+
+test('rate-limit client IP ignores forwarded headers unless Express trusts the proxy', () => {
+  const request = {
+    ip: '127.0.0.1',
+    socket: { remoteAddress: '127.0.0.1' },
+  } satisfies Pick<import('express').Request, 'ip'> & {
+    socket: Pick<import('express').Request['socket'], 'remoteAddress'>;
+  };
+  assert.equal(getTrustedClientIp(request), '127.0.0.1');
+});
+
+test('enabled CAPTCHA fails closed without credentials and checks provider response', async () => {
+  const previousEnabled = process.env.ENABLE_CAPTCHA_VERIFICATION;
+  const previousSecret = process.env.CAPTCHA_SECRET_KEY;
+  const originalFetch = global.fetch;
+  try {
+    process.env.ENABLE_CAPTCHA_VERIFICATION = 'true';
+    delete process.env.CAPTCHA_SECRET_KEY;
+    assert.equal((await verifyCaptchaToken('test-token')).valid, false);
+
+    process.env.CAPTCHA_SECRET_KEY = 'test-only-secret';
+    global.fetch = async () => new Response('{"success":true}', { status: 200 });
+    assert.equal((await verifyCaptchaToken('test-token')).valid, true);
+
+    global.fetch = async () => new Response('{"success":true}', { status: 503 });
+    assert.equal((await verifyCaptchaToken('test-token')).valid, false);
+  } finally {
+    global.fetch = originalFetch;
+    if (previousEnabled === undefined) delete process.env.ENABLE_CAPTCHA_VERIFICATION;
+    else process.env.ENABLE_CAPTCHA_VERIFICATION = previousEnabled;
+    if (previousSecret === undefined) delete process.env.CAPTCHA_SECRET_KEY;
+    else process.env.CAPTCHA_SECRET_KEY = previousSecret;
+  }
+});
 
 class TestSecurityGateway implements UpiGatewayClient {
   public configured = true;
@@ -112,7 +186,7 @@ test('Security Hardening Test Suite', async (t) => {
         tableNumber: 'T1',
         items: [
           {
-            menuItemId: 'cappuccino',
+            menuItemId: TEST_MENU_ITEM.id,
             name: 'Cappuccino',
             price: 149,
             quantity: 1,
@@ -166,7 +240,7 @@ test('Security Hardening Test Suite', async (t) => {
         isPosTerminal: true,
         items: [
           {
-            menuItemId: 'cappuccino',
+            menuItemId: TEST_MENU_ITEM.id,
             name: 'Cappuccino',
             price: 149,
             quantity: 1,
@@ -244,12 +318,70 @@ test('Security Hardening Test Suite', async (t) => {
     assert.equal(tamperedRes.status, 401);
   });
 
-  await t.test('9. Security headers (CSP Report-Only, X-Content-Type-Options, Referrer-Policy) are present', async () => {
+  await t.test('9. Security headers allow same-origin geolocation and protect other browser features', async () => {
     const healthRes = await fetch(`${baseUrl}/api/health`);
     assert.equal(healthRes.status, 200);
     assert.equal(healthRes.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(healthRes.headers.get('x-frame-options'), 'SAMEORIGIN');
     assert.ok(healthRes.headers.get('content-security-policy-report-only')?.includes("default-src 'self'"));
     assert.equal(healthRes.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
+    assert.equal(
+      healthRes.headers.get('permissions-policy'),
+      'camera=(), microphone=(), geolocation=(self)'
+    );
+  });
+
+  await t.test('10. DPDP Act 2023 customer data export and right-to-erasure endpoints enforce authentication and erase data', async () => {
+    // 1. Unauthenticated customer cannot export or delete
+    const unauthExport = await fetch(`${baseUrl}/api/customer/export`);
+    assert.equal(unauthExport.status, 401);
+
+    const unauthDelete = await fetch(`${baseUrl}/api/customer/account`, { method: 'DELETE' });
+    assert.equal(unauthDelete.status, 401);
+
+    // 2. Create a customer in store
+    const testCust = store.addCustomer({
+      name: 'Pooja DPDP Tester',
+      phone: '9876543210',
+      email: 'pooja.dpdp@example.com',
+      segment: 'regular',
+      favorites: 'Cold Coffee',
+      dpdpConsent: true,
+    });
+    assert.ok(testCust.id);
+
+    // 3. Customer authenticated session
+    const customerCookie = `cafeos_customer_session=${signCustomerSession({
+      customerId: testCust.id,
+      orderIds: [],
+      issuedAt: Date.now(),
+      exp: Date.now() + 3600000,
+    })}`;
+
+    // 4. Authenticated data export (DPDP Section 11)
+    const exportRes = await fetch(`${baseUrl}/api/customer/export`, {
+      headers: { Cookie: customerCookie },
+    });
+    assert.equal(exportRes.status, 200);
+    const exportBody = await exportRes.json();
+    assert.equal(exportBody.profile.id, testCust.id);
+    assert.equal(exportBody.profile.phone, '9876543210');
+    assert.ok(exportBody.dpdpNotice.includes('Right to Access'));
+
+    // 5. Authenticated right to erasure (DPDP Section 12)
+    const eraseRes = await fetch(`${baseUrl}/api/customer/account`, {
+      method: 'DELETE',
+      headers: { Cookie: customerCookie },
+    });
+    assert.equal(eraseRes.status, 200);
+    const eraseBody = await eraseRes.json();
+    assert.equal(eraseBody.ok, true);
+    assert.equal(eraseBody.deleted, true);
+
+    // Verify record is deleted from store
+    const verifyExport = await fetch(`${baseUrl}/api/customers/${testCust.id}/export`, {
+      headers: { Cookie: adminCookie },
+    });
+    assert.equal(verifyExport.status, 404);
   });
 });

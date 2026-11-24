@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { io } from 'socket.io-client';
 import { z } from 'zod';
 import {
   INITIAL_CAFE_SETTINGS,
@@ -101,76 +100,96 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
 
   // Centralized real-time operational socket synchronization across all routes
   useEffect(() => {
+    // The splash screen has no live data. Deferring the Socket.IO client keeps its
+    // parser and transport code out of the first meaningful customer paint.
+    if (screen === 'splash') return;
+
     const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const tableToken = params?.get('table') || '';
     const orderId = params?.get('orderId') || trackedOrderId;
+    let disposed = false;
+    let disconnect: (() => void) | undefined;
 
-    const socket = io({
-      query: {
-        outletId: 'seth-sawariya-main',
-        tableToken,
-        orderId,
-        scope: kitchenRoute ? 'kitchen' : 'main',
-      },
-      transports: ['websocket', 'polling'],
-    });
+    void import('socket.io-client')
+      .then(({ io }) => {
+        if (disposed) return;
+        const socket = io({
+          query: {
+            outletId: 'seth-sawariya-main',
+            tableToken,
+            orderId,
+            scope: kitchenRoute ? 'kitchen' : 'main',
+          },
+          transports: ['polling', 'websocket'],
+          reconnection: true,
+          reconnectionAttempts: 10,
+          reconnectionDelay: 1000,
+          reconnectionDelayMax: 5000,
+        });
 
-    const handleConnect = () => {
-      setSocketConnected(true);
-      socket.emit('outlet:join', {
-        tableToken,
-        orderId,
-        scope: kitchenRoute ? 'kitchen' : 'main',
+        const handleConnect = () => {
+          setSocketConnected(true);
+          socket.emit('outlet:join', {
+            tableToken,
+            orderId,
+            scope: kitchenRoute ? 'kitchen' : 'main',
+          });
+        };
+        const handleDisconnect = () => setSocketConnected(false);
+        const invalidateRouteData = () => {
+          void queryClient.invalidateQueries({ queryKey: BOOTSTRAP_QUERY_KEY });
+        };
+        const handleOrderEvent = (data: unknown) => {
+          invalidateRouteData();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('cafe:order:new', { detail: data }));
+          }
+        };
+
+        socket.on('connect', handleConnect);
+        socket.on('disconnect', handleDisconnect);
+        socket.on('order:created', handleOrderEvent);
+        socket.on('order:new', handleOrderEvent);
+        socket.on('order:updated', invalidateRouteData);
+        socket.on('order:refunded', invalidateRouteData);
+        socket.on('order:item-cancelled', invalidateRouteData);
+        socket.on('table:updated', invalidateRouteData);
+        socket.on('inventory:updated', invalidateRouteData);
+        socket.on('stock:low', invalidateRouteData);
+        socket.on('activity:updated', invalidateRouteData);
+        socket.on('customer:updated', invalidateRouteData);
+        socket.on('settings:updated', invalidateRouteData);
+        socket.on('menu:availability-toggled', invalidateRouteData);
+        socket.on('cafe:sync', invalidateRouteData);
+
+        disconnect = () => {
+          socket.off('connect', handleConnect);
+          socket.off('disconnect', handleDisconnect);
+          socket.off('order:created', handleOrderEvent);
+          socket.off('order:new', handleOrderEvent);
+          socket.off('order:updated', invalidateRouteData);
+          socket.off('order:refunded', invalidateRouteData);
+          socket.off('order:item-cancelled', invalidateRouteData);
+          socket.off('table:updated', invalidateRouteData);
+          socket.off('inventory:updated', invalidateRouteData);
+          socket.off('stock:low', invalidateRouteData);
+          socket.off('activity:updated', invalidateRouteData);
+          socket.off('customer:updated', invalidateRouteData);
+          socket.off('settings:updated', invalidateRouteData);
+          socket.off('menu:availability-toggled', invalidateRouteData);
+          socket.off('cafe:sync', invalidateRouteData);
+          socket.disconnect();
+        };
+      })
+      .catch((error: unknown) => {
+        if (!disposed) console.error('Could not load live order updates:', error);
       });
-    };
-    const handleDisconnect = () => setSocketConnected(false);
-
-    const invalidateRouteData = () => {
-      void queryClient.invalidateQueries({ queryKey: BOOTSTRAP_QUERY_KEY });
-    };
-
-    const handleOrderEvent = (data: any) => {
-      invalidateRouteData();
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('cafe:order:new', { detail: data }));
-      }
-    };
-
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
-    socket.on('order:created', handleOrderEvent);
-    socket.on('order:new', handleOrderEvent);
-    socket.on('order:updated', invalidateRouteData);
-    socket.on('order:refunded', invalidateRouteData);
-    socket.on('order:item-cancelled', invalidateRouteData);
-    socket.on('table:updated', invalidateRouteData);
-    socket.on('inventory:updated', invalidateRouteData);
-    socket.on('stock:low', invalidateRouteData);
-    socket.on('activity:updated', invalidateRouteData);
-    socket.on('customer:updated', invalidateRouteData);
-    socket.on('settings:updated', invalidateRouteData);
-    socket.on('menu:availability-toggled', invalidateRouteData);
-    socket.on('cafe:sync', invalidateRouteData);
 
     return () => {
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
-      socket.off('order:created', handleOrderEvent);
-      socket.off('order:new', handleOrderEvent);
-      socket.off('order:updated', invalidateRouteData);
-      socket.off('order:refunded', invalidateRouteData);
-      socket.off('order:item-cancelled', invalidateRouteData);
-      socket.off('table:updated', invalidateRouteData);
-      socket.off('inventory:updated', invalidateRouteData);
-      socket.off('stock:low', invalidateRouteData);
-      socket.off('activity:updated', invalidateRouteData);
-      socket.off('customer:updated', invalidateRouteData);
-      socket.off('settings:updated', invalidateRouteData);
-      socket.off('menu:availability-toggled', invalidateRouteData);
-      socket.off('cafe:sync', invalidateRouteData);
-      socket.disconnect();
+      disposed = true;
+      disconnect?.();
     };
-  }, [kitchenRoute, queryClient, trackedOrderId]);
+  }, [kitchenRoute, queryClient, screen, trackedOrderId]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: BOOTSTRAP_QUERY_KEY });
 
@@ -295,6 +314,15 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
       apiJson<{ ok: boolean; item: MenuItem }>('/api/menu/items', {
         method: 'POST',
         body: JSON.stringify(payload),
+      }),
+    onSuccess: invalidate,
+  });
+
+  const updateMenuItemMutation = useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<MenuItem> }) =>
+      apiJson<{ ok: boolean; item: MenuItem }>(`/api/menu/items/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
       }),
     onSuccess: invalidate,
   });
@@ -557,6 +585,7 @@ export function useCafeApi(screen: string, kitchenRoute = false, trackedOrderId 
     toggleKotItemMutation,
     toggleMenuAvailabilityMutation,
     addMenuItemMutation,
+    updateMenuItemMutation,
     submitOrderFeedbackMutation,
     submitCustomerFeedbackMutation,
     checkInTableMutation,

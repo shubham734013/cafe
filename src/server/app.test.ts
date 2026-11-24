@@ -9,7 +9,63 @@ import { createCafeServer } from './app';
 import { CashfreeGateway } from './cashfreeGateway';
 import { CafeStore } from './store';
 import { buildTableQrUrl } from '../shared/upi';
+import { addStaffSchema, cafeSettingsSchema, createCampaignSchema } from '../shared/schemas';
+import { signStaffSession, STAFF_SESSION_COOKIE } from './auth';
 import type { UpiGatewayClient, UpiGatewayOrder } from './upiGateway';
+import type { CafeOrder } from '../types/cafe';
+import { INITIAL_CAMPAIGNS, INITIAL_CAFE_SETTINGS, MENU_ITEMS } from '../data/cafeSeedData';
+
+const TEST_MENU_ITEM = MENU_ITEMS.find((item) => item.id === 'cold-coffee') ?? MENU_ITEMS[0];
+assert.ok(TEST_MENU_ITEM);
+
+test('staff mobile numbers, campaign discounts, and cafe logos are validated', () => {
+  const staff = addStaffSchema.parse({
+    name: 'Test Staff',
+    role: 'Kitchen',
+    shiftLabel: '10 AM – 6 PM',
+    phone: '+91 98765 43210',
+  });
+  assert.equal(staff.phone, '9876543210');
+  assert.equal(
+    addStaffSchema.safeParse({
+      name: 'Test Staff',
+      role: 'Kitchen',
+      shiftLabel: '10 AM – 6 PM',
+      phone: '12345',
+    }).success,
+    false
+  );
+
+  const campaign = createCampaignSchema.parse({
+    title: 'Test Offer',
+    code: 'test20',
+    validityLabel: 'This week',
+    description: 'A discount campaign',
+    discountPercentage: 20,
+    minimumOrderAmount: 500,
+  });
+  assert.equal(campaign.discountPercentage, 20);
+  assert.equal(campaign.minimumOrderAmount, 500);
+  assert.equal(
+    createCampaignSchema.safeParse({
+      title: 'Test Offer',
+      code: 'test101',
+      validityLabel: 'This week',
+      description: 'A discount campaign',
+      discountPercentage: 101,
+    }).success,
+    false
+  );
+
+  assert.equal(cafeSettingsSchema.parse(INITIAL_CAFE_SETTINGS).logoUrl, '/images/tsc-logo.jpg');
+  assert.equal(
+    cafeSettingsSchema.safeParse({
+      ...INITIAL_CAFE_SETTINGS,
+      logoUrl: 'javascript:alert(1)',
+    }).success,
+    false
+  );
+});
 
 class TestUpiGateway implements UpiGatewayClient {
   private readonly orders = new Map<string, UpiGatewayOrder>();
@@ -128,9 +184,9 @@ async function createTestOrder(store: CafeStore) {
     isPosTerminal: false,
     items: [
       {
-        menuItemId: 'cappuccino',
-        name: 'Cappuccino',
-        price: 0,
+        menuItemId: TEST_MENU_ITEM.id,
+        name: TEST_MENU_ITEM.name,
+        price: TEST_MENU_ITEM.price,
         quantity: 1,
         note: '',
         imageUrl: '',
@@ -140,6 +196,38 @@ async function createTestOrder(store: CafeStore) {
   });
   return order;
 }
+
+test('POS order price is canonicalized from the selected catalog variant', async () => {
+  const store = new CafeStore(null);
+  const item = MENU_ITEMS.find((menuItem) => menuItem.id === 'cold-coffee');
+  assert.ok(item?.variants);
+  const variant = item.variants.find((candidate) => candidate.size === 'Medium');
+  assert.ok(variant);
+
+  const { order } = await store.createOrder({
+    outletId: 'seth-sawariya-main',
+    serviceMode: 'takeaway',
+    paymentMode: 'cash',
+    couponCode: '',
+    cookingNote: '',
+    isPosTerminal: true,
+    items: [
+      {
+        menuItemId: item.id,
+        name: item.name,
+        price: 1,
+        quantity: 1,
+        size: variant.size,
+        note: '',
+        imageUrl: '',
+        station: item.station,
+      },
+    ],
+  });
+
+  assert.equal(order.items[0].price, variant.price);
+  assert.equal(order.items[0].size, variant.size);
+});
 
 function getCookieHeader(response: Response): string {
   const headers = response.headers as Headers & { getSetCookie?: () => string[] };
@@ -250,7 +338,8 @@ test('order creation enforces catalog prices, idempotency, and customer scoping'
   t.after(close);
 
   const payload = {
-    serviceMode: 'takeaway',
+    serviceMode: 'delivery',
+    deliveryAddress: 'Flat 2A, Sanganer, Jaipur, Rajasthan',
     items: [
       {
         menuItemId: 'cold-coffee',
@@ -275,14 +364,16 @@ test('order creation enforces catalog prices, idempotency, and customer scoping'
       id: string;
       total: number;
       customerId: string;
+      deliveryAddress?: string;
       items: Array<{ name: string; price: number }>;
     };
     duplicate: boolean;
   };
   assert.equal(created.duplicate, false);
-  assert.equal(created.order.total, 258);
-  assert.equal(created.order.items[0]?.price, 129);
-  assert.equal(created.order.items[0]?.name, 'Cold Coffee');
+  assert.equal(created.order.total, TEST_MENU_ITEM.price * 2);
+  assert.equal(created.order.items[0]?.price, TEST_MENU_ITEM.price);
+  assert.equal(created.order.items[0]?.name, TEST_MENU_ITEM.name);
+  assert.equal(created.order.deliveryAddress, payload.deliveryAddress);
   assert.match(created.order.customerId, /^guest_/);
   assert.equal('paymentProvider' in created.order, false);
 
@@ -402,7 +493,7 @@ test('UPI gateway checkout is idempotent and only authenticated gateway status s
       serviceMode: 'takeaway',
       items: [
         {
-          menuItemId: 'cappuccino',
+          menuItemId: TEST_MENU_ITEM.id,
           name: 'Cappuccino',
           price: 149,
           quantity: 1,
@@ -650,6 +741,37 @@ test('table QR links remain independent of payment processing', () => {
   );
 });
 
+test('customers can reserve an available table with the selected guest and time details', async (t) => {
+  const { baseUrl, store, close } = await startTestServer();
+  t.after(close);
+
+  store.addTable({
+    id: 'T01',
+    seats: 4,
+    zone: 'Main Hall',
+    floor: 'Floor 1 (Main Hall)',
+  });
+  const timeSlot = `${new Date().toISOString()} 7:00 PM`;
+  const response = await fetch(`${baseUrl}/api/tables/reserve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      guestName: 'Test Guest',
+      guestPhone: '9876543210',
+      partySize: 2,
+      timeSlot,
+    }),
+  });
+
+  assert.equal(response.status, 201);
+  const result = (await response.json()) as {
+    table: { id: string; status: string; reservedBy: string; reservedTime: string };
+  };
+  assert.equal(result.table.status, 'reserved');
+  assert.equal(result.table.reservedBy, 'Test Guest');
+  assert.equal(result.table.reservedTime, timeSlot);
+});
+
 test('legacy persisted gateway fields are dropped during cafe-state loading', async () => {
   const seed = new CafeStore(null);
   const firstOrder = await createTestOrder(seed);
@@ -820,7 +942,7 @@ test('first-order discount is available once to an authenticated customer accoun
     customerId: priorCustomer.id,
     items: [
       {
-        menuItemId: 'cappuccino',
+        menuItemId: TEST_MENU_ITEM.id,
         name: 'Cappuccino',
         price: 0,
         quantity: 1,
@@ -868,7 +990,7 @@ test('first-order discount is available once to an authenticated customer accoun
     customerId,
     items: [
       {
-        menuItemId: 'cappuccino',
+        menuItemId: TEST_MENU_ITEM.id,
         name: 'Cappuccino',
         price: 0,
         quantity: 1,
@@ -916,7 +1038,7 @@ test('customers earn Beans once per order and redeem them on a later order', asy
         redeemPoints,
         items: [
           {
-            menuItemId: 'cappuccino',
+            menuItemId: TEST_MENU_ITEM.id,
             name: 'Cappuccino',
             price: 0,
             quantity: 1,
@@ -981,7 +1103,7 @@ test('customers earn Beans once per order and redeem them on a later order', asy
       redeemPoints: 20,
       items: [
         {
-          menuItemId: 'cappuccino',
+          menuItemId: TEST_MENU_ITEM.id,
           name: 'Cappuccino',
           price: 0,
           quantity: 1,
@@ -1015,7 +1137,7 @@ test('customers earn Beans once per order and redeem them on a later order', asy
       redeemPoints: 10,
       items: [
         {
-          menuItemId: 'cappuccino',
+          menuItemId: TEST_MENU_ITEM.id,
           name: 'Cappuccino',
           price: 0,
           quantity: 1,
@@ -1092,6 +1214,8 @@ test('segment offers are shown and redeemable only for matching CRM customers', 
   const generalCampaign = store.createCampaign({
     title: 'Cafe Special',
     code: 'CAFEALL',
+    discountPercentage: 0,
+    minimumOrderAmount: 0,
     validityLabel: 'This week',
     description: 'Current offer for all customers',
     targetSegment: 'all',
@@ -1099,6 +1223,8 @@ test('segment offers are shown and redeemable only for matching CRM customers', 
   const vipCampaign = store.createCampaign({
     title: 'VIP Special',
     code: 'VIPONLY',
+    discountPercentage: 20,
+    minimumOrderAmount: 0,
     validityLabel: 'This week',
     description: 'Offer for VIP customers',
     targetSegment: 'vip',
@@ -1106,6 +1232,8 @@ test('segment offers are shown and redeemable only for matching CRM customers', 
   const regularCampaign = store.createCampaign({
     title: 'Regular Special',
     code: 'REGONLY',
+    discountPercentage: 0,
+    minimumOrderAmount: 0,
     validityLabel: 'This week',
     description: 'Offer for regular customers',
     targetSegment: 'regular',
@@ -1126,6 +1254,10 @@ test('segment offers are shown and redeemable only for matching CRM customers', 
     bootstrap.campaigns.map((campaign) => campaign.id),
     [vipCampaign.id, generalCampaign.id]
   );
+  assert.equal(
+    bootstrap.campaigns.find((campaign) => campaign.id === vipCampaign.id)?.discountPercentage,
+    20
+  );
 
   await assert.rejects(
     store.createOrder(
@@ -1138,7 +1270,7 @@ test('segment offers are shown and redeemable only for matching CRM customers', 
         isPosTerminal: false,
         items: [
           {
-            menuItemId: 'cappuccino',
+            menuItemId: TEST_MENU_ITEM.id,
             name: 'Cappuccino',
             price: 0,
             quantity: 1,
@@ -1156,6 +1288,54 @@ test('segment offers are shown and redeemable only for matching CRM customers', 
     store.getBootstrap().campaigns.some((campaign) => campaign.id === regularCampaign.id),
     true
   );
+});
+
+test('checkout rejects an unqualified Buy 5 Get 1 coupon and prices five medium coffees correctly', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cafe-campaign-checkout-'));
+  try {
+    const statePath = join(directory, 'state.json');
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        orders: [],
+        tables: [],
+        cafeSettings: INITIAL_CAFE_SETTINGS,
+        campaigns: INITIAL_CAMPAIGNS,
+      })
+    );
+    const store = new CafeStore(statePath);
+    const createCoffeeOrder = (quantity: number) =>
+      store.createOrder({
+        outletId: 'seth-sawariya-main',
+        serviceMode: 'takeaway',
+        paymentMode: 'cash',
+        couponCode: 'BUY5GET1',
+        cookingNote: '',
+        isPosTerminal: false,
+        items: [
+          {
+            menuItemId: 'cold-coffee',
+            name: 'Cold Coffee',
+            price: 1,
+            quantity,
+            size: 'Medium',
+            note: '',
+            imageUrl: '',
+            station: 'Barista',
+          },
+        ],
+      });
+
+    await assert.rejects(createCoffeeOrder(4), /Add 1 more Medium Cold Coffees/);
+
+    const { order } = await createCoffeeOrder(5);
+    assert.equal(order.items[0]?.price, 50);
+    assert.equal(order.items[0]?.size, 'Medium');
+    assert.equal(order.discount, 30);
+    await store.flushToPersistence();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('order refund requires staff auth, updates paymentStatus to refunded, and records activity log', async (t) => {
@@ -1337,7 +1517,7 @@ test('kitchen staff can raise stock alert and request reorder for low ingredient
   assert.equal(restockMovement?.unitCost, 58);
 });
 
-test('brevo confirmation email endpoint validates input and dispatches confirmation', async (t) => {
+test('brevo confirmation endpoint never returns OTPs and reports missing provider credentials', async (t) => {
   const { baseUrl, close } = await startTestServer();
   t.after(close);
 
@@ -1351,9 +1531,362 @@ test('brevo confirmation email endpoint validates input and dispatches confirmat
     }),
   });
 
-  assert.equal(res.status, 200);
-  const body = (await res.json()) as { ok: boolean; code?: string; simulated?: boolean };
-  assert.equal(body.ok, true);
-  assert.ok(body.code);
-  assert.equal(body.code.length, 6);
+  assert.equal(res.status, 503);
+  const body = (await res.json()) as { error?: string; code?: string };
+  assert.equal('code' in body, false);
+  assert.match(body.error || '', /not configured/i);
+});
+
+test('admin brevo broadcast email endpoint validates admin auth and dispatches broadcast', async (t) => {
+  const { baseUrl, close } = await startTestServer();
+  t.after(close);
+
+  // 1. Unauthenticated request must be blocked
+  const unauthRes = await fetch(`${baseUrl}/api/admin/broadcast-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      subject: 'Weekend Special',
+      heading: 'Roast Fest',
+      message: 'Join us for a fresh artisanal roast experience.',
+      targetSegment: 'all',
+    }),
+  });
+  assert.equal(unauthRes.status, 401);
+
+  // 2. Admin authenticated request succeeds
+  const adminToken = signStaffSession({
+    role: 'admin',
+    staffName: 'Lead Admin',
+    issuedAt: Date.now(),
+    exp: Date.now() + 15 * 60 * 1000,
+  });
+  const authRes = await fetch(`${baseUrl}/api/admin/broadcast-email`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: `${STAFF_SESSION_COOKIE}=${adminToken}`,
+    },
+    body: JSON.stringify({
+      subject: 'Weekend Special: 20% Off',
+      heading: 'Artisanal Roasts Just For You',
+      message: 'Enjoy handcrafted brews and gourmet bites this weekend.',
+      targetSegment: 'all',
+      promoCode: 'WEEKEND20',
+      testEmail: 'preview@example.com',
+    }),
+  });
+
+  assert.equal(authRes.status, 503);
+  const authBody = (await authRes.json()) as { ok: boolean; error?: string };
+  assert.equal(authBody.ok, false);
+  assert.match(authBody.error || '', /not configured/i);
+});
+
+test('bill email endpoint requires staff authentication and reports disabled email provider', async (t) => {
+  const { baseUrl, store, close } = await startTestServer();
+  t.after(close);
+
+  const order = await createTestOrder(store);
+  const adminCookie = await loginWithPin(baseUrl, '7777');
+
+  // 1. Invalid email returns 400
+  const badEmailRes = await fetch(`${baseUrl}/api/orders/${order.id}/send-bill-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+    body: JSON.stringify({ email: 'not-an-email' }),
+  });
+  assert.equal(badEmailRes.status, 400);
+
+  // 2. Non-existent order returns 404
+  const notFoundRes = await fetch(`${baseUrl}/api/orders/NON_EXISTENT_999/send-bill-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+    body: JSON.stringify({ email: 'guest@example.com' }),
+  });
+  assert.equal(notFoundRes.status, 404);
+
+  // 3. Valid order sends bill via Brevo
+  const validRes = await fetch(`${baseUrl}/api/orders/${order.id}/send-bill-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+    body: JSON.stringify({ email: 'guest@example.com', name: 'Rohan Sharma' }),
+  });
+  assert.equal(validRes.status, 503);
+  const body = (await validRes.json()) as { error: string };
+  assert.match(body.error, /not configured/i);
+  assert.equal(store.getOrder(order.id)?.paidEmailSentAt, undefined);
+});
+
+test('payment status verified automatically dispatches order paid email', async (t) => {
+  const gateway = new TestUpiGateway();
+  const { baseUrl, store, close } = await startTestServer(gateway);
+  t.after(close);
+
+  // 1. Create order with customer email
+  const createRes = await fetch(`${baseUrl}/api/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      outletId: 'seth-sawariya-main',
+      serviceMode: 'dine-in',
+      tableNumber: 'T2',
+      customerName: 'Aarav Patel',
+      customerEmail: 'aarav.patel@example.com',
+      paymentMode: 'upi',
+      items: [
+        {
+          menuItemId: TEST_MENU_ITEM.id,
+          name: 'Cappuccino',
+          price: 150,
+          quantity: 1,
+          station: 'Barista',
+        },
+      ],
+    }),
+  });
+  assert.equal(createRes.status, 201);
+  const customerCookie = createRes.headers.get('set-cookie')?.split(';')[0] || '';
+  const created = (await createRes.json()) as any;
+  const orderId = created.order.id;
+  assert.equal(created.order.paymentStatus, 'pending');
+  assert.equal(created.order.paidEmailSentAt, undefined);
+
+  // 2. Open payment session with UPI gateway
+  const sessionRes = await fetch(`${baseUrl}/api/orders/${orderId}/payment-session`, {
+    method: 'POST',
+    headers: { Cookie: customerCookie },
+  });
+  assert.equal(sessionRes.status, 200);
+
+  // 3. Mark payment as paid in the gateway (simulating user paying via UPI app)
+  const clientOrderId = store.getOrCreateGatewayClientOrderId(orderId);
+  assert.ok(clientOrderId);
+  gateway.markPaid(clientOrderId);
+
+  // 4. Poll / refresh payment status (verifying payment)
+  const verifyRes = await fetch(`${baseUrl}/api/orders/${orderId}/payment-status`, {
+    headers: { Cookie: customerCookie },
+  });
+  assert.equal(verifyRes.status, 200);
+  const verifyBody = (await verifyRes.json()) as any;
+  assert.equal(verifyBody.paymentStatus, 'paid');
+
+  // 5. Wait a tick for async triggerOrderPaidEmailIfEligible to complete
+  await new Promise((r) => setTimeout(r, 100));
+
+  // 6. Email delivery is disabled without provider credentials.
+  const updatedOrder = store.getOrder(orderId);
+  assert.ok(updatedOrder);
+  assert.equal(updatedOrder.paymentStatus, 'paid');
+  assert.equal(updatedOrder.paidEmailSentAt, undefined);
+});
+
+test('customer signing in via Google automatically updates CRM and profile syncs to CRM', async () => {
+  const { baseUrl, store, close } = await startTestServer();
+  try {
+    // 1. Google sign-in creates customer in CRM directory
+    const googleRes = await fetch(`${baseUrl}/api/customer/google/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        demo: true,
+        name: 'Ajay Vaishnav',
+        email: 'ajayvaishnav8182@gmail.com',
+      }),
+    });
+    assert.equal(googleRes.status, 200);
+    const googleBody = (await googleRes.json()) as any;
+    assert.ok(googleBody.session);
+    assert.equal(googleBody.session.name, 'Ajay Vaishnav');
+    assert.equal(googleBody.session.email, 'ajayvaishnav8182@gmail.com');
+
+    // Verify customer exists in store's customer directory
+    const crmCustomer = store.getCustomers().find((c) => c.email === 'ajayvaishnav8182@gmail.com');
+    assert.ok(crmCustomer, 'Customer should exist in CRM store');
+    assert.equal(crmCustomer.name, 'Ajay Vaishnav');
+    assert.equal(crmCustomer.provider, 'google');
+    assert.equal(crmCustomer.emailVerified, true);
+
+    // 2. Customer updates profile (adds phone and address/note)
+    const unauthorizedProfileRes = await fetch(`${baseUrl}/api/customer/profile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerId: googleBody.session.id,
+        phone: '1111111111',
+      }),
+    });
+    assert.equal(unauthorizedProfileRes.status, 401);
+
+    const customerCookie = googleRes.headers.get('set-cookie')?.split(';')[0] || '';
+    const profileRes = await fetch(`${baseUrl}/api/customer/profile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: customerCookie },
+      body: JSON.stringify({
+        customerId: googleBody.session.id,
+        name: 'Ajay V.',
+        phone: '9876543210',
+        email: 'ajayvaishnav8182@gmail.com',
+        note: 'Table 4 Regular',
+      }),
+    });
+    assert.equal(profileRes.status, 200);
+    const profileBody = (await profileRes.json()) as any;
+    assert.equal(profileBody.customer.name, 'Ajay V.');
+    assert.equal(profileBody.customer.phone, '9876543210');
+
+    // Verify CRM record updated
+    const updatedCustomer = store.getCustomers().find((c) => c.email === 'ajayvaishnav8182@gmail.com');
+    assert.ok(updatedCustomer);
+    assert.equal(updatedCustomer.name, 'Ajay V.');
+    assert.equal(updatedCustomer.phone, '9876543210');
+    assert.equal(updatedCustomer.note, 'Table 4 Regular');
+  } finally {
+    await close();
+  }
+});
+
+test('google session extracts phone number from Google People API if permission granted', async () => {
+  const origClientId = process.env.VITE_GOOGLE_CLIENT_ID;
+  process.env.VITE_GOOGLE_CLIENT_ID = 'test-client-id.apps.googleusercontent.com';
+  const { baseUrl, store, close } = await startTestServer();
+  const originalFetch = global.fetch;
+
+  // Mock Google Userinfo and People API responses
+  global.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const urlStr = typeof input === 'string' ? input : input.toString();
+    if (urlStr.includes('/oauth2/v3/userinfo')) {
+      return new Response(
+        JSON.stringify({
+          sub: 'google-sub-999',
+          email: 'rajesh.sharma@gmail.com',
+          name: 'Rajesh Sharma',
+          picture: 'https://lh3.googleusercontent.com/a/rajesh',
+          email_verified: true,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    if (urlStr.includes('people.googleapis.com/v1/people/me')) {
+      return new Response(
+        JSON.stringify({
+          phoneNumbers: [
+            {
+              value: '+91 99887 76655',
+              type: 'mobile',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    return originalFetch(input, init);
+  };
+
+  try {
+    const res = await originalFetch(`${baseUrl}/api/customer/google/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken: 'fake-google-access-token' }),
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as any;
+    assert.equal(body.session.phone, '9988776655');
+
+    const customer = store.getCustomers().find((c) => c.email === 'rajesh.sharma@gmail.com');
+    assert.ok(customer);
+    assert.equal(customer.phone, '9988776655');
+    assert.equal(customer.phoneVerified, true);
+  } finally {
+    global.fetch = originalFetch;
+    process.env.VITE_GOOGLE_CLIENT_ID = origClientId;
+    await close();
+  }
+});
+
+test('UPI payment gateway automatically captures customer phone number and syncs to CRM profile', async () => {
+  const gateway = new CashfreeGateway({
+    appId: 'CF_SANDBOX_TEST',
+    secretKey: 'test-secret',
+    webhookSecret: 'test-webhook-secret',
+    environment: 'SANDBOX',
+  });
+  const { baseUrl, store, close } = await startTestServer(gateway);
+
+  try {
+    // 1. Customer signs in with Google (has name & email, but NO phone yet)
+    const customer = store.upsertGoogleCustomer({
+      id: 'google:sub_12345',
+      name: 'Pooja Verma',
+      email: 'pooja.verma@example.com',
+      phone: '',
+      createdAt: new Date().toISOString(),
+    });
+    assert.equal(customer.phone, '');
+
+    // 2. Customer places an order
+    const orderRes = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        serviceMode: 'takeaway',
+        customerName: customer.name,
+        customerEmail: customer.email,
+        customerId: customer.id,
+        items: [
+          {
+            menuItemId: 'cold-coffee',
+            name: 'Cold Coffee',
+            price: 129,
+            quantity: 1,
+            station: 'Barista',
+          },
+        ],
+        idempotencyKey: 'test-auto-phone-capture',
+      }),
+    });
+    assert.equal(orderRes.status, 201);
+    const customerCookie = getCookieHeader(orderRes);
+    const { order } = (await orderRes.json()) as { order: CafeOrder };
+    assert.ok(order?.id);
+
+    // 3. Customer initiates UPI Payment Session
+    const sessionRes = await fetch(`${baseUrl}/api/orders/${order.id}/payment-session`, {
+      method: 'POST',
+      headers: { Cookie: customerCookie },
+    });
+    assert.equal(sessionRes.status, 200);
+
+    const clientOrderId = store.getOrCreateGatewayClientOrderId(order.id);
+    assert.ok(clientOrderId);
+
+    // 4. Customer pays via Google Pay / PhonePe (Simulated Gateway Success with verified mobile)
+    const mockPaymentResponse = await fetch(`${baseUrl}/api/cashfree-mock/pay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        orderId: clientOrderId,
+        session: 'test-session',
+        payerPhone: '9876543210',
+      }),
+      redirect: 'manual',
+    });
+    assert.equal(mockPaymentResponse.status, 302);
+
+    const returnLocation = mockPaymentResponse.headers.get('location') || '';
+    await fetch(`${baseUrl}${returnLocation}`, { redirect: 'manual' });
+
+    // 5. Verify order is paid AND customer's phone is automatically synced in CRM!
+    const updatedOrder = store.getOrder(order.id);
+    assert.equal(updatedOrder?.paymentStatus, 'paid');
+    assert.equal(updatedOrder?.customerPhone, '9876543210');
+
+    const updatedCustomer = store.getCustomers().find((c) => c.id === customer.id);
+    assert.ok(updatedCustomer);
+    assert.equal(updatedCustomer.phone, '9876543210');
+    assert.equal(updatedCustomer.phoneVerified, false);
+  } finally {
+    await close();
+  }
 });

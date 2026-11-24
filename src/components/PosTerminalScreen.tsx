@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CafeOrder,
   CafeTable,
@@ -10,7 +10,10 @@ import type {
   ServiceMode,
 } from '../types/cafe';
 import { calculateCartTotals, filterMenuItems, formatINR } from '../utils/cafeLogic';
+import { getItemVariants } from '../utils/menuVariants';
+import { useCustomerTheme } from './CustomerThemeContext';
 import { CafeImage } from './CafeImage';
+export { getItemVariants };
 
 interface PosTerminalScreenProps {
   posCart: CartItem[];
@@ -23,13 +26,15 @@ interface PosTerminalScreenProps {
   lastCompletedOrder?: CafeOrder | null;
   onServiceModeChange: (mode: ServiceMode) => void;
   onTableChange: (table: string) => void;
-  onAddPosItem: (item: MenuItem) => void;
-  onUpdatePosQty: (menuItemId: string, delta: number) => void;
+  onAddPosItem: (item: MenuItem, variant?: NonNullable<MenuItem['variants']>[number]) => void;
+  onUpdatePosQty: (menuItemId: string, delta: number, size?: string) => void;
   onClearPosCart: () => void;
   onCompletePosOrder: (
     paymentMode?: PaymentMode,
     customerId?: string,
-    cookingNote?: string
+    cookingNote?: string,
+    customerEmail?: string,
+    customerPhone?: string
   ) => void;
   onToggleItemAvailability?: (menuItemId: string) => void;
   onQuickAddCustomer?: (name: string, phone: string) => Promise<void>;
@@ -38,12 +43,24 @@ interface PosTerminalScreenProps {
 
 const POS_CATEGORIES: { id: MenuCategory; label: string }[] = [
   { id: 'All', label: 'All Items' },
-  { id: 'Beverages', label: 'Beverages' },
-  { id: 'Snacks', label: 'Snacks' },
-  { id: 'Meals', label: 'Meals' },
+  { id: 'Burgers', label: 'Burgers' },
+  { id: 'Pizza', label: 'Pizza' },
+  { id: 'Maggi', label: 'Maggi' },
+  { id: 'Sandwiches', label: 'Sandwiches' },
+  { id: 'Special Bread Pizza', label: 'Bread Pizza' },
+  { id: 'Fries & Momos', label: 'Fries & Momos' },
+  { id: 'Cold Coffee', label: 'Cold Coffee' },
+  { id: 'Shakes', label: 'Shakes' },
+  { id: 'Hot Beverages', label: 'Hot Beverages' },
   { id: 'Combos', label: 'Combos' },
-  { id: 'Desserts', label: 'Desserts' },
 ];
+
+function normalizeCustomerPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+}
 
 export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
   posCart,
@@ -64,14 +81,18 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
   onQuickAddCustomer,
   onPrintReceipt,
 }) => {
+  const { isLightTheme } = useCustomerTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<MenuCategory>('All');
   const [tenderType, setTenderType] = useState<PaymentMode>('cash');
   const [cookingNote, setCookingNote] = useState('');
   const [manageStockMode, setManageStockMode] = useState(false);
+  const [variantItem, setVariantItem] = useState<MenuItem | null>(null);
 
   // Customer Loyalty lookup state
   const [phoneQuery, setPhoneQuery] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [contactInfoError, setContactInfoError] = useState('');
   const [matchedCustomer, setMatchedCustomer] = useState<CustomerProfile | null>(null);
   const [newCustName, setNewCustName] = useState('');
   const [isAddingCustomer, setIsAddingCustomer] = useState(false);
@@ -84,17 +105,61 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
     [menuItems, activeCategory, searchQuery]
   );
   const totals = calculateCartTotals(posCart, '', serviceMode, true);
+  const phoneDigits = phoneQuery.replace(/\D/g, '');
+  const isPhoneValid = phoneDigits.length >= 10 && phoneDigits.length <= 15;
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim());
+
+  const handleCompleteOrder = useCallback(() => {
+    if (!isEmailValid || !isPhoneValid) {
+      setContactInfoError(
+        !customerEmail.trim()
+          ? 'Enter the customer email.'
+          : !isEmailValid
+            ? 'Enter a valid email address.'
+            : 'Enter a valid mobile number (10–15 digits).'
+      );
+      return;
+    }
+
+    setContactInfoError('');
+    onCompletePosOrder(
+      tenderType,
+      matchedCustomer?.id,
+      cookingNote,
+      customerEmail.trim(),
+      phoneQuery.trim()
+    );
+    setCookingNote('');
+  }, [
+    cookingNote,
+    customerEmail,
+    isEmailValid,
+    isPhoneValid,
+    matchedCustomer?.id,
+    onCompletePosOrder,
+    phoneQuery,
+    tenderType,
+  ]);
 
   // Auto-match customer as phone is entered
   useEffect(() => {
-    const clean = phoneQuery.trim().replace(/\D/g, '');
-    if (clean.length >= 4) {
-      const match = customers.find((c) => c.phone.replace(/\D/g, '').includes(clean));
-      setMatchedCustomer(match || null);
-    } else {
+    const normalizedQuery = normalizeCustomerPhone(phoneQuery);
+    if (normalizedQuery.length < 10 || normalizedQuery.length > 15) {
       setMatchedCustomer(null);
+      return;
     }
+
+    const matches = customers.filter(
+      (customer) => normalizeCustomerPhone(customer.phone) === normalizedQuery
+    );
+    setMatchedCustomer(matches.length === 1 ? matches[0] : null);
   }, [phoneQuery, customers]);
+
+  useEffect(() => {
+    if (matchedCustomer?.email) {
+      setCustomerEmail((current) => current.trim() || matchedCustomer.email || '');
+    }
+  }, [matchedCustomer]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -104,8 +169,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
       } else if (event.key === 'F9') {
         event.preventDefault();
         if (posCart.length > 0 && !isSubmitting) {
-          onCompletePosOrder(tenderType, matchedCustomer?.id, cookingNote);
-          setCookingNote('');
+          handleCompleteOrder();
         }
       } else if (event.key === 'F8') {
         event.preventDefault();
@@ -117,14 +181,11 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
-    cookingNote,
+    handleCompleteOrder,
     isSubmitting,
     lastCompletedOrder,
-    matchedCustomer?.id,
-    onCompletePosOrder,
     onPrintReceipt,
     posCart.length,
-    tenderType,
   ]);
 
   const handleSaveNewCustomer = async (e: React.FormEvent) => {
@@ -144,7 +205,10 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
     <div className="flex flex-col w-full pb-6 gap-4">
       {/* Top Banner & Fast Actions */}
       <div className="flex flex-wrap items-center justify-between gap-2 liquid-glass p-3 rounded-2xl shadow-xl border border-white/[0.08]">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-full overflow-hidden border border-[#D4AF37]/60 shadow-xs shrink-0 bg-black p-0.5">
+            <img src="/images/tsc-logo.jpg" alt="The Sawariya Cafe" className="w-full h-full object-cover rounded-full" />
+          </div>
           {/* Service Mode Selector */}
           <div className="flex gap-1 bg-surface-container-high/60 backdrop-blur-md p-1 rounded-xl border border-white/[0.06]">
             {([
@@ -268,7 +332,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                       if (manageStockMode && onToggleItemAvailability) {
                         onToggleItemAvailability(item.id);
                       } else if (isAvailable) {
-                        onAddPosItem(item);
+                        setVariantItem(item);
                       }
                     }}
                     className="w-full text-left cursor-pointer flex flex-col flex-1"
@@ -277,6 +341,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                       <CafeImage
                         src={item.imageUrl}
                         alt={item.name}
+                        productId={item.id}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                       {!isAvailable && (
@@ -294,11 +359,16 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                       )}
                     </div>
                     <div className="p-3 flex flex-col justify-between flex-1 gap-2">
-                      <span className="block truncate text-xs sm:text-sm font-bold text-on-surface">
-                        {item.name}
-                      </span>
+                      <div>
+                        <span className="block truncate text-xs sm:text-sm font-bold text-on-surface">
+                          {item.name}
+                        </span>
+                        <span className="text-[10px] text-primary/80 font-semibold block mt-0.5">
+                          Tap to select size
+                        </span>
+                      </div>
                       <div className="flex items-center justify-between rounded-xl liquid-glass-subcard px-2.5 py-1.5">
-                        <span className="text-xs sm:text-sm font-black text-primary">₹{item.price}</span>
+                        <span className="text-xs sm:text-sm font-black text-primary">From ₹{item.price}</span>
                         <span className="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider">
                           {item.station}
                         </span>
@@ -347,12 +417,12 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
             )}
           </div>
 
-          {/* Customer Loyalty Search Strip */}
+          {/* Customer Contact and Loyalty Search Strip */}
           <div className="bg-surface-container rounded-xl p-2.5 flex flex-col gap-1.5 border border-outline-variant/30">
             <div className="flex items-center justify-between text-xs font-semibold">
               <span className="text-on-surface-variant flex items-center gap-1">
                 <span className="material-symbols-outlined text-[15px] text-primary">person_search</span>
-                Loyalty Customer Lookup
+                Customer Contact &amp; Loyalty
               </span>
               {matchedCustomer && (
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary-container text-on-primary-container font-black uppercase tracking-wider">
@@ -361,27 +431,68 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
               )}
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <input
-                type="tel"
-                value={phoneQuery}
-                onChange={(e) => setPhoneQuery(e.target.value)}
-                placeholder="Phone number..."
-                className="flex-1 bg-surface-container-high rounded-lg px-2.5 py-1.5 text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-primary font-mono"
-              />
-              {phoneQuery && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPhoneQuery('');
-                    setMatchedCustomer(null);
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              <label className="min-w-0">
+                <span className="mb-1 block text-[10px] font-semibold text-on-surface-variant">
+                  Mobile number *
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    required
+                    aria-label="Customer mobile number"
+                    aria-invalid={Boolean(contactInfoError && !isPhoneValid)}
+                    value={phoneQuery}
+                    onChange={(event) => {
+                      setPhoneQuery(event.target.value);
+                      setContactInfoError('');
+                    }}
+                    placeholder="10-digit mobile number"
+                    className="min-w-0 flex-1 bg-surface-container-high rounded-lg px-2.5 py-1.5 text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+                  />
+                  {phoneQuery && (
+                    <button
+                      type="button"
+                      aria-label="Clear mobile number"
+                      onClick={() => {
+                        setPhoneQuery('');
+                        setMatchedCustomer(null);
+                        setContactInfoError('');
+                      }}
+                      className="text-[11px] text-on-surface-variant hover:text-error px-1.5 font-bold"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </span>
+              </label>
+              <label className="min-w-0">
+                <span className="mb-1 block text-[10px] font-semibold text-on-surface-variant">
+                  Email address *
+                </span>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  required
+                  aria-label="Customer email address"
+                  aria-invalid={Boolean(contactInfoError && !isEmailValid)}
+                  value={customerEmail}
+                  onChange={(event) => {
+                    setCustomerEmail(event.target.value);
+                    setContactInfoError('');
                   }}
-                  className="text-[11px] text-on-surface-variant hover:text-error px-1.5 font-bold"
-                >
-                  ✕
-                </button>
-              )}
+                  placeholder="customer@example.com"
+                  className="w-full min-w-0 bg-surface-container-high rounded-lg px-2.5 py-1.5 text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </label>
             </div>
+            {contactInfoError && (
+              <p role="alert" className="text-[11px] font-semibold text-error">
+                {contactInfoError}
+              </p>
+            )}
 
             {matchedCustomer ? (
               <div className="flex items-center justify-between text-xs pt-2 mt-2 border-t border-outline-variant/15">
@@ -420,19 +531,25 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
             <div className="py-8 text-center text-xs text-on-surface-variant bg-surface-container-lowest/60 rounded-2xl border border-dashed border-outline-variant/30 flex flex-col items-center gap-1.5">
               <span className="material-symbols-outlined text-2xl text-outline">point_of_sale</span>
               <span className="font-semibold text-on-surface">Tap menu items on the left to add to bill</span>
-              <span className="text-[10px] text-outline">Supports Dine-In, Takeaway, and Delivery</span>
             </div>
           ) : (
             <div className="flex flex-col gap-2 max-h-56 overflow-y-auto pr-1">
               {posCart.map((item) => (
                 <div
-                  key={item.menuItemId}
+                  key={`${item.menuItemId}-${item.size ?? 'default'}`}
                   className="flex items-center justify-between gap-2 p-2.5 rounded-xl liquid-glass-subcard transition-all"
                 >
                   <div className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-bold text-on-surface">
-                      {item.name}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="block truncate text-xs font-bold text-on-surface">
+                        {item.name}
+                      </span>
+                      {item.size && (
+                        <span className="px-1.5 py-0.5 rounded-md bg-[#FF6422]/20 text-[#FF6422] text-[10px] font-black uppercase tracking-wider">
+                          {item.size}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[11px] text-primary font-bold tabular-nums">
                       ₹{item.price * item.quantity} <span className="text-outline font-normal">({formatINR(item.price)} ea)</span>
                     </span>
@@ -440,8 +557,8 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      aria-label={`Decrease ${item.name}`}
-                      onClick={() => onUpdatePosQty(item.menuItemId, -1)}
+                      aria-label={`Decrease ${item.name}${item.size ? ` ${item.size}` : ''}`}
+                      onClick={() => onUpdatePosQty(item.menuItemId, -1, item.size)}
                       className="grid h-7 w-7 place-items-center rounded-lg bg-surface-container-high/80 hover:bg-surface-bright text-xs font-bold cursor-pointer transition-colors border border-white/[0.06]"
                     >
                       −
@@ -449,8 +566,8 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                     <span className="w-5 text-center text-xs font-black tabular-nums">{item.quantity}</span>
                     <button
                       type="button"
-                      aria-label={`Increase ${item.name}`}
-                      onClick={() => onUpdatePosQty(item.menuItemId, 1)}
+                      aria-label={`Increase ${item.name}${item.size ? ` ${item.size}` : ''}`}
+                      onClick={() => onUpdatePosQty(item.menuItemId, 1, item.size)}
                       className="grid h-7 w-7 place-items-center rounded-lg bg-primary text-on-primary text-xs font-bold cursor-pointer hover:brightness-110 shadow-sm transition-all"
                     >
                       +
@@ -514,7 +631,7 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
                   className={`rounded-lg py-2 px-1 text-center text-xs font-bold transition-all cursor-pointer ${
                     tenderType === mode
                       ? 'bg-primary text-on-primary shadow-sm ring-1 ring-primary'
-                      : 'bg-surface-container-high text-on-surface hover:bg-surface-bright'
+                      : 'bg-surface-container-high text-on-surface hover:bg-primary/10 hover:text-primary hover:ring-1 hover:ring-primary/30'
                   }`}
                 >
                   {label}
@@ -547,6 +664,134 @@ export const PosTerminalScreen: React.FC<PosTerminalScreenProps> = ({
           </button>
         </section>
       </div>
+
+      {variantItem && (() => {
+        const variants = getItemVariants(variantItem);
+        const dialogTheme = isLightTheme
+          ? {
+              overlay: 'bg-black/35',
+              panel: 'border-outline-variant bg-surface-container-low text-on-surface',
+              sectionBorder: 'border-outline-variant',
+              thumbnail: 'bg-surface-container-high border-outline-variant',
+              title: 'text-on-surface',
+              muted: 'text-on-surface-variant',
+              close: 'bg-surface-container-high hover:bg-surface-variant text-on-surface-variant hover:text-on-surface',
+              label: 'text-on-surface',
+              option: 'border-outline-variant bg-surface-container-lowest hover:bg-secondary-container hover:border-primary',
+              optionTitle: 'text-on-surface group-hover:text-primary',
+              optionSubtitle: 'text-on-surface-variant',
+              price: 'text-primary bg-surface-container-high border-outline-variant',
+              cancel: 'bg-surface-container-high hover:bg-surface-variant text-on-surface-variant',
+            }
+          : {
+              overlay: 'bg-black/70',
+              panel: 'border-slate-700 bg-slate-900 text-slate-100',
+              sectionBorder: 'border-slate-800',
+              thumbnail: 'bg-slate-800 border-slate-700',
+              title: 'text-slate-100',
+              muted: 'text-slate-400',
+              close: 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-100',
+              label: 'text-slate-300',
+              option: 'border-slate-700 bg-slate-800 hover:bg-primary/15 hover:border-primary',
+              optionTitle: 'text-slate-100 group-hover:text-primary',
+              optionSubtitle: 'text-slate-400',
+              price: 'text-primary bg-slate-900 border-slate-700',
+              cancel: 'bg-slate-800 hover:bg-slate-700 text-slate-300',
+            };
+        return (
+          <div
+            className={`fixed inset-0 z-[60] flex items-center justify-center ${dialogTheme.overlay} p-4 backdrop-blur-sm`}
+            onClick={() => setVariantItem(null)}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="pos-size-dialog-title"
+              className={`w-full max-w-sm rounded-3xl border ${dialogTheme.panel} p-6 shadow-2xl space-y-4`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className={`flex items-start justify-between gap-3 border-b ${dialogTheme.sectionBorder} pb-3`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-2xl overflow-hidden ${dialogTheme.thumbnail} shrink-0 border`}>
+                    <CafeImage
+                      src={variantItem.imageUrl}
+                      alt={variantItem.name}
+                      productId={variantItem.id}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 id="pos-size-dialog-title" className={`text-base font-bold ${dialogTheme.title}`}>
+                        {variantItem.name}
+                      </h2>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                        variantItem.isVeg !== false ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                      }`}>
+                        {variantItem.isVeg !== false ? 'Veg' : 'Non-Veg'}
+                      </span>
+                    </div>
+                    <p className={`text-xs ${dialogTheme.muted} mt-0.5`}>{variantItem.category} • Base {formatINR(variantItem.price)}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close size selection"
+                  onClick={() => setVariantItem(null)}
+                  className={`w-8 h-8 rounded-full ${dialogTheme.close} flex items-center justify-center transition-colors cursor-pointer`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
+
+              <div>
+                <label className={`text-xs font-semibold ${dialogTheme.label} block mb-2`}>
+                  Select Size / Portion:
+                </label>
+                <div className="grid gap-2">
+                  {variants.map((variant) => (
+                    <button
+                      key={variant.size}
+                      type="button"
+                      aria-label={`Add ${variantItem.name}, ${variant.size}, ${formatINR(variant.price)}`}
+                      onClick={() => {
+                        onAddPosItem(variantItem, variant);
+                        setVariantItem(null);
+                      }}
+                      className={`flex items-center justify-between p-3 rounded-2xl border ${dialogTheme.option} transition-all cursor-pointer group text-left active:scale-[0.98]`}
+                    >
+                      <div className="min-w-0 pr-2">
+                        <span className={`block text-sm font-bold ${dialogTheme.optionTitle} transition-colors truncate`}>
+                          {variant.size}
+                        </span>
+                        {variant.label && (
+                          <span className={`text-[11px] ${dialogTheme.optionSubtitle} block truncate`}>
+                            {variant.label}
+                          </span>
+                        )}
+                      </div>
+                      <span className={`text-sm font-black ${dialogTheme.price} whitespace-nowrap px-2.5 py-1 rounded-xl border`}>
+                        {formatINR(variant.price)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className={`pt-2 border-t ${dialogTheme.sectionBorder} flex items-center justify-between`}>
+                <span className={`text-xs ${dialogTheme.muted}`}>Tap size to add to bill</span>
+                <button
+                  type="button"
+                  onClick={() => setVariantItem(null)}
+                  className={`px-4 py-2 rounded-xl ${dialogTheme.cancel} text-xs font-semibold transition-colors cursor-pointer`}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Quick Add Customer Modal */}
       {showAddCustomerModal && (

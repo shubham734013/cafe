@@ -1,11 +1,19 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CAFE_ASSETS } from '../data/cafeSeedData';
 import { AuthSessionState, ScreenId, StaffScreenId, WorkspaceMode } from '../types/cafe';
 import { isKitchenPath } from '../routing/routes';
 import { canStaffRoleAccessScreen, formatStaffRoleLabel } from '../utils/rbac';
+import type { CafeAssistantContext } from '../utils/cafeAssistant';
+import { CafeAssistantChat } from './CafeAssistantChat';
+import { VishalAiAssistant } from './VishalAiAssistant';
 import { CafeBrandEmblem } from './CafeBrandEmblem';
 import { CafeImage } from './CafeImage';
-import { LiquidGlassShader, ShaderType } from './LiquidGlassShader';
+import type { ShaderType } from './LiquidGlassShader';
+import { CustomerThemeProvider } from './CustomerThemeContext';
+
+const LiquidGlassShader = lazy(() =>
+  import('./LiquidGlassShader').then((module) => ({ default: module.LiquidGlassShader }))
+);
 
 interface AppShellProps {
   activeScreen: ScreenId;
@@ -15,16 +23,23 @@ interface AppShellProps {
   onDismissCartAddedNotice?: () => void;
   liveKotCount: number;
   cafeName?: string;
+  cafeLogoUrl?: string;
   authSession?: AuthSessionState;
   isSyncError?: boolean;
   syncErrorMessage?: string;
   onRetrySync?: () => void;
   onLockStaff?: () => void;
+  deliveryAddress?: string;
+  deliveryLocationOpen?: boolean;
+  onOpenDeliveryLocation?: () => void;
+  onCloseDeliveryLocation?: () => void;
+  onSaveDeliveryLocation?: (address: string) => void;
+  assistantContext?: CafeAssistantContext;
   onNavigate: (screen: ScreenId, mode?: WorkspaceMode) => void;
   children: React.ReactNode;
 }
 
-const CUSTOMER_NAV: { id: ScreenId; label: string; icon: string }[] = [
+const CUSTOMER_NAV: readonly { id: ScreenId; label: string; icon: string }[] = [
   { id: 'home', label: 'Home', icon: 'home' },
   { id: 'menu', label: 'Menu', icon: 'restaurant_menu' },
   { id: 'tracking', label: 'Orders', icon: 'receipt_long' },
@@ -72,6 +87,7 @@ const SCREEN_TITLES: Record<ScreenId, string> = {
   login: 'Customer Sign In',
   'privacy-policy': 'Privacy Policy',
   'terms-and-conditions': 'Terms & Conditions',
+  akshat: 'Akshat',
   'staff-home': 'Staff Home',
   'pos-terminal': 'Billing Counter',
   'pos-orders': 'Billing Orders',
@@ -97,16 +113,30 @@ export const AppShell: React.FC<AppShellProps> = ({
   onDismissCartAddedNotice,
   liveKotCount,
   cafeName = 'Seth Sawariya Cafe',
+  cafeLogoUrl = '/images/tsc-logo.jpg',
   authSession,
   isSyncError = false,
   syncErrorMessage,
   onRetrySync,
   onLockStaff,
+  deliveryAddress = '',
+  deliveryLocationOpen = false,
+  onOpenDeliveryLocation,
+  onCloseDeliveryLocation,
+  onSaveDeliveryLocation,
+  assistantContext,
   onNavigate,
   children,
 }) => {
   const [notifOpen, setNotifOpen] = useState(false);
+  const [supportChatOpen, setSupportChatOpen] = useState(false);
   const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
+  const [deliveryAddressDraft, setDeliveryAddressDraft] = useState('');
+  const [savedProfileAddress, setSavedProfileAddress] = useState('');
+  const [gpsCoordinates, setGpsCoordinates] = useState('');
+  const [gpsStatus, setGpsStatus] = useState<'idle' | 'locating' | 'located' | 'error'>('idle');
+  const [gpsMessage, setGpsMessage] = useState('');
+  const gpsRequestIdRef = useRef(0);
   const [isLightTheme, setIsLightTheme] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('cafe_customer_theme');
@@ -117,6 +147,59 @@ export const AppShell: React.FC<AppShellProps> = ({
 
   const activeRole = authSession?.authenticated ? authSession.session?.role : null;
   const isStaffWorkspace = workspaceMode === 'staff';
+
+  const requestCurrentLocation = useCallback(() => {
+    const requestId = ++gpsRequestIdRef.current;
+    if (!window.isSecureContext || !navigator.geolocation) {
+      setGpsStatus('error');
+      setGpsMessage('GPS needs a secure connection. Enter your address manually.');
+      return;
+    }
+
+    setGpsStatus('locating');
+    setGpsMessage('Getting your current location…');
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        if (requestId !== gpsRequestIdRef.current) return;
+        const coordinates = `Current location: ${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
+        setGpsCoordinates(coordinates);
+        setDeliveryAddressDraft((current) => current.trim() || coordinates);
+        setGpsStatus('located');
+        setGpsMessage('GPS location found. Add your street address or landmark for accurate delivery.');
+      },
+      (error) => {
+        if (requestId !== gpsRequestIdRef.current) return;
+        setGpsStatus('error');
+        setGpsMessage(
+          error.code === error.PERMISSION_DENIED
+            ? 'Location permission denied. Allow GPS access or enter your address manually.'
+            : error.code === error.POSITION_UNAVAILABLE
+              ? 'Current location is unavailable. Check GPS and try again.'
+              : 'Location request timed out. Try again or enter your address manually.'
+        );
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!deliveryLocationOpen) return;
+    setDeliveryAddressDraft(deliveryAddress);
+    try {
+      const profile = JSON.parse(localStorage.getItem('cafeos_customer_profile') || '{}') as {
+        address?: unknown;
+      };
+      setSavedProfileAddress(typeof profile.address === 'string' ? profile.address.trim() : '');
+    } catch (error) {
+      console.warn('Could not read the saved profile address:', error);
+      setSavedProfileAddress('');
+    }
+  }, [deliveryAddress, deliveryLocationOpen]);
+
+  useEffect(() => {
+    if (!deliveryLocationOpen || !gpsCoordinates) return;
+    setDeliveryAddressDraft((current) => current.trim() || gpsCoordinates);
+  }, [deliveryLocationOpen, gpsCoordinates]);
 
   useEffect(() => {
     if (!cartAddedNotice || !onDismissCartAddedNotice) return;
@@ -183,18 +266,22 @@ export const AppShell: React.FC<AppShellProps> = ({
 
   return (
     <div
-      className={`min-h-screen w-full overflow-x-hidden flex flex-col md:flex-row relative ${
+      className={`min-h-screen w-full overflow-x-clip flex flex-col md:flex-row relative ${
         isLightTheme
           ? 'bg-[#FAF7F2] text-[#221A15]'
           : 'bg-[#0B0F17]/90 text-on-surface'
       }`}
     >
       {/* Liquid Glass Fluid Shader Background (Active in Dark Mode) */}
-      {!isLightTheme && <LiquidGlassShader type={shaderType} intensity={0.9} />}
+      {!isLightTheme && (
+        <Suspense fallback={null}>
+          <LiquidGlassShader type={shaderType} intensity={0.9} />
+        </Suspense>
+      )}
 
       {/* Desktop Left Workspace Rail */}
       <aside
-        className={`hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 z-40 p-4 justify-between transition-all ${
+        className={`${activeScreen === 'login' ? 'hidden' : 'hidden md:flex'} ${activeScreen === 'login' ? '' : 'md:w-64 md:flex-col md:fixed md:inset-y-0'} z-40 p-4 justify-between transition-all ${
           isLightTheme
             ? 'bg-[#F4EFEA] border-r border-[#E5DDD2] text-[#221A15]'
             : 'bg-surface-container-lowest/65 backdrop-blur-2xl border-r border-white/[0.08] text-on-surface shadow-[1px_0_24px_rgba(0,0,0,0.45)]'
@@ -204,12 +291,12 @@ export const AppShell: React.FC<AppShellProps> = ({
           {/* Brand */}
           {!isStaffWorkspace ? (
             <div className="flex flex-col items-center text-center pt-2 px-1">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-xs mb-2 ${
-                isLightTheme
-                  ? 'bg-[#382319] text-white'
-                  : 'bg-primary/20 text-primary border border-primary/30'
-              }`}>
-                <span className="material-symbols-outlined text-[24px]">local_cafe</span>
+              <div className="w-16 h-16 rounded-full flex items-center justify-center shadow-lg mb-2 overflow-hidden border-2 border-[#D4AF37]/60 bg-black p-0.5">
+                <img
+                  src={cafeLogoUrl}
+                  alt="The Sawariya Cafe Logo"
+                  className="w-full h-full object-cover rounded-full"
+                />
               </div>
               <h2 className={`font-serif font-bold text-base leading-tight tracking-tight ${
                 isLightTheme ? 'text-[#1F1610]' : 'text-on-surface'
@@ -224,11 +311,16 @@ export const AppShell: React.FC<AppShellProps> = ({
             </div>
           ) : (
             <div className="flex items-center gap-2.5 px-1">
-              <div className="w-10 h-10 rounded-xl bg-surface-container-high p-1.5 flex items-center justify-center shrink-0">
-                <CafeBrandEmblem className="w-full h-full" />
+              <div className="w-11 h-11 rounded-full overflow-hidden border border-[#D4AF37]/60 shadow-sm shrink-0 bg-black p-0.5">
+                <img
+                  src={cafeLogoUrl}
+                  alt="The Sawariya Cafe Logo"
+                  className="w-full h-full object-cover rounded-full"
+                />
               </div>
               <div className="min-w-0">
                 <div className="text-sm font-bold text-primary truncate">{cafeName}</div>
+                <div className="text-[10px] text-on-surface-variant font-medium">The Sawariya Cafe</div>
               </div>
             </div>
           )}
@@ -260,6 +352,36 @@ export const AppShell: React.FC<AppShellProps> = ({
                   </button>
                 );
               })}
+
+              <button
+                type="button"
+                onClick={() => onNavigate('cart', 'customer')}
+                className={`w-full flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-2xl text-sm transition-all cursor-pointer ${
+                  activeScreen === 'cart'
+                    ? isLightTheme
+                      ? 'bg-[#382319] text-white font-bold shadow-xs'
+                      : 'bg-primary text-on-primary font-bold shadow-md'
+                    : isLightTheme
+                      ? 'text-[#7A7067] hover:bg-[#F5EFE8] hover:text-[#1F1610] font-medium'
+                      : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium'
+                }`}
+              >
+                <span className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-[20px]">shopping_bag</span>
+                  <span>Cart</span>
+                </span>
+                {cartCount > 0 && (
+                  <span className={`min-w-5 h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center tabular-nums ${
+                    activeScreen === 'cart'
+                      ? 'bg-white/20 text-white'
+                      : isLightTheme
+                        ? 'bg-[#382319]/10 text-[#382319]'
+                        : 'bg-primary/15 text-primary'
+                  }`}>
+                    {cartCount}
+                  </span>
+                )}
+              </button>
 
               <div className={`pt-4 mt-4 border-t ${isLightTheme ? 'border-[#EAE2D7]' : 'border-outline-variant/15'}`}>
                 <button
@@ -356,42 +478,6 @@ export const AppShell: React.FC<AppShellProps> = ({
                   <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                 </button>
               </div>
-            ) : activeRole && canStaffRoleAccessScreen(activeRole, 'kitchen-display-system') ? (
-              <div
-                className={`rounded-2xl border p-3 ${
-                  isLightTheme
-                    ? 'border-[#E3DBD2] bg-[#FAF7F2]'
-                    : 'border-white/10 bg-surface-container-low/75'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-primary">
-                    Service pulse
-                  </span>
-                  <span className={`rounded-lg px-2 py-0.5 text-[10px] font-bold tabular-nums ${
-                    liveKotCount > 0
-                      ? 'bg-amber-400/10 text-amber-400'
-                      : 'bg-emerald-400/10 text-emerald-400'
-                  }`}>
-                    {liveKotCount}
-                  </span>
-                </div>
-                <p className={`mt-2 text-xs font-medium ${
-                  isLightTheme ? 'text-[#4D453D]' : 'text-on-surface'
-                }`}>
-                  {liveKotCount > 0
-                    ? `${liveKotCount} active ${liveKotCount === 1 ? 'kitchen ticket' : 'kitchen tickets'}`
-                    : 'Kitchen queue is clear'}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('kitchen-display-system', 'staff')}
-                  className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl bg-primary/10 px-2.5 py-2 text-[11px] font-bold text-primary transition-colors hover:bg-primary/15 cursor-pointer"
-                >
-                  Open kitchen
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                </button>
-              </div>
             ) : null}
           </div>
         </div>
@@ -430,7 +516,7 @@ export const AppShell: React.FC<AppShellProps> = ({
       </aside>
 
       {/* Main Content Column */}
-      <div className="flex-1 flex flex-col md:pl-64 min-h-screen w-full min-w-0">
+      <div className={`flex-1 flex flex-col min-h-screen w-full min-w-0 ${activeScreen === 'login' ? '' : 'md:pl-64'}`}>
         {/* Top Header */}
         <header
           className={`fixed top-0 left-0 right-0 md:left-64 z-30 pt-safe transition-all ${
@@ -445,8 +531,8 @@ export const AppShell: React.FC<AppShellProps> = ({
             <div className="flex items-center gap-2.5 min-w-0">
               {isStaffWorkspace ? (
                 <>
-                  <div className="w-9 h-9 rounded-xl bg-surface-container-high/80 border border-white/[0.08] flex items-center justify-center text-primary shrink-0 md:hidden shadow-sm">
-                    <span className="material-symbols-outlined text-[20px]">local_cafe</span>
+                  <div className="w-9 h-9 rounded-full overflow-hidden border border-[#D4AF37]/60 flex items-center justify-center shrink-0 md:hidden shadow-sm bg-black p-0.5">
+                    <img src={cafeLogoUrl} alt="The Sawariya Cafe Logo" className="w-full h-full object-cover rounded-full" />
                   </div>
                   <div className="flex flex-col min-w-0">
                     <div className="flex items-center gap-1.5 min-w-0">
@@ -461,37 +547,48 @@ export const AppShell: React.FC<AppShellProps> = ({
                 </>
               ) : (
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                    isLightTheme ? 'bg-[#FAF7F2] border border-[#EAE2D7] text-[#382319]' : 'bg-primary/20 text-primary'
-                  }`}>
-                    <span className="material-symbols-outlined text-[18px]">location_on</span>
+                  <div className="w-8 h-8 rounded-full overflow-hidden border border-[#D4AF37]/60 flex items-center justify-center shrink-0 shadow-xs bg-black p-0.5">
+                    <img src={cafeLogoUrl} alt="The Sawariya Cafe Logo" className="w-full h-full object-cover rounded-full" />
                   </div>
-                  <div className="flex flex-col min-w-0 text-left">
-                    <div className="flex items-center gap-0.5 min-w-0">
-                      <span className={`text-xs sm:text-sm font-bold tracking-tight truncate ${
-                        isLightTheme ? 'text-[#1F1610]' : 'text-on-surface'
-                      }`}>
-                        The Sawariya Cafe
-                      </span>
-                      <span className={`material-symbols-outlined text-[15px] ${
+                  <button
+                    type="button"
+                    onClick={onOpenDeliveryLocation}
+                    aria-label={`Delivery location: ${deliveryAddress || 'add address'}`}
+                    aria-haspopup="dialog"
+                    className="flex items-center gap-1.5 sm:gap-2 min-w-0 max-w-[130px] min-[390px]:max-w-[180px] sm:max-w-xs text-left rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C67C4E]"
+                  >
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                      isLightTheme ? 'bg-[#FAF7F2] border border-[#EAE2D7] text-[#382319]' : 'bg-primary/20 text-primary'
+                    }`}>
+                      <span className="material-symbols-outlined text-[16px]">location_on</span>
+                    </div>
+                    <div className="flex flex-col min-w-0 text-left">
+                      <div className="flex items-center gap-0.5 min-w-0">
+                        <span className={`text-xs sm:text-sm font-bold tracking-tight truncate ${
+                          isLightTheme ? 'text-[#1F1610]' : 'text-on-surface'
+                        }`}>
+                          {deliveryAddress ? 'Deliver to' : 'Set delivery location'}
+                        </span>
+                        <span className={`material-symbols-outlined text-[15px] ${
+                          isLightTheme ? 'text-[#7A7067]' : 'text-on-surface-variant'
+                        }`}>
+                          expand_more
+                        </span>
+                      </div>
+                      <span className={`text-[10px] truncate font-medium ${
                         isLightTheme ? 'text-[#7A7067]' : 'text-on-surface-variant'
                       }`}>
-                        expand_more
+                        {deliveryAddress || 'Tap to add your address'}
                       </span>
                     </div>
-                    <span className={`text-[10px] truncate font-medium ${
-                      isLightTheme ? 'text-[#7A7067]' : 'text-on-surface-variant'
-                    }`}>
-                      Sanganer, Jaipur
-                    </span>
-                  </div>
+                  </button>
                 </div>
               )}
             </div>
 
             {/* Right Header Controls */}
             <div className="flex items-center gap-1.5 shrink-0">
-              {!isStaffWorkspace && activeScreen === 'home' && (
+              {!isStaffWorkspace && (
                 <button
                   type="button"
                   onClick={() => onNavigate('cart', 'customer')}
@@ -543,21 +640,34 @@ export const AppShell: React.FC<AppShellProps> = ({
               {activeRole !== 'kitchen' && <div className="relative">
                 <button
                   type="button"
-                  aria-label="Notifications"
+                  aria-label={isStaffWorkspace ? 'Notifications' : 'Support'}
+                  aria-haspopup="dialog"
+                  aria-expanded={notifOpen}
                   onClick={() => setNotifOpen((o) => !o)}
-                  className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors cursor-pointer ${
+                  className={`h-9 flex items-center justify-center rounded-full transition-colors cursor-pointer ${
                     isLightTheme
                       ? 'bg-white border border-[#EAE2D7] text-[#1F1610] hover:bg-[#F5EFE8]'
-                      : 'text-on-surface-variant hover:text-primary'
+                      : 'bg-surface-container border border-outline-variant/15 text-on-surface hover:bg-surface-container-high'
+                  } ${
+                    isStaffWorkspace ? 'w-9' : 'gap-1.5 px-2.5'
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[20px]">notifications</span>
+                  <span className="material-symbols-outlined text-[19px]">
+                    {isStaffWorkspace ? 'notifications' : 'support_agent'}
+                  </span>
+                  {!isStaffWorkspace && <span className="text-[11px] font-bold hidden min-[400px]:inline">Support</span>}
                 </button>
 
                 {notifOpen && (
-                  <div className="absolute right-0 mt-2 w-72 rounded-xl bg-surface-container-highest p-3 shadow-2xl z-50 space-y-2">
+                  <div
+                    role="dialog"
+                    aria-label={isStaffWorkspace ? 'Cafe updates' : 'Help and support'}
+                    className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-6rem)] overflow-y-auto rounded-xl bg-surface-container-highest p-3 shadow-2xl z-50 space-y-2"
+                  >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-on-surface">Cafe Updates</span>
+                      <span className="text-xs font-bold text-on-surface">
+                        {isStaffWorkspace ? 'Cafe Updates' : 'Help & Support'}
+                      </span>
                       <button
                         type="button"
                         onClick={() => setNotifOpen(false)}
@@ -566,11 +676,52 @@ export const AppShell: React.FC<AppShellProps> = ({
                         Close
                       </button>
                     </div>
-                    <div className="p-2.5 rounded-lg bg-surface-container text-xs">
-                      <p className="font-semibold text-on-surface">
-                        {liveKotCount} active orders in kitchen
-                      </p>
-                    </div>
+                    {isStaffWorkspace ? (
+                      <div className="p-2.5 rounded-lg bg-surface-container text-xs">
+                        <p className="font-semibold text-on-surface">
+                          {liveKotCount} active orders in kitchen
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="rounded-lg bg-surface-container p-2.5 text-xs">
+                          <p className="mb-2 text-on-surface-variant">
+                            Need help with an order or visit? Contact our support team.
+                          </p>
+                          <div className="space-y-1">
+                            <a
+                              href="tel:+919876543210"
+                              className="block rounded-md px-2 py-1.5 font-semibold text-primary hover:bg-surface-container-high"
+                            >
+                              Call +91 98765 43210
+                            </a>
+                            <a
+                              href="mailto:TheSawariyacafe70@gmail.com"
+                              className="block break-all rounded-md px-2 py-1.5 font-semibold text-primary hover:bg-surface-container-high"
+                            >
+                              Email TheSawariyacafe70@gmail.com
+                            </a>
+                          </div>
+                        </div>
+
+                        {!supportChatOpen ? (
+                          <button
+                            type="button"
+                            onClick={() => setSupportChatOpen(true)}
+                            className="flex w-full items-center gap-2 rounded-lg border border-[#D4AF37]/40 bg-surface-container px-3 py-2.5 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-high"
+                          >
+                            <span className="material-symbols-outlined text-[18px] text-[#D4AF37]">smart_toy</span>
+                            <span className="flex-1">Ask Vishal AI ✨</span>
+                            <span className="material-symbols-outlined text-[16px] text-on-surface-variant">chevron_right</span>
+                          </button>
+                        ) : (
+                          <CafeAssistantChat
+                            context={assistantContext}
+                            onClose={() => setSupportChatOpen(false)}
+                          />
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
               </div>}
@@ -619,10 +770,12 @@ export const AppShell: React.FC<AppShellProps> = ({
 
         {/* Main Stage */}
         <main
-          className={`flex-1 w-full max-w-7xl mx-auto px-4 min-w-0 ${
-            !isStaffWorkspace
-              ? `${activeScreen === 'home' ? 'pt-16' : 'pt-4'} md:pt-8 pb-24 md:pb-12`
-              : 'pt-[4.5rem] md:pt-20 pb-24 md:pb-10'
+          className={`flex-1 w-full max-w-7xl mx-auto px-3 sm:px-4 md:px-6 min-w-0 ${
+            activeScreen === 'login'
+              ? 'p-0 max-w-none'
+              : !isStaffWorkspace
+                ? `${activeScreen === 'home' ? 'pt-16' : 'pt-4'} md:pt-8 pb-24 md:pb-12`
+                : 'pt-[4.5rem] md:pt-20 pb-24 md:pb-10'
           }`}
         >
           {isSyncError && (
@@ -651,13 +804,16 @@ export const AppShell: React.FC<AppShellProps> = ({
             key={`${workspaceMode}-${activeScreen}`}
             className={!isStaffWorkspace ? 'customer-screen-enter' : undefined}
           >
-            {children}
+            <CustomerThemeProvider value={{ isLightTheme, toggleTheme }}>
+              {children}
+            </CustomerThemeProvider>
           </div>
         </main>
 
         {/* Mobile Bottom Tab Bar */}
         {((!isStaffWorkspace &&
           activeScreen !== 'splash' &&
+          activeScreen !== 'login' &&
           activeScreen !== 'privacy-policy' &&
           activeScreen !== 'terms-and-conditions') ||
           isStaff) && (
@@ -725,7 +881,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                     key={tab.id}
                     type="button"
                     onClick={() => onNavigate(tab.id, 'customer')}
-                    className={`flex flex-col items-center justify-center min-w-[56px] py-1 transition-all cursor-pointer ${
+                    className={`flex flex-1 min-w-0 flex-col items-center justify-center py-1 px-0.5 transition-all cursor-pointer ${
                       active
                         ? isLightTheme
                           ? 'text-[#382319] font-bold'
@@ -736,7 +892,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                     }`}
                   >
                     <div className="relative flex flex-col items-center">
-                      <span className={`material-symbols-outlined text-[22px] transition-transform ${active ? 'scale-110 font-bold' : ''}`}>
+                      <span className={`material-symbols-outlined text-[20px] min-[360px]:text-[22px] transition-transform ${active ? 'scale-110 font-bold' : ''}`}>
                         {tab.icon}
                       </span>
                       {active && (
@@ -745,7 +901,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                         }`} />
                       )}
                     </div>
-                    <span className="text-[10px] mt-0.5 tracking-tight font-medium">
+                    <span className="text-[10px] min-[360px]:text-[11px] mt-0.5 tracking-tight font-medium truncate max-w-full">
                       {tab.label}
                     </span>
                   </button>
@@ -845,7 +1001,7 @@ export const AppShell: React.FC<AppShellProps> = ({
             }`}
             style={{ bottom: 'calc(4.75rem + env(safe-area-inset-bottom))' }}
           >
-            <span className="material-symbols-outlined flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[20px] text-primary">
+            <span className="material-symbols-outlined !flex h-9 w-9 shrink-0 !items-center !justify-center rounded-full bg-primary/15 !text-[20px] !leading-[20px] text-primary">
               check
             </span>
             <div className="min-w-0 flex-1">
@@ -876,6 +1032,118 @@ export const AppShell: React.FC<AppShellProps> = ({
             </button>
           </div>
         )}
+
+        {deliveryLocationOpen && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-3 backdrop-blur-sm"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) onCloseDeliveryLocation?.();
+            }}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="delivery-location-title"
+              className="w-full max-w-md rounded-3xl border border-[#EAE2D7] bg-[#FAF7F2] p-5 shadow-2xl"
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 id="delivery-location-title" className="font-serif text-lg font-bold text-[#1F1610]">
+                    Delivery location
+                  </h2>
+                  <p className="mt-1 text-xs text-[#7A7067]">Where should we bring your order?</p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close delivery location"
+                  onClick={onCloseDeliveryLocation}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE2D7] bg-white text-[#382319]"
+                >
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
+
+              {savedProfileAddress && savedProfileAddress !== deliveryAddress && (
+                <button
+                  type="button"
+                  onClick={() => setDeliveryAddressDraft(savedProfileAddress)}
+                  className="mb-3 flex w-full items-center gap-3 rounded-2xl border border-[#EAE2D7] bg-white p-3 text-left hover:bg-[#F5EFE8]"
+                >
+                  <span className="material-symbols-outlined text-[#382319]">home</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-bold text-[#1F1610]">Use profile address</span>
+                    <span className="block truncate text-[11px] text-[#7A7067]">{savedProfileAddress}</span>
+                  </span>
+                  <span className="material-symbols-outlined text-[18px] text-[#8C7E74]">arrow_forward</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                disabled={gpsStatus === 'locating'}
+                onClick={() => {
+                  if (gpsCoordinates) {
+                    setDeliveryAddressDraft(gpsCoordinates);
+                    setGpsMessage('GPS coordinates added. Add your street address or landmark for accurate delivery.');
+                  } else {
+                    requestCurrentLocation();
+                  }
+                }}
+                className="mb-3 flex w-full items-center gap-2 rounded-2xl border border-[#EAE2D7] bg-white px-3 py-2.5 text-left text-xs font-bold text-[#382319] transition-colors hover:bg-[#F5EFE8] disabled:cursor-wait disabled:opacity-60"
+              >
+                <span className="material-symbols-outlined text-[18px]">my_location</span>
+                <span>{gpsStatus === 'locating' ? 'Getting current location…' : 'Use current location'}</span>
+              </button>
+              {gpsMessage && (
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className={`mb-3 text-[11px] ${
+                    gpsStatus === 'error' ? 'text-red-700' : 'text-[#7A7067]'
+                  }`}
+                >
+                  {gpsMessage}
+                </p>
+              )}
+
+              <label htmlFor="delivery-address-input" className="mb-1.5 block text-xs font-bold text-[#1F1610]">
+                Full address and landmark
+              </label>
+              <textarea
+                id="delivery-address-input"
+                autoFocus
+                rows={3}
+                maxLength={240}
+                value={deliveryAddressDraft}
+                onChange={(event) => setDeliveryAddressDraft(event.target.value)}
+                placeholder="House / flat, street, area, city and landmark"
+                className="w-full resize-none rounded-2xl border border-[#EAE2D7] bg-white p-3 text-sm text-[#1F1610] placeholder:text-[#A69A8E] focus:border-[#C67C4E] focus:outline-none focus:ring-2 focus:ring-[#C67C4E]/20"
+              />
+              <p className="mt-1 text-[10px] text-[#8C7E74]">Up to 240 characters</p>
+
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={onCloseDeliveryLocation}
+                  className="flex-1 rounded-2xl border border-[#EAE2D7] bg-white py-3 text-xs font-bold text-[#382319]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deliveryAddressDraft.trim().length < 5}
+                  onClick={() => onSaveDeliveryLocation?.(deliveryAddressDraft.trim())}
+                  className="flex-1 rounded-2xl bg-[#382319] py-3 text-xs font-bold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Save location
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {/* Global Floating AI Copilot & Butler: Vishal */}
+        <VishalAiAssistant context={assistantContext} />
       </div>
     </div>
   );

@@ -2,10 +2,14 @@ import 'dotenv/config';
 import crypto from 'node:crypto';
 import { Pool } from 'pg';
 
-const connectionString =
-  process.env.DATABASE_URL ||
-  process.env.POSTGRES_URL ||
-  'postgresql://postgres:postgres@localhost:5432/cafeos';
+const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+
+function createPool(): Pool {
+  if (!connectionString) {
+    throw new Error('Set DATABASE_URL or POSTGRES_URL to use the optional PostgreSQL demo seed.');
+  }
+  return new Pool({ connectionString });
+}
 
 function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -18,7 +22,10 @@ function generateQrToken(): string {
 }
 
 export async function seedDatabase(customPool?: Pool) {
-  const pool = customPool || new Pool({ connectionString });
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('The sample PostgreSQL seed is disabled in production.');
+  }
+  const pool = customPool || createPool();
   const client = await pool.connect();
 
   try {

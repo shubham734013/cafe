@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type ColumnDef } from '@tanstack/react-table';
-import { useForm } from 'react-hook-form';
+import { useFieldArray, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import {
   Dialog,
@@ -14,10 +14,7 @@ import { addIngredientSchema } from '../shared/schemas';
 import type {
   InventoryIngredient,
   InventoryTab,
-  StockMovement,
-  InventoryBatch,
   PurchaseOrder,
-  StockCount,
 } from '../types/cafe';
 import {
   filterInventoryItems,
@@ -28,39 +25,12 @@ import { CafeDataTable } from './CafeDataTable';
 
 interface InventoryStockScreenProps {
   items: InventoryIngredient[];
-  stockMovements?: StockMovement[];
-  inventoryBatches?: InventoryBatch[];
   purchaseOrders?: PurchaseOrder[];
-  stockCounts?: StockCount[];
   onRestockItem: (id: string) => void | Promise<void>;
-  onAddIngredient: (ingredient: Omit<InventoryIngredient, 'id' | 'status' | 'fillPct'>) => void;
-  onReceiveStock: (payload: {
-    ingredientId: string;
-    quantity: number;
-    unitCost?: number;
-    supplier?: string;
-    batchNumber?: string;
-    expiryDate?: string;
-    note?: string;
-  }) => Promise<void>;
-  onRecordWaste: (payload: {
-    ingredientId: string;
-    quantity: number;
-    reason: string;
-    batchId?: string;
-  }) => Promise<void>;
-  onTransferStock: (payload: {
-    ingredientId: string;
-    quantity: number;
-    fromLocation: string;
-    toLocation: string;
-    note?: string;
-  }) => Promise<void>;
-  onCreateStockCount: (payload: {
-    physicalCounts: Array<{ ingredientId: string; physicalQuantity: number; note?: string }>;
-    note?: string;
-  }) => Promise<void>;
-  onApproveStockCount: (countId: string) => Promise<void>;
+  onAddIngredient: (
+    ingredient: Omit<InventoryIngredient, 'id' | 'status' | 'fillPct'>
+  ) => Promise<void>;
+  onRefresh: () => Promise<void>;
   onCreatePurchaseOrder: (payload: {
     supplier: string;
     note?: string;
@@ -82,32 +52,35 @@ interface InventoryStockScreenProps {
 const INVENTORY_TABS: InventoryTab[] = [
   'Inventory',
   'Low Stock',
-  'Ingredients',
   'Stock In',
-  'Stock Out',
   'Suppliers',
-  'Movements',
   'Purchase Orders',
-  'Batches',
-  'Waste',
-  'Stock Counts',
 ];
 
 type AddIngredientValues = z.input<typeof addIngredientSchema>;
+const addSupplierSchema = z.object({
+  supplier: z.string().trim().min(2, 'Enter supplier name').max(80),
+  ingredients: z.array(addIngredientSchema.omit({ supplier: true })).min(1),
+});
+type AddSupplierValues = z.input<typeof addSupplierSchema>;
+type PurchaseOrderDraft = {
+  supplier: string;
+  lines: Array<{ ingredientId: string; quantity: string }>;
+};
+type ReceivePurchaseOrderDraft = {
+  purchaseOrderId: string;
+  ingredientId: string;
+  ingredientName: string;
+  maxQuantity: number;
+  quantity: string;
+};
 
 export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
   items,
-  stockMovements = [],
-  inventoryBatches = [],
   purchaseOrders = [],
-  stockCounts = [],
   onRestockItem,
   onAddIngredient,
-  onReceiveStock,
-  onRecordWaste,
-  onTransferStock,
-  onCreateStockCount,
-  onApproveStockCount,
+  onRefresh,
   onCreatePurchaseOrder,
   onReceivePurchaseOrder,
   onExportExcel,
@@ -117,6 +90,11 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortByLowFirst, setSortByLowFirst] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [registeringSupplier, setRegisteringSupplier] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [purchaseOrderDraft, setPurchaseOrderDraft] = useState<PurchaseOrderDraft | null>(null);
+  const [receivePurchaseOrderDraft, setReceivePurchaseOrderDraft] =
+    useState<ReceivePurchaseOrderDraft | null>(null);
 
   const form = useForm<AddIngredientValues>({
     resolver: zodResolver(addIngredientSchema),
@@ -128,6 +106,17 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
       supplier: 'Metro Wholesale',
       unitCost: 180,
     },
+  });
+  const supplierForm = useForm<AddSupplierValues>({
+    resolver: zodResolver(addSupplierSchema),
+    defaultValues: {
+      supplier: '',
+      ingredients: [{ name: '', quantity: 5, unit: 'kg', minThreshold: 1, unitCost: 180 }],
+    },
+  });
+  const supplierIngredientFields = useFieldArray({
+    control: supplierForm.control,
+    name: 'ingredients',
   });
 
   const { lowStockCount, belowThresholdCount, valuationLabel, activeStockInCount } = useMemo(() => {
@@ -257,7 +246,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
             <button
               type="button"
               onClick={() => onRestockItem(row.original.id)}
-              className="px-2.5 py-1 rounded bg-primary-container/20 text-primary text-[11px] font-bold hover:bg-primary-container/30 cursor-pointer disabled:opacity-50"
+              className="px-2.5 py-1 rounded bg-primary-container/20 text-primary text-[11px] font-bold hover:bg-secondary-container hover:text-on-secondary-container cursor-pointer disabled:opacity-50"
             >
               Restock
             </button>
@@ -269,6 +258,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
   );
 
   const handleOpenAdd = () => {
+    setRegisteringSupplier(false);
     form.reset({
       name: '',
       quantity: 5,
@@ -280,70 +270,186 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
     setAddModalOpen(true);
   };
 
-  const handleSaveNew = form.handleSubmit((values) => {
-    const parsed = addIngredientSchema.parse(values);
-    onAddIngredient({
-      name: parsed.name,
-      quantity: parsed.quantity,
-      unit: parsed.unit,
-      minThreshold: parsed.minThreshold,
-      maxCapacity: Math.max(parsed.quantity * 1.4, parsed.minThreshold * 2, 10),
-      subtitle: `Min: ${parsed.minThreshold} ${parsed.unit} • Supplier: ${parsed.supplier}`,
-      supplier: parsed.supplier,
-      icon: 'inventory_2',
-      unitCost: parsed.unitCost,
-      movementType: 'in',
+  const handleOpenAddSupplier = () => {
+    setRegisteringSupplier(true);
+    supplierForm.reset({
+      supplier: '',
+      ingredients: [{ name: '', quantity: 5, unit: 'kg', minThreshold: 1, unitCost: 180 }],
     });
-    setAddModalOpen(false);
+    setAddModalOpen(true);
+  };
+
+  const ingredientPayload = (values: z.infer<typeof addIngredientSchema>) => ({
+    name: values.name,
+    quantity: values.quantity,
+    unit: values.unit,
+    minThreshold: values.minThreshold,
+    maxCapacity: Math.max(values.quantity * 1.4, values.minThreshold * 2, 10),
+    subtitle: `Min: ${values.minThreshold} ${values.unit} • Supplier: ${values.supplier}`,
+    supplier: values.supplier,
+    icon: 'inventory_2',
+    unitCost: values.unitCost,
+    movementType: 'in' as const,
   });
 
-  const promptFirstInventoryAction = async (kind: 'receive' | 'waste' | 'transfer' | 'count') => {
-    if (items.length === 0) {
-      onNotify('Add an ingredient before recording inventory activity.');
+  const handleSaveNew = form.handleSubmit(async (values) => {
+    const parsed = addIngredientSchema.parse(values);
+    try {
+      await onAddIngredient(ingredientPayload(parsed));
+      setAddModalOpen(false);
+    } catch {
+      form.setError('root.server', { message: 'Could not save the ingredient. Please try again.' });
+    }
+  });
+
+  const handleSaveSupplier = supplierForm.handleSubmit(async (values) => {
+    const parsed = addSupplierSchema.parse(values);
+    const results = await Promise.allSettled(
+      parsed.ingredients.map((ingredient) =>
+        onAddIngredient(ingredientPayload({ ...ingredient, supplier: parsed.supplier }))
+      )
+    );
+    const failedIngredients = parsed.ingredients.filter((_, index) => results[index].status === 'rejected');
+    if (failedIngredients.length > 0) {
+      supplierIngredientFields.replace(failedIngredients);
+      supplierForm.setError('root.server', {
+        message: 'Some ingredients could not be saved. Successful items were added; review and retry the remaining rows.',
+      });
       return;
     }
-    const item = items[0];
-    if (kind === 'receive') {
-      const quantityText = window.prompt(`Receive quantity for ${item.name}`, '1');
-      if (!quantityText) return;
-      const quantity = Number(quantityText);
-      if (!Number.isFinite(quantity) || quantity <= 0) return;
-      const supplier = window.prompt('Supplier', item.supplier) || item.supplier;
-      await onReceiveStock({ ingredientId: item.id, quantity, supplier });
-    } else if (kind === 'waste') {
-      const quantityText = window.prompt(`Waste quantity for ${item.name}`, '0.1');
-      if (!quantityText) return;
-      const quantity = Number(quantityText);
-      if (!Number.isFinite(quantity) || quantity <= 0) return;
-      const reason = window.prompt('Waste reason', 'Kitchen spoilage');
-      if (!reason?.trim()) return;
-      await onRecordWaste({ ingredientId: item.id, quantity, reason: reason.trim() });
-    } else if (kind === 'transfer') {
-      const quantityText = window.prompt(`Transfer quantity for ${item.name}`, '1');
-      if (!quantityText) return;
-      const quantity = Number(quantityText);
-      if (!Number.isFinite(quantity) || quantity <= 0) return;
-      const toLocation = window.prompt('Transfer to location', 'Kitchen') || 'Kitchen';
-      await onTransferStock({
-        ingredientId: item.id,
-        quantity,
-        fromLocation: 'Central Store',
-        toLocation,
-      });
-    } else {
-      const counts = items.map((entry) => {
-        const quantityText = window.prompt(
-          `Physical quantity for ${entry.name} (system: ${entry.quantity} ${entry.unit})`,
-          String(entry.quantity)
-        );
-        const physicalQuantity = quantityText === null ? entry.quantity : Number(quantityText);
-        return {
-          ingredientId: entry.id,
-          physicalQuantity: Number.isFinite(physicalQuantity) ? physicalQuantity : entry.quantity,
-        };
-      });
-      await onCreateStockCount({ physicalCounts: counts, note: 'Physical stock count' });
+    setAddModalOpen(false);
+    setRegisteringSupplier(false);
+  });
+
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setIsRefreshing(false);
     }
+  };
+
+  const openPurchaseOrderDialog = (supplier: string, item?: InventoryIngredient) => {
+    if (!item) {
+      onNotify('Add an ingredient before creating a purchase order.');
+      return;
+    }
+    setPurchaseOrderDraft({
+      supplier,
+      lines: [{ ingredientId: item.id, quantity: '10' }],
+    });
+  };
+
+  const handleCreatePurchaseOrder = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!purchaseOrderDraft) return;
+    if (!purchaseOrderDraft.supplier.trim()) {
+      onNotify('Enter a supplier name.');
+      return;
+    }
+    const lines = purchaseOrderDraft.lines.map((line) => {
+      const item = items.find(
+        (entry) => entry.id === line.ingredientId && entry.supplier === purchaseOrderDraft.supplier
+      );
+      return { item, quantity: Number(line.quantity) };
+    });
+    if (lines.some(({ item, quantity }) => !item || !Number.isFinite(quantity) || quantity <= 0)) {
+      onNotify('Choose ingredients from this supplier and enter quantities greater than zero.');
+      return;
+    }
+    void onCreatePurchaseOrder({
+      supplier: purchaseOrderDraft.supplier.trim(),
+      lines: lines.flatMap(({ item, quantity }) =>
+        item ? [{ ingredientId: item.id, quantity, unitCost: item.unitCost }] : []
+      ),
+    });
+    setPurchaseOrderDraft(null);
+  };
+
+  const changePurchaseOrderSupplier = (supplier: string) => {
+    const firstItem = items.find((item) => item.supplier === supplier);
+    setPurchaseOrderDraft({
+      supplier,
+      lines: firstItem ? [{ ingredientId: firstItem.id, quantity: '10' }] : [],
+    });
+  };
+
+  const addPurchaseOrderLine = () => {
+    if (!purchaseOrderDraft) return;
+    const item = items.find(
+      (entry) =>
+        entry.supplier === purchaseOrderDraft.supplier &&
+        !purchaseOrderDraft.lines.some((line) => line.ingredientId === entry.id)
+    );
+    if (!item) {
+      onNotify('All ingredients from this supplier are already included.');
+      return;
+    }
+    setPurchaseOrderDraft((current) =>
+      current
+        ? { ...current, lines: [...current.lines, { ingredientId: item.id, quantity: '10' }] }
+        : current
+    );
+  };
+
+  const updatePurchaseOrderLine = (
+    index: number,
+    updates: Partial<PurchaseOrderDraft['lines'][number]>
+  ) => {
+    setPurchaseOrderDraft((current) =>
+      current
+        ? {
+            ...current,
+            lines: current.lines.map((line, lineIndex) =>
+              lineIndex === index ? { ...line, ...updates } : line
+            ),
+          }
+        : current
+    );
+  };
+
+  const removePurchaseOrderLine = (index: number) => {
+    setPurchaseOrderDraft((current) =>
+      current && current.lines.length > 1
+        ? { ...current, lines: current.lines.filter((_, lineIndex) => lineIndex !== index) }
+        : current
+    );
+  };
+
+  const openReceivePurchaseOrderDialog = (purchaseOrder: PurchaseOrder) => {
+    const line = purchaseOrder.lines.find((entry) => entry.receivedQuantity < entry.orderedQuantity);
+    if (!line) {
+      onNotify('This purchase order has no outstanding items to receive.');
+      return;
+    }
+    const remaining = line.orderedQuantity - line.receivedQuantity;
+    setReceivePurchaseOrderDraft({
+      purchaseOrderId: purchaseOrder.id,
+      ingredientId: line.ingredientId,
+      ingredientName: line.ingredientName,
+      maxQuantity: remaining,
+      quantity: String(remaining),
+    });
+  };
+
+  const handleReceivePurchaseOrder = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!receivePurchaseOrderDraft) return;
+    const quantity = Number(receivePurchaseOrderDraft.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > receivePurchaseOrderDraft.maxQuantity) {
+      onNotify(`Enter a quantity greater than zero and no more than ${receivePurchaseOrderDraft.maxQuantity}.`);
+      return;
+    }
+    void onReceivePurchaseOrder({
+      purchaseOrderId: receivePurchaseOrderDraft.purchaseOrderId,
+      receivedLines: [{
+        ingredientId: receivePurchaseOrderDraft.ingredientId,
+        quantity,
+      }],
+    });
+    setReceivePurchaseOrderDraft(null);
   };
 
   return (
@@ -366,7 +472,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
             <button
               type="button"
               onClick={onExportExcel}
-              className="px-3 py-2 rounded-lg bg-surface-container-high text-primary text-xs font-semibold flex items-center gap-1 hover:bg-surface-bright cursor-pointer"
+              className="px-3 py-2 rounded-lg bg-surface-container-high text-primary text-xs font-semibold flex items-center gap-1 hover:bg-secondary-container hover:text-on-secondary-container cursor-pointer transition-colors"
             >
               <span className="material-symbols-outlined text-[16px]">table_view</span>
               <span className="hidden sm:inline">Excel</span>
@@ -375,7 +481,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
           <button
             type="button"
             onClick={handleOpenAdd}
-            className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-primary text-on-primary text-xs font-bold shadow-md hover:bg-primary-container transition-all active:scale-95 cursor-pointer"
+            className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-primary text-on-primary text-xs font-bold shadow-md hover:bg-secondary hover:text-on-secondary transition-all active:scale-95 cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px]">add</span>
             <span>Add Item</span>
@@ -400,7 +506,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
                     : 'bg-primary-container text-on-primary font-bold shadow-sm'
                   : isLowStockTab && belowThresholdCount > 0
                     ? 'bg-error-container/60 text-on-error-container hover:bg-error-container font-semibold'
-                    : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface font-medium'
+                    : 'bg-surface-container-high text-on-surface-variant hover:bg-secondary-container hover:text-on-secondary-container font-medium'
               }`}
             >
               {isLowStockTab && (
@@ -424,22 +530,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
         })}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => void promptFirstInventoryAction('receive')} className="px-3 py-2 rounded-lg bg-surface-container-high text-primary text-xs font-bold">
-          Receive Stock
-        </button>
-        <button type="button" onClick={() => void promptFirstInventoryAction('waste')} className="px-3 py-2 rounded-lg bg-surface-container-high text-error text-xs font-bold">
-          Record Waste
-        </button>
-        <button type="button" onClick={() => void promptFirstInventoryAction('transfer')} className="px-3 py-2 rounded-lg bg-surface-container-high text-secondary text-xs font-bold">
-          Transfer Stock
-        </button>
-        <button type="button" onClick={() => void promptFirstInventoryAction('count')} className="px-3 py-2 rounded-lg bg-surface-container-high text-on-surface text-xs font-bold">
-          Start Stock Count
-        </button>
-      </div>
-
-      {/* Search + Barcode + KPI Grid */}
+      {/* Search + KPI Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
         <div className="lg:col-span-5 flex items-center">
           <div className="relative w-full">
@@ -452,16 +543,8 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search stock..."
-              className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-surface-container-low text-on-surface placeholder:text-outline text-sm focus:outline-none focus:ring-1 focus:ring-primary shadow-inner"
+              className="w-full pl-10 pr-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface placeholder:text-outline text-sm focus:outline-none focus:ring-1 focus:ring-primary shadow-inner"
             />
-            <button
-              type="button"
-              aria-label="Scan barcode"
-              onClick={() => onNotify('Barcode scanner ready — hold item barcode near camera')}
-              className="absolute inset-y-0 right-0 pr-3 flex items-center text-primary hover:text-primary-container transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[20px]">barcode_scanner</span>
-            </button>
           </div>
         </div>
 
@@ -488,7 +571,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
             className={`flex flex-col p-2.5 rounded-lg text-left transition-colors min-w-0 cursor-pointer ${
               activeTab === 'Low Stock'
                 ? 'bg-error-container/25 ring-1 ring-error/50'
-                : 'bg-surface-container-low hover:bg-surface-container'
+                : 'bg-surface-container-low hover:bg-secondary-container/70'
             }`}
           >
             <div className="flex items-center gap-1 text-on-surface-variant mb-1">
@@ -545,7 +628,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
             className={`p-2 rounded-md transition-colors cursor-pointer ${
               sortByLowFirst
                 ? 'bg-primary-container/20 text-primary'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                : 'text-on-surface-variant hover:text-on-secondary-container hover:bg-secondary-container'
             }`}
           >
             <span className="material-symbols-outlined text-[18px]">sort</span>
@@ -553,46 +636,36 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
           <button
             type="button"
             aria-label="Refresh Stock"
-            onClick={() => onNotify('Live depletion counts synced with POS')}
-            className="p-2 rounded-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high cursor-pointer"
+            onClick={() => void handleRefresh()}
+            disabled={isRefreshing}
+            className="p-2 rounded-md text-on-surface-variant hover:text-on-secondary-container hover:bg-secondary-container disabled:opacity-50 cursor-pointer transition-colors"
           >
-            <span className="material-symbols-outlined text-[18px]">refresh</span>
+            <span className={`material-symbols-outlined text-[18px] ${isRefreshing ? 'animate-spin' : ''}`}>
+              refresh
+            </span>
           </button>
+          {activeTab === 'Suppliers' && (
+            <button
+              type="button"
+              onClick={handleOpenAddSupplier}
+              className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-primary text-on-primary text-xs font-bold hover:bg-secondary hover:text-on-secondary transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              Add Supplier
+            </button>
+          )}
         </div>
       </div>
 
       {/* Suppliers Tab View vs Ingredient Rows */}
-      {activeTab === 'Movements' ? (
-        <div className="space-y-2">
-          {stockMovements.length === 0 ? (
-            <p className="p-6 rounded-xl bg-surface-container-low text-sm text-on-surface-variant text-center">
-              No stock movements recorded yet.
-            </p>
-          ) : stockMovements.map((movement) => (
-            <div key={movement.id} className="p-3 rounded-xl bg-surface-container-low flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-bold text-on-surface">{movement.ingredientName}</p>
-                <p className="text-xs text-on-surface-variant">
-                  {movement.type} · {movement.note || 'Inventory adjustment'}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className={`text-sm font-bold ${movement.quantityDelta >= 0 ? 'text-tertiary' : 'text-error'}`}>
-                  {movement.quantityDelta >= 0 ? '+' : ''}{movement.quantityDelta} {movement.unit}
-                </p>
-                <p className="text-[10px] text-on-surface-variant">{movement.afterQuantity} {movement.unit} remaining</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : activeTab === 'Purchase Orders' ? (
+      {activeTab === 'Purchase Orders' ? (
         <div className="space-y-3">
           {purchaseOrders.length === 0 ? (
             <p className="p-8 rounded-2xl bg-surface-container-low border border-outline-variant/15 text-sm text-on-surface-variant text-center">
               No purchase orders yet.
             </p>
           ) : purchaseOrders.map((purchaseOrder) => (
-            <div key={purchaseOrder.id} className="p-4 sm:p-5 rounded-2xl bg-surface-container-low border border-outline-variant/15 hover:border-outline-variant/30 shadow-md space-y-3 transition-all">
+            <div key={purchaseOrder.id} className="p-4 sm:p-5 rounded-2xl bg-surface-container-low border border-outline-variant/15 hover:border-secondary/50 shadow-md space-y-3 transition-all">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-surface-container-high flex items-center justify-center shrink-0 border border-outline-variant/10 text-primary">
@@ -618,18 +691,8 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
               {purchaseOrder.status !== 'received' && purchaseOrder.status !== 'cancelled' && (
                 <button
                   type="button"
-                  onClick={() => {
-                    const line = purchaseOrder.lines.find((entry) => entry.receivedQuantity < entry.orderedQuantity);
-                    if (!line) return;
-                    const quantityText = window.prompt(`Receive ${line.ingredientName}`, String(line.orderedQuantity - line.receivedQuantity));
-                    const quantity = Number(quantityText);
-                    if (!Number.isFinite(quantity) || quantity <= 0) return;
-                    void onReceivePurchaseOrder({
-                      purchaseOrderId: purchaseOrder.id,
-                      receivedLines: [{ ingredientId: line.ingredientId, quantity }],
-                    });
-                  }}
-                  className="px-4 py-2 rounded-xl bg-primary hover:brightness-110 text-on-primary text-xs font-bold shadow-sm transition-all active:scale-95 cursor-pointer"
+                  onClick={() => openReceivePurchaseOrderDialog(purchaseOrder)}
+                  className="px-4 py-2 rounded-xl bg-primary text-on-primary hover:bg-secondary hover:text-on-secondary text-xs font-bold shadow-sm transition-all active:scale-95 cursor-pointer"
                 >
                   Receive Stock
                 </button>
@@ -639,93 +702,18 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
           <button
             type="button"
             onClick={() => {
-              if (items.length === 0) {
+              const item = items[0];
+              if (!item) {
                 onNotify('Add an ingredient before creating a purchase order.');
                 return;
               }
-              const supplier = window.prompt('Supplier name', items[0].supplier);
-              if (!supplier?.trim()) return;
-              const item = items[0];
-              const quantityText = window.prompt(`Order quantity for ${item.name}`, '10');
-              const quantity = Number(quantityText);
-              if (!Number.isFinite(quantity) || quantity <= 0) return;
-              void onCreatePurchaseOrder({
-                supplier: supplier.trim(),
-                lines: [{ ingredientId: item.id, quantity, unitCost: item.unitCost }],
-              });
+              openPurchaseOrderDialog(item.supplier, item);
             }}
-            className="w-full py-3 rounded-2xl bg-primary hover:brightness-110 text-on-primary text-sm font-bold shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+            className="w-full py-3 rounded-2xl bg-primary text-on-primary hover:bg-secondary hover:text-on-secondary text-sm font-bold shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
           >
             <span className="material-symbols-outlined text-[18px]">add_circle</span>
             <span>Create Purchase Order</span>
           </button>
-        </div>
-      ) : activeTab === 'Batches' ? (
-        <div className="space-y-3">
-          {inventoryBatches.length === 0 ? (
-            <p className="p-8 rounded-2xl bg-surface-container-low border border-outline-variant/15 text-sm text-on-surface-variant text-center">No inventory batches recorded.</p>
-          ) : inventoryBatches.map((batch) => (
-            <div key={batch.id} className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/15 flex items-center justify-between shadow-md">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-surface-container-high flex items-center justify-center text-primary border border-outline-variant/10">
-                  <span className="material-symbols-outlined text-[18px]">category</span>
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-on-surface">{batch.ingredientName}</p>
-                  <p className="text-xs text-on-surface-variant">Batch {batch.batchNumber}{batch.expiryDate ? ` · Expires ${batch.expiryDate}` : ''}</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-black text-on-surface tabular-nums">{batch.quantity} {batch.unit}</p>
-                <span className="px-2 py-0.5 rounded-full bg-surface-container-high text-[10px] font-bold uppercase tracking-wider text-primary">{batch.status}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : activeTab === 'Waste' ? (
-        <div className="space-y-3">
-          {stockMovements.filter((movement) => movement.type === 'waste').length === 0 ? (
-            <p className="p-8 rounded-2xl bg-surface-container-low border border-outline-variant/15 text-sm text-on-surface-variant text-center">No waste recorded.</p>
-          ) : stockMovements.filter((movement) => movement.type === 'waste').map((movement) => (
-            <div key={movement.id} className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/15 flex items-center justify-between shadow-md">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-error-container/20 text-error flex items-center justify-center border border-error/20">
-                  <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-on-surface">{movement.ingredientName}</p>
-                  <p className="text-xs text-on-surface-variant">{movement.note}</p>
-                </div>
-              </div>
-              <p className="text-sm font-black text-error tabular-nums">{movement.quantityDelta} {movement.unit}</p>
-            </div>
-          ))}
-        </div>
-      ) : activeTab === 'Stock Counts' ? (
-        <div className="space-y-3">
-          {stockCounts.length === 0 ? (
-            <p className="p-8 rounded-2xl bg-surface-container-low border border-outline-variant/15 text-sm text-on-surface-variant text-center">No stock counts recorded.</p>
-          ) : stockCounts.map((count) => (
-            <div key={count.id} className="p-4 sm:p-5 rounded-2xl bg-surface-container-low border border-outline-variant/15 space-y-3 shadow-md">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-bold text-on-surface">Count #{count.id}</p>
-                <span className="px-2 py-0.5 rounded-full bg-surface-container-high text-[10px] font-bold uppercase tracking-wider text-primary">{count.status}</span>
-              </div>
-              <div className="rounded-xl bg-surface-container-lowest/80 border border-outline-variant/10 p-2.5 space-y-1 text-xs text-on-surface-variant">
-                {count.lines.map((line) => (
-                  <p key={line.ingredientId} className="flex justify-between font-medium">
-                    <span className="text-on-surface">{line.ingredientName}</span>
-                    <span className="tabular-nums">Sys: {line.systemQuantity} · Phys: {line.physicalQuantity} (Var: {line.variance} {line.unit})</span>
-                  </p>
-                ))}
-              </div>
-              {count.status === 'draft' && (
-                <button type="button" onClick={() => void onApproveStockCount(count.id)} className="px-4 py-2 rounded-xl bg-primary hover:brightness-110 text-on-primary text-xs font-bold transition-all active:scale-95 cursor-pointer">
-                  Approve Variance
-                </button>
-              )}
-            </div>
-          ))}
         </div>
       ) : activeTab === 'Suppliers' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -755,8 +743,8 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
 
               <button
                 type="button"
-                onClick={() => onNotify(`Purchase order draft created for ${supplier}`)}
-                className="w-full py-2 rounded-xl liquid-glass-pill text-primary text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 hover:border-primary/40"
+                onClick={() => openPurchaseOrderDialog(supplier, vendorItems[0])}
+                className="w-full py-2 rounded-xl liquid-glass-pill text-primary text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 hover:border-secondary/60 hover:text-secondary"
               >
                 <span className="material-symbols-outlined text-[15px]">post_add</span>
                 <span>Create Vendor PO</span>
@@ -785,15 +773,154 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
 
       {/* Add Raw Ingredient Dialog */}
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
-        <DialogContent className="bg-surface-container border border-outline-variant/30 text-on-surface sm:max-w-md rounded-2xl p-5">
+        <DialogContent className="bg-surface-container border border-outline-variant/30 text-on-surface sm:max-w-xl max-h-[85vh] overflow-y-auto rounded-2xl p-5">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-on-surface">
-              Add Raw Ingredient
+              {registeringSupplier ? 'Add Supplier & Ingredients' : 'Add Raw Ingredient'}
             </DialogTitle>
             <DialogDescription className="text-xs text-on-surface-variant">
-              Add a tracked SKU with minimum threshold alert and supplier details.
+              {registeringSupplier
+                ? 'Register a supplier and add one or more ingredients they provide.'
+                : 'Add a tracked SKU with minimum threshold alert and supplier details.'}
             </DialogDescription>
           </DialogHeader>
+          {registeringSupplier ? (
+            <form onSubmit={handleSaveSupplier} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                  Supplier Name
+                </label>
+                <input
+                  type="text"
+                  {...supplierForm.register('supplier')}
+                  placeholder="Supplier name"
+                  className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                {supplierForm.formState.errors.supplier && (
+                  <p className="text-[11px] text-error mt-1">
+                    {supplierForm.formState.errors.supplier.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-1">
+                {supplierIngredientFields.fields.map((field, index) => (
+                  <div key={field.id} className="p-3 rounded-xl border border-outline-variant/25 bg-surface-container-low space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-on-surface">Ingredient {index + 1}</span>
+                      {supplierIngredientFields.fields.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => supplierIngredientFields.remove(index)}
+                          className="text-xs font-semibold text-error hover:underline cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                        Ingredient Name
+                      </label>
+                      <input
+                        type="text"
+                        {...supplierForm.register(`ingredients.${index}.name`)}
+                        placeholder="Ingredient name"
+                        className="w-full px-3 py-2.5 rounded-lg bg-surface-container text-on-surface text-sm placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                      {supplierForm.formState.errors.ingredients?.[index]?.name && (
+                        <p className="text-[11px] text-error mt-1">
+                          {supplierForm.formState.errors.ingredients[index]?.name?.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                          Opening Stock
+                        </label>
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          {...supplierForm.register(`ingredients.${index}.quantity`)}
+                          className="w-full px-3 py-2.5 rounded-lg bg-surface-container text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                          Unit
+                        </label>
+                        <select
+                          {...supplierForm.register(`ingredients.${index}.unit`)}
+                          className="w-full px-3 py-2.5 rounded-lg bg-surface-container text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                          <option value="kg">kg</option>
+                          <option value="g">g</option>
+                          <option value="L">L</option>
+                          <option value="ml">ml</option>
+                          <option value="pcs">pcs</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                          Low Alert
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          {...supplierForm.register(`ingredients.${index}.minThreshold`)}
+                          className="w-full px-3 py-2.5 rounded-lg bg-surface-container text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  supplierIngredientFields.append({
+                    name: '',
+                    quantity: 5,
+                    unit: 'kg',
+                    minThreshold: 1,
+                    unitCost: 180,
+                  })
+                }
+                className="w-full py-2.5 rounded-lg border border-dashed border-outline-variant/50 text-primary text-sm font-semibold hover:bg-secondary-container hover:text-on-secondary-container transition-colors cursor-pointer"
+              >
+                + Add another ingredient
+              </button>
+
+              {supplierForm.formState.errors.root?.server?.message && (
+                <p role="alert" className="text-xs text-error">
+                  {supplierForm.formState.errors.root.server.message}
+                </p>
+              )}
+              <div className="pt-1 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddModalOpen(false);
+                    setRegisteringSupplier(false);
+                  }}
+                  className="flex-1 py-3 rounded-lg bg-surface-container-high text-on-surface text-sm font-semibold hover:bg-secondary-container hover:text-on-secondary-container transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={supplierForm.formState.isSubmitting}
+                  className="flex-1 py-3 rounded-lg bg-primary text-on-primary text-sm font-bold shadow-md hover:bg-secondary hover:text-on-secondary disabled:opacity-60 transition-colors cursor-pointer"
+                >
+                  {supplierForm.formState.isSubmitting ? 'Saving…' : 'Add Supplier & Ingredients'}
+                </button>
+              </div>
+            </form>
+          ) : (
           <form onSubmit={handleSaveNew} className="space-y-4">
             <div className="space-y-3">
               <div>
@@ -868,7 +995,7 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-on-surface-variant mb-1">
-                    Supplier
+                    Supplier Name
                   </label>
                   <input
                     type="text"
@@ -888,19 +1015,199 @@ export const InventoryStockScreen: React.FC<InventoryStockScreenProps> = ({
             <div className="pt-1 flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setAddModalOpen(false)}
-                className="flex-1 py-3 rounded-lg bg-surface-container-high text-on-surface text-sm font-semibold hover:bg-surface-variant transition-colors cursor-pointer"
+                onClick={() => {
+                  setAddModalOpen(false);
+                  setRegisteringSupplier(false);
+                }}
+                className="flex-1 py-3 rounded-lg bg-surface-container-high text-on-surface text-sm font-semibold hover:bg-secondary-container hover:text-on-secondary-container transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="flex-1 py-3 rounded-lg bg-primary text-on-primary text-sm font-bold shadow-md hover:bg-primary-container transition-colors cursor-pointer"
+                className="flex-1 py-3 rounded-lg bg-primary text-on-primary text-sm font-bold shadow-md hover:bg-secondary hover:text-on-secondary transition-colors cursor-pointer"
               >
-                Save Item
+                {registeringSupplier ? 'Add Supplier' : 'Save Item'}
               </button>
             </div>
           </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={purchaseOrderDraft !== null}
+        onOpenChange={(open) => {
+          if (!open) setPurchaseOrderDraft(null);
+        }}
+      >
+        <DialogContent className="bg-surface-container border border-outline-variant/30 text-on-surface sm:max-w-xl max-h-[85vh] overflow-y-auto rounded-2xl p-5">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-on-surface">
+              Create Purchase Order
+            </DialogTitle>
+            <DialogDescription className="text-xs text-on-surface-variant">
+              Add one or more ingredients supplied by the same vendor.
+            </DialogDescription>
+          </DialogHeader>
+          {purchaseOrderDraft && (
+            <form onSubmit={handleCreatePurchaseOrder} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                  Supplier
+                </label>
+                <select
+                  value={purchaseOrderDraft.supplier}
+                  onChange={(event) => changePurchaseOrderSupplier(event.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {supplierGroups.map(([supplier]) => (
+                    <option key={supplier} value={supplier}>{supplier}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-3">
+                {purchaseOrderDraft.lines.map((line, index) => {
+                  const supplierItems = items.filter(
+                    (item) =>
+                      item.supplier === purchaseOrderDraft.supplier &&
+                      !purchaseOrderDraft.lines.some(
+                        (otherLine, otherIndex) =>
+                          otherIndex !== index && otherLine.ingredientId === item.id
+                      )
+                  );
+                  return (
+                    <div key={`${line.ingredientId}-${index}`} className="grid grid-cols-1 sm:grid-cols-[1fr_140px_auto] items-end gap-2 p-3 rounded-xl bg-surface-container-low">
+                      <div>
+                        <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                          Ingredient {index + 1}
+                        </label>
+                        <select
+                          value={line.ingredientId}
+                          onChange={(event) =>
+                            updatePurchaseOrderLine(index, { ingredientId: event.target.value })
+                          }
+                          className="w-full px-3 py-2.5 rounded-lg bg-surface-container text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                          {supplierItems.map((item) => (
+                            <option key={item.id} value={item.id}>{item.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                          Quantity
+                        </label>
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={line.quantity}
+                          onChange={(event) =>
+                            updatePurchaseOrderLine(index, { quantity: event.target.value })
+                          }
+                          className="w-full px-3 py-2.5 rounded-lg bg-surface-container text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        aria-label={`Remove ingredient ${index + 1}`}
+                        disabled={purchaseOrderDraft.lines.length === 1}
+                        onClick={() => removePurchaseOrderLine(index)}
+                        className="h-10 px-3 rounded-lg text-error hover:bg-error-container/30 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">delete</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                disabled={
+                  purchaseOrderDraft.lines.length >=
+                  items.filter((item) => item.supplier === purchaseOrderDraft.supplier).length
+                }
+                onClick={addPurchaseOrderLine}
+                className="w-full py-2.5 rounded-lg border border-dashed border-outline-variant/50 text-primary text-sm font-semibold hover:bg-secondary-container hover:text-on-secondary-container disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              >
+                + Add another ingredient
+              </button>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setPurchaseOrderDraft(null)}
+                  className="flex-1 py-3 rounded-lg bg-surface-container-high text-on-surface text-sm font-semibold hover:bg-secondary-container hover:text-on-secondary-container transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 rounded-lg bg-primary text-on-primary text-sm font-bold shadow-md hover:bg-secondary hover:text-on-secondary transition-colors cursor-pointer"
+                >
+                  Create Purchase Order
+                </button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={receivePurchaseOrderDraft !== null}
+        onOpenChange={(open) => {
+          if (!open) setReceivePurchaseOrderDraft(null);
+        }}
+      >
+        <DialogContent className="bg-surface-container border border-outline-variant/30 text-on-surface sm:max-w-md rounded-2xl p-5">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-on-surface">Receive Stock</DialogTitle>
+            <DialogDescription className="text-xs text-on-surface-variant">
+              Enter the received quantity for {receivePurchaseOrderDraft?.ingredientName}.
+            </DialogDescription>
+          </DialogHeader>
+          {receivePurchaseOrderDraft && (
+            <form onSubmit={handleReceivePurchaseOrder} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-on-surface-variant mb-1">
+                  Quantity received (maximum {receivePurchaseOrderDraft.maxQuantity})
+                </label>
+                <input
+                  autoFocus
+                  type="number"
+                  min="0.1"
+                  max={receivePurchaseOrderDraft.maxQuantity}
+                  step="0.1"
+                  value={receivePurchaseOrderDraft.quantity}
+                  onChange={(event) =>
+                    setReceivePurchaseOrderDraft({
+                      ...receivePurchaseOrderDraft,
+                      quantity: event.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2.5 rounded-lg bg-surface-container-low text-on-surface text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReceivePurchaseOrderDraft(null)}
+                  className="flex-1 py-3 rounded-lg bg-surface-container-high text-on-surface text-sm font-semibold hover:bg-secondary-container hover:text-on-secondary-container transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 rounded-lg bg-primary text-on-primary text-sm font-bold shadow-md hover:bg-secondary hover:text-on-secondary transition-colors cursor-pointer"
+                >
+                  Receive Stock
+                </button>
+              </div>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>

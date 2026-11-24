@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+    <defs>
+      <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#FFF8F0"/>
+        <stop offset="100%" stop-color="#F5E6D3"/>
+      </radialGradient>
+      <linearGradient id="bunTop" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#F4A261"/>
+        <stop offset="100%" stop-color="#E76F51"/>
+      </linearGradient>
+      <linearGradient id="patty" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#7F4F24"/>
+        <stop offset="100%" stop-color="#582F0E"/>
+      </linearGradient>
+    </defs>
+    <circle cx="100" cy="100" r="92" fill="url(#bg)"/>
+    <!-- Shadow -->
+    <ellipse cx="100" cy="162" rx="65" ry="10" fill="#E2D0BE" opacity="0.6"/>
+    <!-- Bottom Bun -->
+    <path d="M 45 138 C 45 152, 155 152, 155 138 Z" fill="#E76F51"/>
+    <path d="M 45 138 L 155 138 L 155 134 C 155 130, 45 130, 45 134 Z" fill="#F4A261"/>
+    <!-- Patty -->
+    <rect x="42" y="118" width="116" height="15" rx="7" fill="url(#patty)"/>
+    <!-- Cheese slice -->
+    <path d="M 42 116 L 158 116 L 140 128 L 60 128 Z" fill="#FFB703"/>
+    <!-- Tomato slices -->
+    <rect x="48" y="106" width="48" height="9" rx="4" fill="#E63946"/>
+    <rect x="104" y="106" width="48" height="9" rx="4" fill="#E63946"/>
+    <!-- Lettuce -->
+    <path d="M 38 106 Q 50 96 62 106 Q 74 96 86 106 Q 100 95 114 106 Q 128 95 142 106 Q 154 96 162 106 L 158 112 Q 100 114 42 112 Z" fill="#588157"/>
+    <!-- Top Bun -->
+    <path d="M 40 102 C 40 45, 160 45, 160 102 Z" fill="url(#bunTop)"/>
+    <!-- Sesame Seeds -->
+    <ellipse cx="75" cy="68" rx="3" ry="1.5" fill="#FFF" opacity="0.85" transform="rotate(-15 75 68)"/>
+    <ellipse cx="100" cy="60" rx="3" ry="1.5" fill="#FFF" opacity="0.85"/>
+    <ellipse cx="125" cy="68" rx="3" ry="1.5" fill="#FFF" opacity="0.85" transform="rotate(15 125 68)"/>
+    <ellipse cx="88" cy="80" rx="3" ry="1.5" fill="#FFF" opacity="0.85" transform="rotate(10 88 80)"/>
+    <ellipse cx="112" cy="80" rx="3" ry="1.5" fill="#FFF" opacity="0.85" transform="rotate(-10 112 80)"/>
+  </svg>

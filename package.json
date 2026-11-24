@@ -15,7 +15,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:reset": "tsx scripts/migrate.ts down && tsx scripts/migrate.ts && tsx scripts/seed.ts",
-    "test": "tsx --test src/utils/cafeLogic.test.ts src/state/cafeStateMachines.test.ts src/routing/routes.test.ts src/store/useCafeStore.test.ts src/server/auth.test.ts src/server/store.mongo.test.ts src/server/cashfreeGateway.test.ts src/server/upiGateway.test.ts src/server/app.test.ts src/server/db.test.ts src/server/connectedOrderFlow.test.ts src/server/seed.test.ts src/lib/supabaseClient.test.ts src/server/securityHardening.test.ts src/server/authHarden20.test.ts",
+    "test": "NODE_ENV=test tsx --test src/utils/cafeLogic.test.ts src/state/cafeStateMachines.test.ts src/routing/routes.test.ts src/store/useCafeStore.test.ts src/server/auth.test.ts src/server/store.mongo.test.ts src/server/cashfreeGateway.test.ts src/server/upiGateway.test.ts src/server/app.test.ts src/server/db.test.ts src/server/connectedOrderFlow.test.ts src/server/seed.test.ts src/lib/supabaseClient.test.ts src/server/securityHardening.test.ts src/server/authHarden20.test.ts",
     "dev:gateway": "tsx scripts/dev-gateway.ts"
   },
   "dependencies": {
@@ -37,6 +37,7 @@
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
+    "framer-motion": "^14.14.0",
     "jose": "^6.2.18",
     "lucide-react": "^0.546.0",
     "mongodb": "^7.9.0",

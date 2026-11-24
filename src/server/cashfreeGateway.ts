@@ -21,6 +21,7 @@ interface MockCashfreeOrder {
   status: 'ACTIVE' | 'PAID' | 'EXPIRED';
   paymentSessionId: string;
   utr?: string;
+  customerPhone?: string;
 }
 
 function getLocalMockBaseUrl(): string {
@@ -103,6 +104,7 @@ export class CashfreeGateway implements UpiGatewayClient {
         amount: parseFloat(amount),
         status: 'ACTIVE',
         paymentSessionId,
+        customerPhone: input.customerPhone,
       });
 
       return {
@@ -175,6 +177,7 @@ export class CashfreeGateway implements UpiGatewayClient {
         status: mock.status === 'PAID' ? 'paid' : 'pending',
         paymentUrl: `${getLocalMockBaseUrl()}/api/cashfree-mock/checkout?orderId=${encodeURIComponent(clientOrderId)}&session=${mock.paymentSessionId}`,
         ...(mock.utr ? { utr: mock.utr } : {}),
+        ...(mock.customerPhone ? { customerPhone: mock.customerPhone } : {}),
       };
     }
 
@@ -190,6 +193,16 @@ export class CashfreeGateway implements UpiGatewayClient {
       const orderStatus = String(data.order_status || 'ACTIVE');
 
       let utr: string | undefined;
+      let customerPhone: string | undefined;
+
+      const customerDetails = (data.customer_details || {}) as Record<string, unknown>;
+      if (customerDetails.customer_phone) {
+        const raw = String(customerDetails.customer_phone).replace(/\D/g, '').slice(-10);
+        if (raw.length === 10 && raw !== '9999999999') {
+          customerPhone = raw;
+        }
+      }
+
       try {
         const paymentsRes = await this.request(`/orders/${encodeURIComponent(clientOrderId)}/payments`, {
           method: 'GET',
@@ -198,6 +211,15 @@ export class CashfreeGateway implements UpiGatewayClient {
           const successPayment = paymentsRes.find((p) => p.payment_status === 'SUCCESS') || paymentsRes[0];
           if (successPayment?.bank_reference) {
             utr = String(successPayment.bank_reference);
+          }
+          const upiVpa = (successPayment?.payment_method as Record<string, unknown> | undefined)?.upi as
+            | { upi_id?: string }
+            | undefined;
+          if (!customerPhone && upiVpa?.upi_id) {
+            const vpaDigits = String(upiVpa.upi_id).split('@')[0].replace(/\D/g, '').slice(-10);
+            if (vpaDigits.length === 10) {
+              customerPhone = vpaDigits;
+            }
           }
         }
       } catch {
@@ -213,6 +235,7 @@ export class CashfreeGateway implements UpiGatewayClient {
         status: this.mapCashfreeStatus(orderStatus),
         paymentUrl,
         ...(utr ? { utr } : {}),
+        ...(customerPhone ? { customerPhone } : {}),
       };
     } catch (error) {
       if (error instanceof UpiGatewayRequestError && error.statusCode === 404) {
@@ -222,11 +245,14 @@ export class CashfreeGateway implements UpiGatewayClient {
     }
   }
 
-  public simulateMockPayment(clientOrderId: string, utr?: string): boolean {
+  public simulateMockPayment(clientOrderId: string, utr?: string, customerPhone?: string): boolean {
     const mock = this.mockOrders.get(clientOrderId);
     if (!mock) return false;
     mock.status = 'PAID';
     mock.utr = utr || `CF${Date.now()}`;
+    if (customerPhone) {
+      mock.customerPhone = customerPhone;
+    }
     return true;
   }
 
