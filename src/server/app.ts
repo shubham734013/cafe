@@ -982,8 +982,15 @@ export function createCafeServer(
     }
 
     // 5. Cross-Origin Resource Sharing (CORS) & Anti-CSRF Origin Validation
+    const isStaticAsset =
+      req.path.startsWith('/assets/') ||
+      /\.(?:js|mjs|css|png|jpg|jpeg|gif|svg|ico|woff2?|json)$/.test(req.path);
     const origin = req.headers.origin;
-    if (origin) {
+
+    if (isStaticAsset) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS');
+    } else if (origin) {
       if (isOriginAllowed(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
