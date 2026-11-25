@@ -414,165 +414,6 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
         </section>
       )}
 
-      {!hasSearchQuery && (
-        <section className="pb-6">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-[20px]">stars</span>
-              <h2 className="text-base sm:text-lg font-bold text-on-surface tracking-tight font-serif">
-                Special Offers & Cafe Perks
-              </h2>
-            </div>
-            <span className="text-[11px] font-semibold text-primary bg-primary/10 px-2.5 py-0.5 rounded-full">
-              Exclusive
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {/* Offer 1: Birthday Celebration */}
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-surface-container-low to-surface-container border border-amber-500/25 shadow-xs flex flex-col justify-between relative overflow-hidden group">
-              <div className="space-y-1.5 relative z-10">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-500/15 px-2 py-0.5 rounded-md">
-                    Party Lounge
-                  </span>
-                  <span className="material-symbols-outlined text-amber-600 text-[20px]">cake</span>
-                </div>
-                <h3 className="font-bold text-sm text-on-surface">Birthday Party – ₹800</h3>
-                <p className="text-xs text-on-surface-variant leading-relaxed">
-                  Order ₹800+ and celebrate your birthday with 1.5 hours of reserved dining time!
-                </p>
-              </div>
-              <div className="mt-3 pt-2 border-t border-outline-variant/30 flex items-center justify-between">
-                <span className="text-[11px] font-bold text-amber-800">1.5 Hrs Seating</span>
-                <a
-                  href="https://wa.me/917300348070?text=Hi%20The%20Sawariya%20Cafe,%20I%20want%20to%20reserve%20for%20a%20Birthday%20Celebration!"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline"
-                >
-                  Book on WhatsApp <span className="material-symbols-outlined text-[14px]">open_in_new</span>
-                </a>
-              </div>
-            </div>
-
-            {/* Offer 2: Buy 5 Get 1 Free Cold Coffee */}
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-primary/10 via-surface-container-low to-surface-container border border-primary/25 shadow-xs flex flex-col justify-between relative overflow-hidden group">
-              <div className="space-y-1.5 relative z-10">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-primary bg-primary/15 px-2 py-0.5 rounded-md">
-                    Coffee Bonanza
-                  </span>
-                  <span className="material-symbols-outlined text-primary text-[20px]">local_cafe</span>
-                </div>
-                <h3 className="font-bold text-sm text-on-surface">Buy 5, Get 1 Free</h3>
-                <p className="text-xs text-on-surface-variant leading-relaxed">
-                  Purchase 5 medium Cold Coffees and get 1 small Cold Coffee (worth ₹30) 100% free!
-                </p>
-              </div>
-              <div className="mt-3 pt-2 border-t border-outline-variant/30 flex items-center justify-between">
-                <span className="text-[11px] font-bold text-primary">Save ₹30</span>
-                <button
-                  type="button"
-                  onClick={() => onNavigateMenu('Cold Coffee')}
-                  className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline cursor-pointer"
-                >
-                  Order Coffee <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Offer 3: Free Ice Cream on Social Review */}
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-500/10 via-surface-container-low to-surface-container border border-rose-500/25 shadow-xs flex flex-col justify-between relative overflow-hidden group">
-              <div className="space-y-1.5 relative z-10">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-rose-700 bg-rose-500/15 px-2 py-0.5 rounded-md">
-                    Social Treat
-                  </span>
-                  <span className="material-symbols-outlined text-rose-600 text-[20px]">icecream</span>
-                </div>
-                <h3 className="font-bold text-sm text-on-surface">Free Cup of Ice Cream</h3>
-                <p className="text-xs text-on-surface-variant leading-relaxed">
-                  Follow <strong className="text-on-surface">@the_sawariya_cafe</strong> on Instagram & leave a Google review to claim your free cup!
-                </p>
-              </div>
-              <div className="mt-3 pt-2 border-t border-outline-variant/30 flex items-center justify-between">
-                <span className="text-[11px] font-bold text-rose-800">1 Free Scoop</span>
-                <a
-                  href="https://instagram.com/the_sawariya_cafe"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 hover:underline"
-                >
-                  Open Instagram <span className="material-symbols-outlined text-[14px]">open_in_new</span>
-                </a>
-              </div>
-            </div>
-
-            {/* Perk 4: High-Speed Free Wi-Fi with 1-click Copy */}
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-sky-500/10 via-surface-container-low to-surface-container border border-sky-500/25 shadow-xs flex flex-col justify-between relative overflow-hidden group">
-              <div className="space-y-1.5 relative z-10">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-sky-700 bg-sky-500/15 px-2 py-0.5 rounded-md">
-                    Free Wi-Fi
-                  </span>
-                  <span className="material-symbols-outlined text-sky-600 text-[20px]">wifi</span>
-                </div>
-                <h3 className="font-bold text-sm text-on-surface truncate">Airtel_The sawariya cafe</h3>
-                <p className="text-xs text-on-surface-variant">
-                  Password: <code className="font-mono font-bold text-on-surface bg-sky-500/10 px-1.5 py-0.5 rounded text-[11px]">Sawariya@1177</code>
-                </p>
-              </div>
-              <div className="mt-3 pt-2 border-t border-outline-variant/30 flex items-center justify-between">
-                <span className="text-[11px] font-medium text-sky-800">Unlimited Access</span>
-                <button
-                  type="button"
-                  onClick={handleCopyWifi}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-600 text-white text-xs font-bold hover:bg-sky-700 active:scale-95 transition-all cursor-pointer shadow-xs"
-                >
-                  <span className="material-symbols-outlined text-[14px]">
-                    {copiedWifi ? 'check' : 'content_copy'}
-                  </span>
-                  <span>{copiedWifi ? 'Copied!' : 'Copy Wi-Fi'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Facility Highlights Bar (Prep Time, Delivery, Table, Combos) */}
-          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/60">
-              <span className="material-symbols-outlined text-primary text-[18px]">timer</span>
-              <div className="min-w-0">
-                <p className="font-bold text-on-surface text-[11px]">10–15m Prep</p>
-                <p className="text-[10px] text-on-surface-variant truncate">15–20m for special</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/60">
-              <span className="material-symbols-outlined text-emerald-600 text-[18px]">moped</span>
-              <div className="min-w-0">
-                <p className="font-bold text-on-surface text-[11px]">Free Delivery 1 KM</p>
-                <p className="text-[10px] text-on-surface-variant truncate">Min. order ₹249</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/60">
-              <span className="material-symbols-outlined text-indigo-600 text-[18px]">table_restaurant</span>
-              <div className="min-w-0">
-                <p className="font-bold text-on-surface text-[11px]">Table Number Service</p>
-                <p className="text-[10px] text-on-surface-variant truncate">Direct seat delivery</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/60">
-              <span className="material-symbols-outlined text-amber-600 text-[18px]">tune</span>
-              <div className="min-w-0">
-                <p className="font-bold text-on-surface text-[11px]">Customized Combos</p>
-                <p className="text-[10px] text-on-surface-variant truncate">WhatsApp 7300348070</p>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
       {/* Animated Marquee Showcase for Cafe Photos */}
       {!hasSearchQuery && (
         <section aria-label="Cafe Photos Showcase" className="mb-8 w-full">
@@ -754,6 +595,164 @@ export const CustomerHomeScreen: React.FC<CustomerHomeScreenProps> = ({
               </Suspense>
             )}
           </div>
+
+          {/* Special Offers & Cafe Perks (Shifted below Feedback & Reviews) */}
+          <section className="py-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[20px]">stars</span>
+                <h2 className="text-base sm:text-lg font-bold text-on-surface tracking-tight font-serif">
+                  Special Offers & Cafe Perks
+                </h2>
+              </div>
+              <span className="text-[11px] font-semibold text-primary bg-primary/10 px-2.5 py-0.5 rounded-full">
+                Exclusive
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Offer 1: Birthday Celebration */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-surface-container-low to-surface-container border border-amber-500/25 shadow-xs flex flex-col justify-between relative overflow-hidden group">
+                <div className="space-y-1.5 relative z-10">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-500/15 px-2 py-0.5 rounded-md">
+                      Party Lounge
+                    </span>
+                    <span className="material-symbols-outlined text-amber-600 text-[20px]">cake</span>
+                  </div>
+                  <h3 className="font-bold text-sm text-on-surface">Birthday Party – ₹800</h3>
+                  <p className="text-xs text-on-surface-variant leading-relaxed">
+                    Order ₹800+ and celebrate your birthday with 1.5 hours of reserved dining time!
+                  </p>
+                </div>
+                <div className="mt-3 pt-2 border-t border-outline-variant/30 flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-amber-800">1.5 Hrs Seating</span>
+                  <a
+                    href="https://wa.me/917300348070?text=Hi%20The%20Sawariya%20Cafe,%20I%20want%20to%20reserve%20for%20a%20Birthday%20Celebration!"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline"
+                  >
+                    Book on WhatsApp <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Offer 2: Buy 5 Get 1 Free Cold Coffee */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-primary/10 via-surface-container-low to-surface-container border border-primary/25 shadow-xs flex flex-col justify-between relative overflow-hidden group">
+                <div className="space-y-1.5 relative z-10">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-primary bg-primary/15 px-2 py-0.5 rounded-md">
+                      Coffee Bonanza
+                    </span>
+                    <span className="material-symbols-outlined text-primary text-[20px]">local_cafe</span>
+                  </div>
+                  <h3 className="font-bold text-sm text-on-surface">Buy 5, Get 1 Free</h3>
+                  <p className="text-xs text-on-surface-variant leading-relaxed">
+                    Purchase 5 medium Cold Coffees and get 1 small Cold Coffee (worth ₹30) 100% free!
+                  </p>
+                </div>
+                <div className="mt-3 pt-2 border-t border-outline-variant/30 flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-primary">Save ₹30</span>
+                  <button
+                    type="button"
+                    onClick={() => onNavigateMenu('Cold Coffee')}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline cursor-pointer"
+                  >
+                    Order Coffee <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Offer 3: Free Ice Cream on Social Review */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-500/10 via-surface-container-low to-surface-container border border-rose-500/25 shadow-xs flex flex-col justify-between relative overflow-hidden group">
+                <div className="space-y-1.5 relative z-10">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-rose-700 bg-rose-500/15 px-2 py-0.5 rounded-md">
+                      Social Treat
+                    </span>
+                    <span className="material-symbols-outlined text-rose-600 text-[20px]">icecream</span>
+                  </div>
+                  <h3 className="font-bold text-sm text-on-surface">Free Cup of Ice Cream</h3>
+                  <p className="text-xs text-on-surface-variant leading-relaxed">
+                    Follow <strong className="text-on-surface">@the_sawariya_cafe</strong> on Instagram & leave a Google review to claim your free cup!
+                  </p>
+                </div>
+                <div className="mt-3 pt-2 border-t border-outline-variant/30 flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-rose-800">1 Free Scoop</span>
+                  <a
+                    href="https://instagram.com/the_sawariya_cafe"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 hover:underline"
+                  >
+                    Open Instagram <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Perk 4: High-Speed Free Wi-Fi with 1-click Copy */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-sky-500/10 via-surface-container-low to-surface-container border border-sky-500/25 shadow-xs flex flex-col justify-between relative overflow-hidden group">
+                <div className="space-y-1.5 relative z-10">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-sky-700 bg-sky-500/15 px-2 py-0.5 rounded-md">
+                      Free Wi-Fi
+                    </span>
+                    <span className="material-symbols-outlined text-sky-600 text-[20px]">wifi</span>
+                  </div>
+                  <h3 className="font-bold text-sm text-on-surface truncate">Airtel_The sawariya cafe</h3>
+                  <p className="text-xs text-on-surface-variant">
+                    Password: <code className="font-mono font-bold text-on-surface bg-sky-500/10 px-1.5 py-0.5 rounded text-[11px]">Sawariya@1177</code>
+                  </p>
+                </div>
+                <div className="mt-3 pt-2 border-t border-outline-variant/30 flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-sky-800">Unlimited Access</span>
+                  <button
+                    type="button"
+                    onClick={handleCopyWifi}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-600 text-white text-xs font-bold hover:bg-sky-700 active:scale-95 transition-all cursor-pointer shadow-xs"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">
+                      {copiedWifi ? 'check' : 'content_copy'}
+                    </span>
+                    <span>{copiedWifi ? 'Copied!' : 'Copy Wi-Fi'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Facility Highlights Bar (Prep Time, Delivery, Table, Combos) */}
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/60">
+                <span className="material-symbols-outlined text-primary text-[18px]">timer</span>
+                <div className="min-w-0">
+                  <p className="font-bold text-on-surface text-[11px]">10–15m Prep</p>
+                  <p className="text-[10px] text-on-surface-variant truncate">15–20m for special</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/60">
+                <span className="material-symbols-outlined text-emerald-600 text-[18px]">moped</span>
+                <div className="min-w-0">
+                  <p className="font-bold text-on-surface text-[11px]">Free Delivery 1 KM</p>
+                  <p className="text-[10px] text-on-surface-variant truncate">Min. order ₹249</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/60">
+                <span className="material-symbols-outlined text-indigo-600 text-[18px]">table_restaurant</span>
+                <div className="min-w-0">
+                  <p className="font-bold text-on-surface text-[11px]">Table Number Service</p>
+                  <p className="text-[10px] text-on-surface-variant truncate">Direct seat delivery</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/60">
+                <span className="material-symbols-outlined text-amber-600 text-[18px]">tune</span>
+                <div className="min-w-0">
+                  <p className="font-bold text-on-surface text-[11px]">Customized Combos</p>
+                  <p className="text-[10px] text-on-surface-variant truncate">WhatsApp 7300348070</p>
+                </div>
+              </div>
+            </div>
+          </section>
 
           <CustomerFooter />
         </>
